@@ -1,6 +1,7 @@
 """Ingest documents into pgvector — chunk, embed, upsert."""
 import numpy as np
 import psycopg2
+import psycopg2.extras
 from pgvector.psycopg2 import register_vector
 
 from hal.llm import OllamaClient
@@ -73,7 +74,6 @@ def upsert_doc(cur, file_path: str, file_name: str, category: str,
 def ingest(docs: list[dict], dsn: str, llm: OllamaClient, dry_run: bool = False) -> dict:
     conn = psycopg2.connect(dsn)
     register_vector(conn)
-    psycopg2.extras  # ensure Json is available
 
     stats = {"deleted": 0, "chunks": 0, "docs": 0, "errors": 0}
 
