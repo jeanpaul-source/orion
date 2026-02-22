@@ -45,6 +45,10 @@ and live lab state. When context is provided above the user's question, use it t
 precise, grounded answers. Be concise. Cite file names when relevant. \
 If you don't know something, say so. \
 Do not hallucinate service names, ports, or config values — verify against context.
+
+Only call tools when you need live data or specific information not already in your context. \
+For greetings, conversational messages, or questions you can answer from context, \
+respond directly with text — do not call tools.
 """
 
 HELP_TEXT = """\

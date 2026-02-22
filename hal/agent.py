@@ -1,6 +1,10 @@
 """Agentic loop — LLM calls tools autonomously, Judge gates everything."""
 import json
+import re
 import textwrap
+
+# Qwen model control tokens that sometimes leak into responses
+_CONTROL_TOKEN_RE = re.compile(r"<\|[^|>]+\|>")
 
 from rich.console import Console
 
@@ -219,6 +223,7 @@ def run_agent(
     working = list(history) + [{"role": "user", "content": augmented}]
 
     response_text = ""
+    seen_calls: set[tuple] = set()  # (name, args_json) — detect repeat tool calls
 
     for iteration in range(MAX_ITERATIONS):
         label = f" (step {iteration + 1})" if iteration > 0 else ""
@@ -253,8 +258,9 @@ def run_agent(
                     pass
 
         if not tool_calls:
-            # Text-only response — agent is done
-            response_text = msg.get("content", "").strip()
+            # Text-only response — agent is done; strip any leaked control tokens
+            raw_content = msg.get("content", "")
+            response_text = _CONTROL_TOKEN_RE.sub("", raw_content).strip()
             console.print(f"\n[bold cyan]hal>[/] {response_text}")
             break
 
@@ -270,6 +276,13 @@ def run_agent(
                     raw_args = json.loads(raw_args)
                 except json.JSONDecodeError:
                     raw_args = {}
+
+            # Detect repeat calls — model stuck in a loop
+            call_key = (name, json.dumps(raw_args, sort_keys=True))
+            if call_key in seen_calls:
+                working.append({"role": "tool", "content": "[Already called — use the result above.]"})
+                continue
+            seen_calls.add(call_key)
 
             console.print(f"\n  [dim cyan]→ {name}({_fmt_args(raw_args)})[/]")
             result = _dispatch(name, raw_args, executor, judge, kb, prom)
