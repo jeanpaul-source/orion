@@ -14,7 +14,7 @@ from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
-from hal.workers import list_dir, read_file
+from hal.workers import list_dir, read_file, write_file
 
 MAX_ITERATIONS = 8
 
@@ -123,6 +123,34 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": (
+                "Write content to a file on the lab server (creates or overwrites). "
+                "Requires approval. Use only when explicitly asked to create or modify a file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the file to write",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The full content to write to the file",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need to write this file",
+                    },
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
 ]
 
 
@@ -161,6 +189,13 @@ def _dispatch(
         reason = args.get("reason", "")
         output = list_dir(path, executor, judge, reason=reason)
         return output if output is not None else f"Could not list {path}"
+
+    elif name == "write_file":
+        path = args.get("path", "")
+        content = args.get("content", "")
+        reason = args.get("reason", "")
+        ok = write_file(path, content, executor, judge, reason=reason)
+        return f"Written {len(content)} bytes to {path}" if ok else f"Write failed or denied for {path}"
 
     elif name == "search_kb":
         query = args.get("query", "")
