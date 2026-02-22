@@ -49,11 +49,12 @@ Do not invent analysis, suggestions, or content that was not asked for. \
 Keep answers SHORT — 2 to 5 sentences for status queries, a short paragraph for complex ones. \
 If context from the knowledge base is not directly relevant to the question, ignore it.
 
-For questions about ports, services, file paths, configuration, or any documented fact — \
-call search_kb first. Only use run_command if you need live state that the KB cannot provide. \
-For greetings or questions you can answer from context, respond directly without tools. \
-Once you have the information you need, respond in plain text — do not keep calling tools \
-to verify what you already know.
+Tool use rules — follow in order:
+1. If the answer is already stated above (in this system prompt or the conversation), \
+respond directly in plain text. Do NOT call any tools.
+2. If you need a documented fact not in your context, call search_kb ONCE.
+3. Only call run_command for live state (processes, logs, disk) that cannot come from the KB.
+4. Once you have enough information, stop calling tools and give your answer.
 """
 
 HELP_TEXT = """\
