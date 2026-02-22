@@ -13,7 +13,7 @@ TIERS = {
     3: "destructive",
 }
 
-# Shell command patterns → minimum tier
+# Shell command patterns → minimum tier (checked in order, first match wins)
 _CMD_RULES: list[tuple[int, list[str]]] = [
     (3, ["rm -rf", "drop table", "mkfs", "dd if=", ":(){:|:&};:"]),
     (2, ["docker run", "systemctl enable", "systemctl disable", "chmod 777", "ufw", "> /etc"]),
@@ -21,10 +21,47 @@ _CMD_RULES: list[tuple[int, list[str]]] = [
          "systemctl restart", "systemctl stop", "systemctl start"]),
 ]
 
+# Paths that should never be auto-approved (tier 0 → tier 1)
+_SENSITIVE_PATHS: list[str] = [
+    "/run/homelab-secrets",
+    "/.ssh",
+    "~/.ssh",
+    "/etc/shadow",
+    "/etc/passwd",
+    "/root/",
+    ".env",
+]
+
+# Safe read-only command first tokens — tier 0 for these
+_SAFE_FIRST_TOKENS: frozenset[str] = frozenset({
+    # process / resource inspection
+    "ps", "top", "htop", "iotop", "free", "uptime",
+    # filesystem / disk
+    "df", "ls", "cat", "head", "tail", "stat", "lsblk", "find",
+    # text processing (read-only)
+    "grep", "egrep", "fgrep", "wc", "sort", "uniq", "echo",
+    # system info
+    "uname", "hostname", "date", "id", "whoami", "pwd",
+    "lscpu", "lspci", "lsusb", "lsof", "printenv", "env",
+    # network observation
+    "netstat", "ss", "ip", "ping",
+    # logging
+    "journalctl",
+})
+
+# Two-token safe prefixes: (first, second) → tier 0
+_SAFE_COMPOUND: frozenset[tuple[str, str]] = frozenset({
+    ("systemctl", "status"),
+    ("docker", "ps"),
+    ("docker", "stats"),
+    ("docker", "logs"),
+    ("docker", "inspect"),
+    ("docker", "images"),
+    ("docker", "network"),
+})
+
 # Fixed tiers for non-command action types
 _ACTION_TIERS: dict[str, int] = {
-    "read_file":    0,
-    "list_dir":     0,
     "write_file":   2,
     "search_kb":    0,
     "get_metrics":  0,
@@ -34,19 +71,55 @@ _ACTION_TIERS: dict[str, int] = {
 console = Console()
 
 
+def _is_sensitive_path(path: str) -> bool:
+    return any(p in path for p in _SENSITIVE_PATHS)
+
+
+def _is_safe_command(command: str) -> bool:
+    """Return True if the command is on the read-only safe allowlist."""
+    parts = command.strip().split()
+    if not parts:
+        return False
+    first = parts[0].lower()
+    if first in _SAFE_FIRST_TOKENS:
+        return True
+    if len(parts) >= 2:
+        second = parts[1].lower()
+        if (first, second) in _SAFE_COMPOUND:
+            return True
+    return False
+
+
 def classify_command(command: str) -> int:
-    """Return the tier for a shell command based on pattern matching."""
+    """Return the tier for a shell command."""
     lower = command.lower()
+
+    # 1. Known dangerous patterns take priority
     for tier, patterns in _CMD_RULES:
         if any(p in lower for p in patterns):
             return tier
-    return 0
+
+    # 2. Sensitive paths bump unknown-safe commands to tier 1
+    if _is_sensitive_path(lower):
+        return 1
+
+    # 3. Explicit safe allowlist → tier 0
+    if _is_safe_command(command):
+        return 0
+
+    # 4. Unknown command — ask before running
+    return 1
 
 
 def tier_for(action_type: str, detail: str = "") -> int:
     """Return the appropriate tier for a given action type."""
     if action_type == "run_command":
         return classify_command(detail)
+
+    if action_type in ("read_file", "list_dir"):
+        # detail = the file/dir path
+        return 1 if _is_sensitive_path(detail) else 0
+
     return _ACTION_TIERS.get(action_type, 1)
 
 
