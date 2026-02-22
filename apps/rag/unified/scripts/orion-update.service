@@ -1,0 +1,25 @@
+[Unit]
+Description=ORION Dataset Update Service
+Documentation=https://github.com/your-repo/orion-rag
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/mnt/nvme1/orion
+ExecStart=/mnt/nvme1/orion/scripts/update-datasets.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=orion-update
+
+# Resource limits
+MemoryMax=8G
+CPUQuota=200%
+
+# Restart policy for failed updates
+Restart=on-failure
+RestartSec=300
+
+[Install]
+WantedBy=multi-user.target

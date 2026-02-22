@@ -1,0 +1,50 @@
+---
+###############################################################################
+#                        Authelia User Database                               #
+###############################################################################
+# File-based user authentication database
+# Format: username, password hash, email, groups
+#
+# IMPORTANT: Password hashes must be generated with Authelia's hash utility
+# Example: docker run authelia/authelia:latest authelia crypto hash generate argon2 --password 'yourpassword'
+#
+# DO NOT commit real passwords! This is a template.
+###############################################################################
+
+users:
+  # Admin user (example - REPLACE WITH YOUR DETAILS!)
+  admin:
+    # Password hash for: 'changeme' (CHANGE THIS!)
+    # Generate new hash with: docker run authelia/authelia:latest authelia crypto hash generate argon2 --password 'yourpassword'
+    displayname: "Admin User"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$YourHashHere"
+    email: admin@orion.lab
+    groups:
+      - admins
+      - users
+
+  # Example regular user (remove if not needed)
+  # user1:
+  #   displayname: "Regular User"
+  #   password: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$AnotherHashHere"
+  #   email: user1@orion.lab
+  #   groups:
+  #     - users
+
+  # Example read-only user (dashboard viewer)
+  # viewer:
+  #   displayname: "Dashboard Viewer"
+  #   password: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$ViewerHashHere"
+  #   email: viewer@orion.lab
+  #   groups:
+  #     - viewers
+
+###############################################################################
+#                          Group Definitions                                  #
+###############################################################################
+# Groups are used in access control rules (configuration.yml)
+#
+# admins:  Full access to everything (Traefik dashboard, Prometheus, etc.)
+# users:   Normal access (Grafana, n8n, AnythingLLM, ORION)
+# viewers: Read-only access (Grafana dashboards only)
+###############################################################################

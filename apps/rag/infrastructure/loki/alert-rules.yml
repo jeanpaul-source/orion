@@ -1,0 +1,99 @@
+# Loki Alert Rules for ORION Homelab
+# Log-based alerting rules
+
+groups:
+  - name: log_alerts
+    interval: 1m
+    rules:
+      # High error rate in logs
+      - alert: HighErrorRate
+        expr: |
+          sum(rate({service=~"orion-core|vllm|qdrant"} |~ "(?i)error" [5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+          component: logging
+        annotations:
+          summary: "High error rate detected in logs"
+          description: "More than 10 errors per second across ORION services"
+
+      # Authentication failures
+      - alert: HighAuthFailures
+        expr: |
+          sum(rate({service="authelia"} |~ "authentication.*failed" [5m])) > 5
+        for: 3m
+        labels:
+          severity: warning
+          component: auth
+        annotations:
+          summary: "High authentication failure rate"
+          description: "More than 5 authentication failures per second - possible brute force attack"
+
+      # Critical errors
+      - alert: CriticalErrors
+        expr: |
+          sum(count_over_time({level="critical"} [5m])) > 0
+        labels:
+          severity: critical
+          component: logging
+        annotations:
+          summary: "Critical errors detected in logs"
+          description: "{{ $value }} critical log entries in the last 5 minutes"
+
+      # OOM (Out of Memory) in logs
+      - alert: OOMDetected
+        expr: |
+          sum(count_over_time({service=~".*"} |~ "(?i)out of memory|oom|killed" [5m])) > 0
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Out of memory condition detected"
+          description: "OOM killer or memory exhaustion detected in logs"
+
+      # Unauthorized access attempts
+      - alert: UnauthorizedAccess
+        expr: |
+          sum(count_over_time({service="traefik"} |~ "401|403" [10m])) > 50
+        for: 5m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "High number of unauthorized access attempts"
+          description: "More than 50 unauthorized access attempts in 10 minutes"
+
+      # Slow query detection
+      - alert: SlowQueries
+        expr: |
+          sum(count_over_time({service="qdrant"} |~ "slow query" [5m])) > 10
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow queries detected in Qdrant"
+          description: "{{ $value }} slow queries detected in the last 5 minutes"
+
+      # GPU temperature warnings in logs
+      - alert: GPUTemperatureWarningLog
+        expr: |
+          sum(count_over_time({service="vllm"} |~ "(?i)temperature.*(high|warning|thermal)" [5m])) > 0
+        labels:
+          severity: warning
+          component: gpu
+        annotations:
+          summary: "GPU temperature warnings in logs"
+          description: "GPU thermal warnings detected in vLLM logs"
+
+      # Telegram bot errors
+      - alert: TelegramBotErrors
+        expr: |
+          sum(rate({component="telegram-bot"} |~ "(?i)error|failed" [5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: telegram
+        annotations:
+          summary: "Telegram bot experiencing errors"
+          description: "High error rate in Telegram bot operations"

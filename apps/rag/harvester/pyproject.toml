@@ -1,0 +1,126 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orion-harvester"
+version = "0.2.0"
+description = "ORION unified CLI for multi-machine RAG orchestration"
+authors = [{name = "JP", email = "jeanpaul@protostarsolutions.com"}]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.12.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "requests>=2.31.0",
+    "sentence-transformers>=2.2.0",
+    "PyMuPDF>=1.23.0",
+    "pdfplumber>=0.10.0",
+    "python-magic>=0.4.27",
+    "langchain>=0.1.0",
+    "langchain-text-splitters>=0.0.1",
+    "tiktoken>=0.5.0",
+    "beautifulsoup4",
+    "html2text>=2020.1.16",
+    "feedparser>=6.0.0",
+    "PyPDF2>=3.0.0",
+    "qdrant-client>=1.7.0",
+    "tqdm>=4.66.0",
+    "transformers>=4.44.0",
+    "rank-bm25>=0.2.2",
+]
+
+[project.scripts]
+orion = "src.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.9.3",
+    "black>=24.8.0",
+    "mypy>=1.11.2",
+    "detect-secrets>=1.5.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+exclude = ["data*", "logs*", "archive*", "reports*", "guides*", "config*", "tests*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+  "archive",
+  "reports",
+  "logs",
+  "data",
+  "packages/*/tests",
+  "scripts/archive",
+]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = [
+  # f-string without placeholders is sometimes used for visual separators
+  "F541",
+]
+
+[tool.black]
+target-version = ["py312"]
+line-length = 100
+exclude = "(archive|reports|logs|data|scripts/archive)"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--color=yes",
+]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests with external services",
+    "slow: Slow-running tests (skip with -m 'not slow')",
+    "requires_api: Tests that require API keys",
+]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
+timeout = 300
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]

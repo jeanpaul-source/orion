@@ -1,0 +1,116 @@
+# Prometheus Configuration for ORION
+# Scrapes metrics from all services
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'orion-homelab'
+    environment: 'production'
+
+# Alertmanager configuration (Phase 5)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'grafana:9093'  # Grafana includes AlertManager
+      timeout: 10s
+      api_version: v2
+
+# Load alerting rules (Phase 5)
+rule_files:
+  - '/etc/prometheus/alert_rules.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Traefik metrics
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['traefik:8080']
+        labels:
+          service: 'traefik'
+
+  # ORION Core
+  - job_name: 'orion-core'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['orion-core:5000']
+        labels:
+          service: 'orion-core'
+
+  # vLLM (OpenAI-compatible API)
+  - job_name: 'vllm'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['vllm:8000']
+        labels:
+          service: 'vllm'
+          gpu: 'rtx3090ti'
+
+  # Qdrant
+  - job_name: 'qdrant'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['qdrant:6333']
+        labels:
+          service: 'qdrant'
+
+  # n8n
+  - job_name: 'n8n'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['n8n:5678']
+        labels:
+          service: 'n8n'
+
+  # Authelia (Phase 2 - SSO metrics)
+  - job_name: 'authelia'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['authelia:9959']
+        labels:
+          service: 'authelia'
+
+  # Redis (Phase 2 - Session storage)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+        labels:
+          service: 'redis'
+
+  # Docker daemon (optional - requires Docker metrics)
+  # - job_name: 'docker'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:9323']
+  #       labels:
+  #         service: 'docker'
+
+  # Node Exporter (system metrics - Phase 5)
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']
+  #       labels:
+  #         service: 'node-exporter'
+  #         instance: 'host'
+
+  # cAdvisor (container metrics - Phase 5)
+  # - job_name: 'cadvisor'
+  #   static_configs:
+  #     - targets: ['cadvisor:8080']
+  #       labels:
+  #         service: 'cadvisor'
+
+  # GPU metrics - NVIDIA DCGM Exporter (from Watch subsystem)
+  - job_name: 'dcgm-exporter'
+    static_configs:
+      - targets: ['dcgm-exporter:9400']
+        labels:
+          service: 'dcgm-exporter'
+          gpu: 'RTX-3090-Ti'

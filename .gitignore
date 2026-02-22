@@ -1,0 +1,31 @@
+# Secrets & credentials — NEVER commit these
+ops/KEYS_AND_TOKENS.md
+infra/.env*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.egg-info/
+**/.venv/
+**/venv/
+**/dist/
+**/build/
+
+# Data & vector stores
+**/qdrant_storage/
+**/.orion-data/
+**/data/
+
+# Node
+**/node_modules/
+
+# Editors & OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/settings.json

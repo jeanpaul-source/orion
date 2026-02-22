@@ -1,0 +1,190 @@
+# Traefik Dynamic Configuration - Middlewares
+# Security, compression, and routing middlewares
+
+http:
+  middlewares:
+    # Security Headers
+    security-headers:
+      headers:
+        # HTTPS
+        sslRedirect: true
+        forceSTSHeader: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+
+        # Security headers
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: false  # Allow iframes for embedded services
+        customFrameOptionsValue: "SAMEORIGIN"
+
+        # Content Security Policy (relaxed for iframes)
+        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self';"
+
+        # Permissions policy
+        permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+
+        # Referrer policy
+        referrerPolicy: "strict-origin-when-cross-origin"
+
+        # Custom headers
+        customResponseHeaders:
+          X-Powered-By: "ORION"
+          Server: "ORION"
+
+    # Compression
+    compression:
+      compress:
+        excludedContentTypes:
+          - "text/event-stream"
+
+    # Rate limiting (basic protection)
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: 1s
+
+    # Rate limiting (strict for auth)
+    rate-limit-auth:
+      rateLimit:
+        average: 10
+        burst: 5
+        period: 1m
+
+    # Rate limiting (API endpoints - Phase 7)
+    rate-limit-api:
+      rateLimit:
+        average: 50
+        burst: 25
+        period: 1s
+
+    # Rate limiting (very strict - for sensitive endpoints)
+    rate-limit-strict:
+      rateLimit:
+        average: 5
+        burst: 2
+        period: 1m
+
+    # In-flight requests limiter (prevent resource exhaustion)
+    in-flight-limit:
+      inFlightReq:
+        amount: 10
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Circuit breaker (fail fast when backend is down)
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"
+
+    # CORS (for API endpoints)
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "https://orion.lab"
+          - "https://*.orion.lab"
+        accessControlMaxAge: 100
+        addVaryHeader: true
+        accessControlAllowCredentials: true
+
+    # IP Whitelist (LAN only)
+    lan-only:
+      ipWhiteList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "192.168.5.0/24"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+
+    # Authelia SSO (Phase 2)
+    authelia:
+      forwardAuth:
+        address: "http://authelia:9091/api/verify?rd=https://orion.lab"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - "Remote-User"
+          - "Remote-Groups"
+          - "Remote-Name"
+          - "Remote-Email"
+
+    # Authelia Basic (one-factor only)
+    authelia-basic:
+      forwardAuth:
+        address: "http://authelia:9091/api/verify?auth=basic"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - "Remote-User"
+          - "Remote-Groups"
+
+    # Basic auth for Traefik dashboard (legacy - replaced by Authelia in Phase 2)
+    # Generate with: echo $(htpasswd -nB user) | sed -e s/\\$/\\$\\$/g
+    # Default user/pass: admin/changeme
+    dashboard-auth:
+      basicAuth:
+        users:
+          - "admin:$2y$05$rX9Vz1qZ8Q9FZ0Y8VhZ9hOZ9Z9Z9Z9Z9Z9Z9Z9Z9Z9Z9Z9Z9Z9Z9Z"
+        realm: "Traefik Dashboard"
+
+    # Strip prefix for path-based routing
+    strip-prefix-grafana:
+      stripPrefix:
+        prefixes:
+          - "/grafana"
+        forceSlash: false
+
+    strip-prefix-n8n:
+      stripPrefix:
+        prefixes:
+          - "/n8n"
+        forceSlash: false
+
+    strip-prefix-anythingllm:
+      stripPrefix:
+        prefixes:
+          - "/anythingllm"
+        forceSlash: false
+
+    # Redirect /dashboard to / (for portal)
+    redirect-dashboard:
+      redirectRegex:
+        regex: "^https://orion\\.lab/dashboard$"
+        replacement: "https://orion.lab/"
+        permanent: false
+
+    # Error pages (custom 404, 500, etc.)
+    error-pages:
+      errors:
+        status:
+          - "404"
+          - "500-599"
+        service: error-page-service
+        query: "/{status}.html"
+
+  # Services (for middlewares that need backends)
+  services:
+    # Placeholder for error pages
+    error-page-service:
+      loadBalancer:
+        servers:
+          - url: "http://orion-core:5000"
+
+# TCP routers and services (if needed for non-HTTP)
+tcp:
+  routers: {}
+  services: {}
+
+# UDP routers and services (if needed)
+udp:
+  routers: {}
+  services: {}

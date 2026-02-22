@@ -1,0 +1,173 @@
+{{ define "telegram.default.message" }}
+{{- if gt (len .Alerts.Firing) 0 -}}
+🔔 <b>ALERT</b> ({{ .Alerts.Firing | len }} firing)
+{{- else -}}
+✅ <b>RESOLVED</b>
+{{- end }}
+
+{{- range .Alerts.Firing }}
+
+<b>{{ .Labels.alertname }}</b>
+Severity: {{ .Labels.severity | toUpper }}
+Service: {{ .Labels.service }}
+{{- if .Labels.instance }}
+Instance: {{ .Labels.instance }}
+{{- end }}
+
+{{ .Annotations.description }}
+
+<i>Started: {{ .StartsAt.Format "15:04:05 MST" }}</i>
+{{- end }}
+
+{{- range .Alerts.Resolved }}
+
+✅ <b>{{ .Labels.alertname }}</b> - RESOLVED
+Service: {{ .Labels.service }}
+
+<i>Duration: {{ (.EndsAt.Sub .StartsAt).Round (time.Second) }}</i>
+{{- end }}
+
+{{ if .ExternalURL }}
+<a href="{{ .ExternalURL }}">View in Grafana</a>
+{{ end }}
+{{ end }}
+
+{{ define "telegram.critical.message" }}
+🚨 <b>CRITICAL ALERT</b> 🚨
+
+{{- range .Alerts.Firing }}
+
+<b>{{ .Labels.alertname }}</b>
+🔥 Severity: <b>CRITICAL</b>
+📦 Service: {{ .Labels.service }}
+{{- if .Labels.instance }}
+🖥 Instance: {{ .Labels.instance }}
+{{- end }}
+
+⚠️ <b>{{ .Annotations.summary }}</b>
+
+{{ .Annotations.description }}
+
+{{- if .Annotations.runbook_url }}
+📖 Runbook: {{ .Annotations.runbook_url }}
+{{- end }}
+
+⏰ Started: {{ .StartsAt.Format "15:04:05 MST" }}
+{{- end }}
+
+{{ if .ExternalURL }}
+<a href="{{ .ExternalURL }}">🔗 View in Grafana</a>
+{{ end }}
+
+<b>⚡ IMMEDIATE ACTION REQUIRED</b>
+{{ end }}
+
+{{ define "telegram.warning.message" }}
+⚠️ <b>WARNING</b>
+
+{{- range .Alerts.Firing }}
+
+<b>{{ .Labels.alertname }}</b>
+Severity: {{ .Labels.severity | toUpper }}
+Service: {{ .Labels.service }}
+{{- if .Labels.instance }}
+Instance: {{ .Labels.instance }}
+{{- end }}
+
+{{ .Annotations.description }}
+
+Started: {{ .StartsAt.Format "15:04:05" }}
+{{- end }}
+
+{{ if .ExternalURL }}
+<a href="{{ .ExternalURL }}">View Details</a>
+{{ end }}
+{{ end }}
+
+{{ define "telegram.orion.message" }}
+🌌 <b>ORION Core Alert</b>
+
+{{- range .Alerts.Firing }}
+
+<b>{{ .Labels.alertname }}</b>
+Severity: {{ .Labels.severity | toUpper }}
+
+{{ .Annotations.description }}
+
+{{- if .Annotations.current_value }}
+Current Value: {{ .Annotations.current_value }}
+{{- end }}
+{{- if .Annotations.threshold }}
+Threshold: {{ .Annotations.threshold }}
+{{- end }}
+
+Started: {{ .StartsAt.Format "15:04:05 MST" }}
+{{- end }}
+
+{{ if .ExternalURL }}
+<a href="{{ .ExternalURL }}">📊 View Metrics</a>
+{{ end }}
+{{ end }}
+
+{{ define "telegram.gpu.message" }}
+🎮 <b>GPU Alert</b>
+
+{{- range .Alerts.Firing }}
+
+<b>{{ .Labels.alertname }}</b>
+Severity: {{ .Labels.severity | toUpper }}
+
+{{ .Annotations.description }}
+
+{{- if .Annotations.gpu_temp }}
+🌡 Temperature: {{ .Annotations.gpu_temp }}°C
+{{- end }}
+{{- if .Annotations.gpu_usage }}
+📊 Usage: {{ .Annotations.gpu_usage }}%
+{{- end }}
+{{- if .Annotations.gpu_memory }}
+💾 Memory: {{ .Annotations.gpu_memory }}
+{{- end }}
+
+⏰ Started: {{ .StartsAt.Format "15:04:05 MST" }}
+{{- end }}
+
+<b>Recommended Actions:</b>
+• Check GPU cooling
+• Monitor workload
+• Review vLLM logs
+
+{{ if .ExternalURL }}
+<a href="{{ .ExternalURL }}">View Dashboard</a>
+{{ end }}
+{{ end }}
+
+{{ define "telegram.database.message" }}
+📚 <b>Database Alert</b>
+
+{{- range .Alerts.Firing }}
+
+<b>{{ .Labels.alertname }}</b>
+Database: Qdrant Vector Store
+Severity: {{ .Labels.severity | toUpper }}
+
+{{ .Annotations.description }}
+
+{{- if .Annotations.collection }}
+Collection: {{ .Annotations.collection }}
+{{- end }}
+{{- if .Annotations.vector_count }}
+Vectors: {{ .Annotations.vector_count }}
+{{- end }}
+
+Started: {{ .StartsAt.Format "15:04:05 MST" }}
+{{- end }}
+
+<b>Impact:</b>
+• RAG queries may fail
+• Knowledge base unavailable
+
+{{ if .ExternalURL }}
+<a href="{{ .ExternalURL }}">View Metrics</a>
+{{ end }}
+{{ end }}

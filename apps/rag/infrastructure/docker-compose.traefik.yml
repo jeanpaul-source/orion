@@ -1,0 +1,485 @@
+# ORION Infrastructure with Traefik Reverse Proxy
+# Phase 1: Production-Lite Setup
+#
+# This extends the base docker-compose.yml with Traefik reverse proxy
+# All services are accessible via: https://orion.lab/<service>
+
+services:
+  # -- Traefik Reverse Proxy --
+  traefik:
+    image: traefik:v3.2
+    container_name: orion-traefik
+    restart: unless-stopped
+
+    ports:
+      # HTTP (redirects to HTTPS)
+      - "80:80"
+      # HTTPS (main entry point)
+      - "443:443"
+      # Dashboard (LAN only)
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      # Configuration
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+
+      # Certificates
+      - ./traefik/certs:/etc/traefik/certs:ro
+      - ./traefik/acme:/etc/traefik/acme
+
+      # Logs
+      - /mnt/nvme2/orion-project/logs/traefik:/var/log/traefik
+
+      # Docker socket (for auto-discovery)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    environment:
+      - TZ=America/New_York
+
+    labels:
+      # Enable Traefik for itself
+      - "traefik.enable=true"
+
+      # Dashboard router
+      - "traefik.http.routers.dashboard.rule=Host(`orion.lab`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=lan-only,dashboard-auth"
+
+    networks:
+      - orion-net
+
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # -- Qdrant Vector Database --
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    container_name: orion-qdrant
+    restart: unless-stopped
+
+    ports:
+      # Keep localhost binding for legacy compatibility
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+
+    volumes:
+      - /mnt/nvme2/orion-project/services/qdrant:/qdrant/storage
+
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    networks:
+      - orion-net
+
+    labels:
+      # Traefik routing (internal API - LAN only)
+      - "traefik.enable=true"
+      - "traefik.http.routers.qdrant.rule=Host(`orion.lab`) && PathPrefix(`/qdrant`)"
+      - "traefik.http.routers.qdrant.entrypoints=websecure"
+      - "traefik.http.routers.qdrant.tls=true"
+      - "traefik.http.routers.qdrant.middlewares=lan-only,security-headers"
+      - "traefik.http.services.qdrant.loadbalancer.server.port=6333"
+
+  # -- vLLM Inference Server --
+  vllm:
+    image: vllm/vllm-openai:v0.6.3
+    container_name: orion-vllm
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      - /mnt/nvme1/orion-data/models:/root/.cache/huggingface
+
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+    command: >
+      --model Qwen/Qwen2.5-14B-Instruct-AWQ
+      --quantization awq
+      --dtype auto
+      --gpu-memory-utilization 0.85
+      --max-model-len 8192
+      --tensor-parallel-size 1
+      --trust-remote-code
+      --api-key ${VLLM_API_KEY}
+
+    deploy:
+      resources:
+        limits:
+          cpus: '12'
+          memory: 20G
+        reservations:
+          cpus: '6'
+          memory: 10G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    networks:
+      - orion-net
+
+    depends_on:
+      - qdrant
+
+    labels:
+      # Traefik routing (internal API - LAN only)
+      - "traefik.enable=true"
+      - "traefik.http.routers.vllm.rule=Host(`orion.lab`) && PathPrefix(`/vllm`)"
+      - "traefik.http.routers.vllm.entrypoints=websecure"
+      - "traefik.http.routers.vllm.tls=true"
+      - "traefik.http.routers.vllm.middlewares=lan-only,security-headers"
+      - "traefik.http.services.vllm.loadbalancer.server.port=8000"
+
+  # -- AnythingLLM - RAG UI --
+  anythingllm:
+    image: mintplexlabs/anythingllm:1.8.3
+    container_name: orion-anythingllm
+    restart: unless-stopped
+
+    # No direct port exposure - accessed via Traefik
+    expose:
+      - "3001"
+
+    volumes:
+      - /mnt/nvme2/orion-project/services/anythingllm:/app/server/storage
+      - /mnt/nvme1/orion-data/documents:/documents:ro
+      - /mnt/nvme2/orion-project/services/anythingllm-cache:/app/.npm
+      - /mnt/nvme2/orion-project/services/anythingllm-collector:/collector
+
+    environment:
+      - STORAGE_DIR=/app/storage
+      - LLM_PROVIDER=generic-openai
+      - GENERIC_OPEN_AI_BASE_PATH=http://vllm:8000/v1
+      - GENERIC_OPEN_AI_MODEL_PREF=Qwen/Qwen2.5-14B-Instruct-AWQ
+      - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=8192
+      - GENERIC_OPEN_AI_API_KEY=${VLLM_API_KEY}
+      - VECTOR_DB=qdrant
+      - QDRANT_ENDPOINT=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - EMBEDDING_ENGINE=native
+      - EMBEDDING_MODEL_PREF=Xenova/nomic-embed-text-v1
+      - EMBEDDING_MODEL_MAX_CHUNK_LENGTH=8192
+      - AUTH_TOKEN=${ANYTHINGLLM_AUTH_TOKEN}
+      - SERVER_PORT=3001
+      - DISABLE_TELEMETRY=true
+
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 16G
+        reservations:
+          cpus: '4'
+          memory: 8G
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/system/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+
+    networks:
+      - orion-net
+
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+
+    labels:
+      # Traefik routing
+      - "traefik.enable=true"
+      - "traefik.http.routers.anythingllm.rule=Host(`orion.lab`) && PathPrefix(`/knowledge`)"
+      - "traefik.http.routers.anythingllm.entrypoints=websecure"
+      - "traefik.http.routers.anythingllm.tls=true"
+      - "traefik.http.routers.anythingllm.middlewares=security-headers,compression"
+      - "traefik.http.services.anythingllm.loadbalancer.server.port=3001"
+
+  # -- n8n Workflow Automation --
+  n8n:
+    image: n8nio/n8n:1.115.0
+    container_name: orion-n8n
+    restart: unless-stopped
+
+    # No direct port exposure
+    expose:
+      - "5678"
+
+    volumes:
+      - /mnt/nvme2/orion-project/services/n8n:/home/node/.n8n
+      - /mnt/nvme2/orion-project/logs:/mnt/nvme2/orion-project/logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/nvme1:/mnt/nvme1:ro
+      - /mnt/nvme2:/mnt/nvme2
+
+    user: "1000:1000"
+
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - N8N_PATH=/workflows
+      - WEBHOOK_URL=https://orion.lab/workflows
+      - GENERIC_TIMEZONE=America/New_York
+      - N8N_LOG_LEVEL=info
+      - N8N_SECURE_COOKIE=true
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_ADMIN_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_ADMIN_PASSWORD}
+      - N8N_USER_MANAGEMENT_DISABLED=false
+      - N8N_OWNER_EMAIL=${N8N_OWNER_EMAIL:-admin@localhost}
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - EXECUTIONS_MODE=regular
+      - N8N_RUNNERS_ENABLED=false
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 2G
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+    networks:
+      - orion-net
+
+    labels:
+      # Traefik routing
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`orion.lab`) && PathPrefix(`/workflows`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls=true"
+      - "traefik.http.routers.n8n.middlewares=security-headers,compression"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+
+  # -- ORION Core --
+  orion-core:
+    image: orion-core:latest
+    container_name: orion-core
+    restart: unless-stopped
+
+    # No direct port exposure
+    expose:
+      - "5000"
+
+    environment:
+      - ORION_ENVIRONMENT=production
+      - ORION_LOG_LEVEL=INFO
+      - ORION_VLLM_URL=http://vllm:8000
+      - ORION_QDRANT_URL=http://qdrant:6333
+      - ORION_ANYTHINGLLM_URL=http://anythingllm:3001
+      - ORION_OLLAMA_URL=http://host.docker.internal:11434
+      - ORION_N8N_URL=http://n8n:5678
+      - ORION_ANYTHINGLLM_API_KEY=${ANYTHINGLLM_API_KEY}
+      - ORION_ENABLE_KNOWLEDGE=true
+      - ORION_ENABLE_ACTION=true
+      - ORION_ENABLE_LEARNING=true
+      - ORION_ENABLE_WATCH=true
+
+    volumes:
+      - /mnt/nvme1/orion-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    depends_on:
+      vllm:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      anythingllm:
+        condition: service_healthy
+
+    networks:
+      - orion-net
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    labels:
+      # Traefik routing - Main portal
+      - "traefik.enable=true"
+
+      # Main web interface (root path)
+      - "traefik.http.routers.orion-web.rule=Host(`orion.lab`) && PathPrefix(`/`)"
+      - "traefik.http.routers.orion-web.entrypoints=websecure"
+      - "traefik.http.routers.orion-web.tls=true"
+      - "traefik.http.routers.orion-web.middlewares=security-headers,compression"
+      - "traefik.http.routers.orion-web.priority=1"
+
+      # API endpoint
+      - "traefik.http.routers.orion-api.rule=Host(`orion.lab`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.orion-api.entrypoints=websecure"
+      - "traefik.http.routers.orion-api.tls=true"
+      - "traefik.http.routers.orion-api.middlewares=security-headers,cors-headers,rate-limit"
+      - "traefik.http.routers.orion-api.priority=10"
+
+      - "traefik.http.services.orion-core.loadbalancer.server.port=5000"
+
+  # -- Prometheus (Metrics) --
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: orion-prometheus
+    restart: unless-stopped
+
+    expose:
+      - "9090"
+
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /mnt/nvme2/orion-project/services/prometheus:/prometheus
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+
+    networks:
+      - orion-net
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`orion.lab`) && PathPrefix(`/prometheus`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.routers.prometheus.middlewares=lan-only,security-headers"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  # -- Grafana (Dashboards) --
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: orion-grafana
+    restart: unless-stopped
+
+    expose:
+      - "3000"
+
+    volumes:
+      - /mnt/nvme2/orion-project/services/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+    environment:
+      - GF_SERVER_ROOT_URL=https://orion.lab/metrics
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_INSTALL_PLUGINS=redis-datasource
+
+    networks:
+      - orion-net
+
+    depends_on:
+      - prometheus
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`orion.lab`) && PathPrefix(`/metrics`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.middlewares=security-headers,compression"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+networks:
+  orion-net:
+    driver: bridge
+    name: orion-net

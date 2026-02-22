@@ -1,0 +1,268 @@
+{{ define "email.critical.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+            color: white;
+            padding: 30px 20px;
+            border-radius: 8px 8px 0 0;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .header .icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .content {
+            background: #ffffff;
+            border: 2px solid #dc2626;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            padding: 20px;
+        }
+        .alert-box {
+            background: #fef2f2;
+            border-left: 4px solid #dc2626;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        .alert-box h2 {
+            margin: 0 0 10px 0;
+            color: #991b1b;
+            font-size: 18px;
+        }
+        .meta {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 8px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .meta-label {
+            font-weight: 600;
+            color: #666;
+        }
+        .meta-value {
+            color: #333;
+        }
+        .description {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .severity {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .severity-critical {
+            background: #dc2626;
+            color: white;
+        }
+        .action-required {
+            background: #fff7ed;
+            border: 2px solid #ea580c;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .action-required h3 {
+            margin: 0 0 10px 0;
+            color: #ea580c;
+        }
+        .button {
+            display: inline-block;
+            background: #2563eb;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-weight: 600;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .footer a {
+            color: #2563eb;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="icon">🚨</div>
+        <h1>CRITICAL ALERT</h1>
+        <p>ORION Homelab - Immediate Action Required</p>
+    </div>
+
+    <div class="content">
+        {{- range .Alerts.Firing }}
+        <div class="alert-box">
+            <h2>{{ .Labels.alertname }}</h2>
+
+            <div class="meta">
+                <div class="meta-label">Severity:</div>
+                <div class="meta-value">
+                    <span class="severity severity-{{ .Labels.severity }}">{{ .Labels.severity | toUpper }}</span>
+                </div>
+
+                <div class="meta-label">Service:</div>
+                <div class="meta-value">{{ .Labels.service }}</div>
+
+                {{- if .Labels.instance }}
+                <div class="meta-label">Instance:</div>
+                <div class="meta-value">{{ .Labels.instance }}</div>
+                {{- end }}
+
+                <div class="meta-label">Started:</div>
+                <div class="meta-value">{{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</div>
+
+                {{- if .Labels.job }}
+                <div class="meta-label">Job:</div>
+                <div class="meta-value">{{ .Labels.job }}</div>
+                {{- end }}
+            </div>
+
+            {{- if .Annotations.summary }}
+            <div style="margin: 15px 0;">
+                <strong>Summary:</strong><br>
+                {{ .Annotations.summary }}
+            </div>
+            {{- end }}
+
+            {{- if .Annotations.description }}
+            <div class="description">
+                {{ .Annotations.description }}
+            </div>
+            {{- end }}
+
+            {{- if .Annotations.current_value }}
+            <div style="margin: 10px 0;">
+                <strong>Current Value:</strong> {{ .Annotations.current_value }}
+            </div>
+            {{- end }}
+
+            {{- if .Annotations.threshold }}
+            <div style="margin: 10px 0;">
+                <strong>Threshold:</strong> {{ .Annotations.threshold }}
+            </div>
+            {{- end }}
+
+            {{- if .Annotations.runbook_url }}
+            <div style="margin: 15px 0;">
+                📖 <a href="{{ .Annotations.runbook_url }}" class="button">View Runbook</a>
+            </div>
+            {{- end }}
+        </div>
+        {{- end }}
+
+        <div class="action-required">
+            <h3>⚡ Immediate Action Required</h3>
+            <p>This is a critical alert that requires your immediate attention. Please:</p>
+            <ol>
+                <li>Check the service status in Grafana</li>
+                <li>Review logs for error messages</li>
+                <li>Follow the runbook if available</li>
+                <li>Escalate if you cannot resolve</li>
+            </ol>
+        </div>
+
+        {{ if .ExternalURL }}
+        <div style="text-align: center; margin: 20px 0;">
+            <a href="{{ .ExternalURL }}" class="button">View in Grafana Dashboard</a>
+        </div>
+        {{ end }}
+    </div>
+
+    <div class="footer">
+        <p>
+            This alert was sent by ORION Homelab AlertManager<br>
+            <a href="https://orion.lab">Dashboard</a> |
+            <a href="https://orion.lab/metrics">Metrics</a> |
+            <a href="https://orion.lab/docs">Documentation</a>
+        </p>
+    </div>
+</body>
+</html>
+{{ end }}
+
+{{ define "email.warning.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px 8px 0 0;
+            text-align: center;
+        }
+        .content {
+            background: #ffffff;
+            border: 1px solid #ea580c;
+            border-top: none;
+            padding: 20px;
+            border-radius: 0 0 8px 8px;
+        }
+        .alert-item {
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚠️ Warning Alert</h1>
+    </div>
+    <div class="content">
+        {{- range .Alerts.Firing }}
+        <div class="alert-item">
+            <h3>{{ .Labels.alertname }}</h3>
+            <p>{{ .Annotations.description }}</p>
+            <small>Service: {{ .Labels.service }} | Started: {{ .StartsAt.Format "15:04 MST" }}</small>
+        </div>
+        {{- end }}
+    </div>
+</body>
+</html>
+{{ end }}

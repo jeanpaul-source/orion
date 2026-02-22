@@ -1,0 +1,6 @@
+# Development dependencies for MC/DC testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+pytest-html>=4.0.0
+coverage[toml]>=7.3.0

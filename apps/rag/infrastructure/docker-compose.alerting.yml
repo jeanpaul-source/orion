@@ -1,0 +1,147 @@
+# Docker Compose Overlay for Phase 5: Grafana AlertManager
+#
+# This overlay adds comprehensive monitoring and alerting:
+# - Node Exporter (system metrics)
+# - cAdvisor (container metrics)
+# - NVIDIA GPU Exporter (GPU metrics)
+# - Updated Grafana with AlertManager
+# - Updated Prometheus with alert rules
+#
+# Usage:
+#   docker compose -f docker-compose.traefik.yml \
+#                  -f docker-compose.authelia.yml \
+#                  -f docker-compose.alerting.yml \
+#                  up -d
+
+services:
+  # ===========================================================================
+  # MONITORING EXPORTERS
+  # ===========================================================================
+
+  # Node Exporter - System metrics (CPU, memory, disk, network)
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: orion-node-exporter
+    restart: unless-stopped
+
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.textfile.directory=/var/lib/node_exporter/textfile_collector'
+
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+
+    expose:
+      - "9100"
+
+    networks:
+      - orion-net
+
+    labels:
+      - "traefik.enable=false"
+
+  # cAdvisor - Container metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: orion-cadvisor
+    restart: unless-stopped
+
+    privileged: true
+
+    devices:
+      - /dev/kmsg
+
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /mnt/nvme1/orion-data/docker/:/var/lib/docker:ro  # Migrated Docker data location
+      - /dev/disk/:/dev/disk:ro
+
+    expose:
+      - "8080"
+
+    networks:
+      - orion-net
+
+    command:
+      - '--housekeeping_interval=30s'
+      - '--docker_only=true'
+      - '--disable_metrics=percpu,sched,tcp,udp,diskIO,disk,network'
+      - '--store_container_labels=false'
+
+    labels:
+      - "traefik.enable=false"
+
+  # NVIDIA GPU Exporter - GPU metrics
+  nvidia-gpu-exporter:
+    image: utkuozdemir/nvidia_gpu_exporter:1.2.1
+    container_name: orion-nvidia-exporter
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, utility]
+
+    expose:
+      - "9835"
+
+    networks:
+      - orion-net
+
+    environment:
+      - NVIDIA_DISABLE_REQUIRE=1
+
+    labels:
+      - "traefik.enable=false"
+
+  # ===========================================================================
+  # UPDATED SERVICES (WITH ALERTING)
+  # ===========================================================================
+
+  # Prometheus - Update to include alert rules and node/cadvisor/gpu targets
+  prometheus:
+    volumes:
+      # Add alert rules
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+
+  # Grafana - Update to include AlertManager provisioning
+  grafana:
+    volumes:
+      # Add AlertManager provisioning
+      - ./grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
+      - ./grafana/alerting/templates:/etc/grafana/alerting/templates:ro
+
+    environment:
+      # AlertManager configuration
+      - GF_ALERTING_ENABLED=true
+      - GF_UNIFIED_ALERTING_ENABLED=true
+
+      # Telegram bot token for alerts (from .env)
+      - GRAFANA_TELEGRAM_BOT_TOKEN=${GRAFANA_TELEGRAM_BOT_TOKEN}
+      - GRAFANA_TELEGRAM_CHAT_ID=${GRAFANA_TELEGRAM_CHAT_ID}
+
+      # Email alerting (optional)
+      - ALERT_EMAIL_TO=${ALERT_EMAIL_TO:-admin@orion.lab}
+      - ALERT_EMAIL_FROM=${ALERT_EMAIL_FROM:-alerts@orion.lab}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+
+      # AlertManager settings
+      - GF_ALERTING_MAX_ATTEMPTS=3
+      - GF_ALERTING_MIN_INTERVAL_SECONDS=10
+
+networks:
+  orion-net:
+    external: true

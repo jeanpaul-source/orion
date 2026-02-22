@@ -1,0 +1,55 @@
+# Prometheus Alert Rules for ORION
+
+groups:
+  - name: orion_alerts
+    interval: 30s
+    rules:
+      # Service down alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.service }} is down"
+          description: "{{ $labels.service }} on {{ $labels.instance }} has been down for more than 2 minutes."
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 90% for more than 5 minutes."
+
+      # High disk usage
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage on {{ $labels.mountpoint }}"
+          description: "Disk usage on {{ $labels.mountpoint }} is above 85%."
+
+      # vLLM performance
+      - alert: vLLMSlowInference
+        expr: rate(vllm_request_duration_seconds_sum[5m]) / rate(vllm_request_duration_seconds_count[5m]) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM inference is slow"
+          description: "Average inference time is above 30 seconds."
+
+      # Qdrant query performance
+      - alert: QdrantSlowQueries
+        expr: rate(qdrant_query_duration_seconds_sum[5m]) / rate(qdrant_query_duration_seconds_count[5m]) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Qdrant queries are slow"
+          description: "Average query time is above 5 seconds."

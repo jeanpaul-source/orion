@@ -1,0 +1,87 @@
+# ORION Harvester - Git Ignore File
+
+# Generated Data (PDFs and runtime files)
+data/library/
+data/harvester.log
+data/.embeddings_cache.json
+data/library_metadata.json
+data/processing.log
+
+# Processed Data (AI-ready formats)
+# Note: Consider tracking samples for validation, ignore bulk processed data
+data/processed/markdown/
+data/processed/text/
+data/processed/structured/
+
+# Qdrant Vector Database Storage
+data/qdrant_storage/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+.mypy_cache/
+.ruff_cache/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*backup*
+.*.swp
+archive/
+
+# Harvest & Processing Logs
+harvest_*.log
+embedding_run_*.log
+*.pid
+
+# Embedding & Validation Reports
+# Keep template reports, ignore timestamped runs
+reports/embedding_rechunk_report_*.json
+reports/sandbox_validation_*.json
+
+# Temporary Collections (from sandbox validation)
+# These are cleaned up after testing
+temp_collection_*.json
+
+# Optional: Comment out if you want to track test outputs
+test_*.csv
+test_*.json
+
+# General logs (keep centralized in logs/ or data/)
+*.log
+setup_bulk_harvest.sh
+API Keys.txt
+
+# Secrets directory (never commit sensitive files)
+config/secrets/
+config/secrets/*
