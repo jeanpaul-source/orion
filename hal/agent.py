@@ -361,6 +361,13 @@ def run_agent(
 
             console.print(f"\n  [dim cyan]→ {name}({_fmt_args(raw_args)})[/]")
             result = _dispatch(name, raw_args, executor, judge, kb, prom)
+
+            # Cap tool output to protect the context window
+            _MAX_TOOL_OUTPUT = 8000
+            if len(result) > _MAX_TOOL_OUTPUT:
+                omitted = len(result) - _MAX_TOOL_OUTPUT
+                result = result[:_MAX_TOOL_OUTPUT] + f"\n[…{omitted} chars omitted]"
+
             preview = textwrap.shorten(result, width=140, placeholder="…")
             console.print(f"  [dim]↳ {preview}[/]")
 
