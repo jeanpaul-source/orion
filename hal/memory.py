@@ -94,6 +94,18 @@ class MemoryStore:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def search_sessions(self, query: str, n: int = 20) -> list[dict]:
+        """Full-text search across all sessions. Returns matching turns, newest first."""
+        rows = self.conn.execute(
+            """SELECT t.session_id, t.role, t.content, t.timestamp
+               FROM turns t
+               WHERE t.content LIKE ?
+               ORDER BY t.timestamp DESC
+               LIMIT ?""",
+            (f"%{query}%", n),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def session_exists(self, session_id: str) -> bool:
         row = self.conn.execute(
             "SELECT id FROM sessions WHERE id = ?", (session_id,)

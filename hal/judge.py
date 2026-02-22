@@ -1,8 +1,14 @@
 """Judge — policy gate for all HAL actions. Every action goes through here."""
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
+
+if TYPE_CHECKING:
+    from hal.llm import OllamaClient
 
 AUDIT_LOG = Path.home() / ".orion" / "audit.log"
 
@@ -126,9 +132,35 @@ def tier_for(action_type: str, detail: str = "") -> int:
 class Judge:
     """Policy gate: classify → prompt if needed → log every decision."""
 
-    def __init__(self, audit_log: Path = AUDIT_LOG):
+    def __init__(
+        self,
+        audit_log: Path = AUDIT_LOG,
+        ollama: OllamaClient | None = None,
+    ):
         self.audit_log = audit_log
+        self.ollama = ollama
         self.audit_log.parent.mkdir(parents=True, exist_ok=True)
+
+    def _llm_reason(self, action_type: str, detail: str, reason: str) -> str | None:
+        """Ask the LLM for a one-sentence risk assessment. Returns None on failure."""
+        if not self.ollama:
+            return None
+        try:
+            return self.ollama.chat(
+                [{"role": "user", "content": (
+                    f"Action type: {action_type}\n"
+                    f"Detail: {detail[:300]}\n"
+                    f"Reason: {reason or 'not stated'}\n\n"
+                    "In one sentence: is this routine/safe or does it carry risk?"
+                )}],
+                system=(
+                    "You are a security evaluator for a homelab automation system. "
+                    "Be brief and specific about any risks. No preamble."
+                ),
+                timeout=15,
+            ).strip()
+        except Exception:
+            return None
 
     def approve(
         self,
@@ -159,6 +191,9 @@ class Judge:
             console.print(f"  reason : {reason}")
         display = detail if len(detail) <= 120 else detail[:120] + "..."
         console.print(f"  detail : {display}")
+        llm_note = self._llm_reason(action_type, detail, reason)
+        if llm_note:
+            console.print(f"  [dim]llm eval: {llm_note}[/]")
 
         if tier >= 3:
             console.print("  [red bold]WARNING: destructive — cannot be undone.[/]")

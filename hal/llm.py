@@ -44,12 +44,14 @@ class OllamaClient:
         r.raise_for_status()
         return r.json()["message"]
 
-    def chat(self, messages: list[dict], system: str | None = None) -> str:
+    def chat(
+        self, messages: list[dict], system: str | None = None, timeout: int = 120
+    ) -> str:
         """Non-streaming chat — returns full response string."""
         payload = {"model": self.model, "messages": messages, "stream": False}
         if system:
             payload["system"] = system
-        r = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=120)
+        r = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=timeout)
         r.raise_for_status()
         return r.json()["message"]["content"]
 

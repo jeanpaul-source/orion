@@ -13,6 +13,7 @@ class Config:
     lab_host: str
     lab_user: str
     use_ssh_tunnel: bool
+    ntfy_url: str  # e.g. https://ntfy.sh/your-topic — empty string disables alerts
 
 
 def load() -> Config:
@@ -29,4 +30,5 @@ def load() -> Config:
         lab_host=os.getenv("LAB_HOST", "192.168.5.10"),
         lab_user=os.getenv("LAB_USER", "jp"),
         use_ssh_tunnel=os.getenv("USE_SSH_TUNNEL", "false").lower() == "true",
+        ntfy_url=os.getenv("NTFY_URL", ""),
     )

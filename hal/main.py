@@ -53,6 +53,7 @@ Commands:
   /audit           — show recent audit log
   /kb              — list knowledge base categories
   /remember <fact> — store a fact permanently in the knowledge base
+  /search_memory <q> — search past sessions for a keyword
   /sessions        — list recent sessions
   /resume <id>     — resume a past session
   /new             — start a fresh session
@@ -227,6 +228,25 @@ def cmd_kb(kb: KnowledgeBase) -> None:
         console.print(f"[red]KB unavailable: {e}[/]")
 
 
+def cmd_search_memory(query: str, mem: MemoryStore) -> None:
+    if not query:
+        console.print("[yellow]Usage: /search_memory <query>[/]")
+        return
+    results = mem.search_sessions(query)
+    if not results:
+        console.print("[dim]no matches found[/]")
+        return
+    prev_sid = None
+    for r in results:
+        if r["session_id"] != prev_sid:
+            console.print(f"\n  [bold dim]session {r['session_id']}[/]")
+            prev_sid = r["session_id"]
+        role_color = "cyan" if r["role"] == "assistant" else "white"
+        ts = r["timestamp"][:16].replace("T", " ")
+        preview = r["content"][:180].replace("\n", " ")
+        console.print(f"    [{role_color}]{r['role']:<10}[/] [dim]{ts}[/]  {preview}")
+
+
 def cmd_sessions(mem: MemoryStore) -> None:
     sessions = mem.list_sessions(10)
     if not sessions:
@@ -284,7 +304,7 @@ def main() -> None:
     kb = KnowledgeBase(config.pgvector_dsn, ollama)
     prom = PrometheusClient(config.prometheus_url)
     executor = SSHExecutor(config.lab_host, config.lab_user)
-    judge = Judge()
+    judge = Judge(ollama=ollama)
     mem = MemoryStore()
 
     # Resume last session or start fresh
@@ -341,6 +361,8 @@ def main() -> None:
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):
                 cmd_remember(user_input[10:].strip(), config.pgvector_dsn, ollama)
+            elif user_input.startswith("/search_memory "):
+                cmd_search_memory(user_input[15:].strip(), mem)
             elif user_input == "/sessions":
                 cmd_sessions(mem)
             elif user_input.startswith("/resume "):

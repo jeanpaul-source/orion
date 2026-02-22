@@ -41,9 +41,13 @@ class PrometheusClient:
             '/ node_filesystem_size_bytes{mountpoint="/"}) * 100'
         )
         load = self.scalar("node_load1")
+        swap = self.scalar(
+            "(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) * 100"
+        )
         return {
             "cpu_pct": round(cpu, 1) if cpu is not None else None,
             "mem_pct": round(mem, 1) if mem is not None else None,
             "disk_root_pct": round(disk_root, 1) if disk_root is not None else None,
+            "swap_pct": round(swap, 1) if swap is not None else None,
             "load1": round(load, 2) if load is not None else None,
         }
