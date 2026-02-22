@@ -48,7 +48,9 @@ Do not hallucinate service names, ports, or config values — verify against con
 
 Only call tools when you need live data or specific information not already in your context. \
 For greetings, conversational messages, or questions you can answer from context, \
-respond directly with text — do not call tools.
+respond directly with text — do not call tools. \
+Once you have gathered the information you need, respond with a plain text answer — \
+never call the same tool twice or keep requesting data after you already have the answer.
 """
 
 HELP_TEXT = """\

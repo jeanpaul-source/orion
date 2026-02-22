@@ -227,8 +227,10 @@ def run_agent(
 
     for iteration in range(MAX_ITERATIONS):
         label = f" (step {iteration + 1})" if iteration > 0 else ""
+        # On the final iteration, strip tools to force a text-only response
+        effective_tools = TOOLS if iteration < MAX_ITERATIONS - 1 else []
         with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
-            msg = ollama.chat_with_tools(working, TOOLS, system=system)
+            msg = ollama.chat_with_tools(working, effective_tools, system=system)
 
         working.append(msg)
         tool_calls = msg.get("tool_calls") or []
@@ -265,6 +267,7 @@ def run_agent(
             break
 
         # Execute each tool call and feed results back
+        new_calls = 0
         for tc in tool_calls:
             fn = tc.get("function", {})
             name = fn.get("name", "")
@@ -282,6 +285,7 @@ def run_agent(
             if call_key in seen_calls:
                 working.append({"role": "tool", "content": "[Already called — use the result above.]"})
                 continue
+            new_calls += 1
             seen_calls.add(call_key)
 
             console.print(f"\n  [dim cyan]→ {name}({_fmt_args(raw_args)})[/]")
@@ -290,6 +294,18 @@ def run_agent(
             console.print(f"  [dim]↳ {preview}[/]")
 
             working.append({"role": "tool", "content": result})
+
+        # If every call this iteration was a duplicate, the model is looping.
+        # Inject a directive to stop collecting data and respond in plain text.
+        if new_calls == 0:
+            working.append({
+                "role": "user",
+                "content": (
+                    "You already have all the data you need. "
+                    "Please provide your final answer now as plain text, "
+                    "without calling any more tools."
+                ),
+            })
 
     else:
         response_text = "Reached max iterations without a final answer."
