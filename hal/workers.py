@@ -5,9 +5,9 @@ from hal.executor import SSHExecutor
 from hal.judge import Judge
 
 
-def read_file(path: str, executor: SSHExecutor, judge: Judge) -> str | None:
+def read_file(path: str, executor: SSHExecutor, judge: Judge, reason: str = "") -> str | None:
     """Read a file from the server. Returns content string or None."""
-    if not judge.approve("read_file", path):
+    if not judge.approve("read_file", path, reason=reason):
         return None
     result = executor.run(f"cat {shlex.quote(path)}")
     if result["returncode"] != 0:
@@ -15,9 +15,9 @@ def read_file(path: str, executor: SSHExecutor, judge: Judge) -> str | None:
     return result["stdout"]
 
 
-def list_dir(path: str, executor: SSHExecutor, judge: Judge) -> str | None:
+def list_dir(path: str, executor: SSHExecutor, judge: Judge, reason: str = "") -> str | None:
     """List a directory on the server. Returns ls output or None."""
-    if not judge.approve("list_dir", path):
+    if not judge.approve("list_dir", path, reason=reason):
         return None
     result = executor.run(f"ls -la {shlex.quote(path)}")
     if result["returncode"] != 0:

@@ -174,11 +174,11 @@ class Judge:
             tier = tier_for(action_type, detail)
 
         if tier == 0:
-            self._log(action_type, detail, tier, approved=True, auto=True)
+            self._log(action_type, detail, tier, approved=True, auto=True, reason=reason)
             return True
 
         approved = self._request_approval(action_type, detail, tier, reason)
-        self._log(action_type, detail, tier, approved=approved, auto=False)
+        self._log(action_type, detail, tier, approved=approved, auto=False, reason=reason)
         return approved
 
     def _request_approval(
@@ -216,10 +216,12 @@ class Judge:
         tier: int,
         approved: bool,
         auto: bool,
+        reason: str = "",
     ) -> None:
         ts = datetime.now().isoformat(timespec="seconds")
         status = "auto    " if auto else ("approved" if approved else "denied  ")
         log_detail = detail.replace("\n", " ")[:200]
-        entry = f"{ts} | tier={tier} | {status} | {action_type:<14} | {log_detail}\n"
+        reason_str = f" | {reason[:100]}" if reason else ""
+        entry = f"{ts} | tier={tier} | {status} | {action_type:<14} | {log_detail}{reason_str}\n"
         with open(self.audit_log, "a") as f:
             f.write(entry)

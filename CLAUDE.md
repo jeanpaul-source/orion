@@ -85,11 +85,22 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 | Path | What it is |
 |---|---|
-| `hal/` | HAL coordinator — REPL, LLM, knowledge, prometheus, SSH executor |
-| `harvest/` | Lab infrastructure harvester — collects real state into pgvector |
+| `hal/main.py` | REPL entry point; `/remember`, `/search_memory`, `/sessions` commands |
+| `hal/agent.py` | Agentic loop (MAX_ITERATIONS=8); tools with Reason Tokens; Judge gating |
+| `hal/judge.py` | Policy gate: tier 0-3, sensitive path blocklist, safe command allowlist, LLM risk eval, audit log |
+| `hal/workers.py` | `read_file`, `write_file`, `list_dir` — all gated through Judge |
+| `hal/executor.py` | Pure SSH runner |
+| `hal/memory.py` | SQLite session store (`~/.orion/memory.db`); `search_sessions()` full-text search |
+| `hal/facts.py` | `/remember` — embeds facts to pgvector as `category='memory'` |
+| `hal/watchdog.py` | Standalone monitoring watchdog (run via systemd timer) |
+| `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk/swap/load |
+| `hal/llm.py` | `OllamaClient`: `chat_with_tools()`, `chat()` |
+| `hal/knowledge.py` | pgvector KB search |
+| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`) |
+| `harvest/` | Lab infrastructure harvester — re-indexes lab state into pgvector |
 | `requirements.txt` | Python deps |
 | `.env.example` | Config template |
-| `ops/` | Keys and tokens — gitignored, on disk only |
+| `ops/` | Systemd units (`watchdog.service`, `watchdog.timer`) — gitignored |
 
 ---
 
@@ -126,14 +137,18 @@ Laptop (edit code)
 
 ## Where We Left Off
 
-**Done (Feb 21, 2026):**
-- Wiped experimental code (apps/, infra/)
-- Built minimal HAL: Ollama + pgvector + Prometheus + SSH executor + REPL
-- HAL lives on the server, runs via SSH (`hal` alias)
-- GitHub private repo + deploy key on server
-- Built lab infrastructure harvester (`harvest/`)
+**Done (as of Feb 22, 2026):**
 
-**Backlog (in order):**
-1. **Persistent memory** — SQLite session store + fact memory written back to pgvector
-2. **Proactive monitoring** — background watchdog on server, alerts via ntfy
-3. **Judge + Workers** — policy gate, audit log, multi-step action planning
+- Minimal HAL: Ollama + pgvector + Prometheus + SSH executor + REPL
+- Persistent memory: SQLite session store (`/remember`, `/search_memory`, `/sessions`)
+- Agentic loop: LLM calls tools autonomously, Judge gates everything, MAX_ITERATIONS=8
+- Judge: tier 0-3, sensitive path blocklist, safe command allowlist, LLM risk eval at approval prompts
+- Reason Tokens: tools declare `reason` field → logged in audit trail + shown at approval
+- Proactive monitoring watchdog: queries Prometheus, ntfy alerts, 30min cooldown per metric
+- Harvest: lab infrastructure state re-indexed into pgvector
+
+**Backlog:**
+
+- **Install watchdog on server**: add `NTFY_URL=https://ntfy.sh/your-topic` to `~/orion/.env`, then `sudo cp ~/orion/ops/watchdog.{service,timer} /etc/systemd/system/ && sudo systemctl enable --now watchdog.timer`
+- **`write_file` tool**: `workers.py` has it, but it's not in the agent's TOOLS list yet
+- **Security module**: network guard — planned, not started

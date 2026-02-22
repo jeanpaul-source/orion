@@ -29,7 +29,11 @@ TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "The shell command to run",
-                    }
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need to run this command",
+                    },
                 },
                 "required": ["command"],
             },
@@ -46,7 +50,11 @@ TOOLS = [
                     "path": {
                         "type": "string",
                         "description": "Absolute path to the file",
-                    }
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need to read this file",
+                    },
                 },
                 "required": ["path"],
             },
@@ -63,7 +71,11 @@ TOOLS = [
                     "path": {
                         "type": "string",
                         "description": "Absolute path to the directory",
-                    }
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need to list this directory",
+                    },
                 },
                 "required": ["path"],
             },
@@ -119,7 +131,8 @@ def _dispatch(
     """Route a tool call to the right worker. Returns a result string."""
     if name == "run_command":
         command = args.get("command", "")
-        if not judge.approve("run_command", command):
+        reason = args.get("reason", "")
+        if not judge.approve("run_command", command, reason=reason):
             return "Action denied by user."
         result = executor.run(command)
         parts = []
@@ -133,12 +146,14 @@ def _dispatch(
 
     elif name == "read_file":
         path = args.get("path", "")
-        content = read_file(path, executor, judge)
+        reason = args.get("reason", "")
+        content = read_file(path, executor, judge, reason=reason)
         return content if content is not None else f"Could not read {path}"
 
     elif name == "list_dir":
         path = args.get("path", "")
-        output = list_dir(path, executor, judge)
+        reason = args.get("reason", "")
+        output = list_dir(path, executor, judge, reason=reason)
         return output if output is not None else f"Could not list {path}"
 
     elif name == "search_kb":
