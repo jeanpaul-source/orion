@@ -22,10 +22,48 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_kb",
+            "description": (
+                "Search the homelab knowledge base for documentation, configs, "
+                "and infrastructure facts. ALWAYS call this first for questions about "
+                "ports, service configuration, file paths, or any documented fact. "
+                "Only run live commands if the KB doesn't have the answer."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_metrics",
+            "description": (
+                "Get live Prometheus metrics: CPU usage, memory, disk, "
+                "load average, uptime."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": (
-                "Run a shell command on the lab server (192.168.5.10). "
-                "Use for checking processes, service status, logs, disk usage, network, etc."
+                "Run a shell command on the lab server. "
+                "Use ONLY for live state: checking processes, service status, logs, "
+                "disk usage, network. Do NOT use for questions answerable from the KB."
             ),
             "parameters": {
                 "type": "object",
@@ -82,42 +120,6 @@ TOOLS = [
                     },
                 },
                 "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_kb",
-            "description": (
-                "Search the homelab knowledge base for documentation, configs, "
-                "and infrastructure facts. Use this before running commands when "
-                "you need to know how something is configured."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query",
-                    }
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_metrics",
-            "description": (
-                "Get live Prometheus metrics: CPU usage, memory, disk, "
-                "load average, uptime."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
             },
         },
     },
@@ -224,11 +226,13 @@ def run_agent(
 
     response_text = ""
     seen_calls: set[tuple] = set()  # (name, args_json) — detect repeat tool calls
+    total_calls = 0  # total unique tool calls dispatched this turn
 
     for iteration in range(MAX_ITERATIONS):
         label = f" (step {iteration + 1})" if iteration > 0 else ""
-        # On the final iteration, strip tools to force a text-only response
-        effective_tools = TOOLS if iteration < MAX_ITERATIONS - 1 else []
+        # If we've already dispatched 5 unique tool calls, stop collecting data
+        # and force a text-only response regardless of iteration count
+        effective_tools = TOOLS if (iteration < MAX_ITERATIONS - 1 and total_calls < 5) else []
         with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
             msg = ollama.chat_with_tools(working, effective_tools, system=system)
 
@@ -285,7 +289,6 @@ def run_agent(
             if call_key in seen_calls:
                 working.append({"role": "tool", "content": "[Already called — use the result above.]"})
                 continue
-            new_calls += 1
             seen_calls.add(call_key)
 
             console.print(f"\n  [dim cyan]→ {name}({_fmt_args(raw_args)})[/]")
@@ -294,6 +297,8 @@ def run_agent(
             console.print(f"  [dim]↳ {preview}[/]")
 
             working.append({"role": "tool", "content": result})
+            new_calls += 1
+            total_calls += 1
 
         # If every call this iteration was a duplicate, the model is looping.
         # Inject a directive to stop collecting data and respond in plain text.
