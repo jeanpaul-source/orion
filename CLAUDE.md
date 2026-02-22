@@ -205,5 +205,6 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 
 **Backlog:**
 
-- **NTP + harvest lag checks**: add to `watchdog.py` — alert if NTP unsynced or harvest >2h stale
-- **Security module**: network guard — planned, not started
+- **Run harvest on server**: `python -m harvest` — clears the current `harvest_lag` watchdog alert (timestamp file not yet written on server)
+- **Judge no-tools constraint**: `_llm_reason()` in `hal/judge.py` should tell the LLM "do not call tools or fetch external data" — prevents the risk evaluator from trying to use tools
+- **Security module**: network guard — planned, needs design conversation before any code
