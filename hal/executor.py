@@ -11,10 +11,12 @@ class SSHExecutor:
         self.host = host
         self.user = user
 
+    _SSH_OPTS = ["-o", "StrictHostKeyChecking=accept-new", "-o", "BatchMode=yes"]
+
     def run(self, command: str, timeout: int = 30) -> dict:
         """Run a shell command on the server. No approval — caller must gate."""
         result = subprocess.run(
-            ["ssh", f"{self.user}@{self.host}", command],
+            ["ssh", *self._SSH_OPTS, f"{self.user}@{self.host}", command],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -28,7 +30,7 @@ class SSHExecutor:
     def write(self, path: str, content: str, timeout: int = 30) -> dict:
         """Write content to a file on the server via stdin."""
         result = subprocess.run(
-            ["ssh", f"{self.user}@{self.host}", f"cat > {shlex.quote(path)}"],
+            ["ssh", *self._SSH_OPTS, f"{self.user}@{self.host}", f"cat > {shlex.quote(path)}"],
             input=content,
             capture_output=True,
             text=True,
