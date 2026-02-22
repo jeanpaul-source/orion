@@ -186,16 +186,24 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 - Persistent memory: SQLite session store (`/remember`, `/search_memory`, `/sessions`)
 - Judge: tier 0-3, sensitive path blocklist, safe command allowlist, LLM risk eval at approval prompts
 - Reason Tokens: tools declare `reason` field → logged in audit trail + shown at approval
-- Proactive monitoring watchdog: queries Prometheus, ntfy alerts, 30min cooldown per metric
+- Proactive monitoring watchdog: queries Prometheus, ntfy alerts, 30min cooldown per metric; installed as user systemd timer on the-lab
 - Harvest: lab infrastructure state re-indexed into pgvector
 - Intent-based routing: embedding classifier routes health/fact/agentic before the LLM sees the query; health and fact queries never enter the tool loop
 - Test suite: 21 tests for intent classifier, all passing; pytest.ini configured
 - Dead code removed: JSON-in-content fallback parser (was for 14b model), tool-use rules from system prompt
+- Per-turn output size cap: tool results capped at 8000 chars in run_agent
+- write_file tool added to agent TOOLS list
+
+**Watchdog deployment (server):**
+
+- Deployed as user systemd (not system) — SELinux blocks system services from running home-dir code
+- Unit files: `~/.config/systemd/user/watchdog.{service,timer}` (use `%h` for home dir, no `User=` line)
+- `loginctl enable-linger jp` — user systemd instance survives without login session
+- Manage with: `systemctl --user [status|start|stop] watchdog.{service,timer}`
+- ops/ files updated to match user-service format (use `%h`, no `User=jp`)
+- ntfy not yet configured — alerts log to `~/.orion/watchdog.log` only
 
 **Backlog:**
 
-- **Per-turn output size cap**: `run_agent` has no truncation on tool results; large `read_file` returns can blow up LLM context — cap at ~8000 chars
-- **Install watchdog on server**: add `NTFY_URL=https://ntfy.sh/your-topic` to `~/orion/.env`, then `sudo cp ~/orion/ops/watchdog.{service,timer} /etc/systemd/system/ && sudo systemctl enable --now watchdog.timer`
-- **`write_file` tool**: `workers.py` has it, but it's not in the agent's TOOLS list yet
 - **NTP + harvest lag checks**: add to `watchdog.py` — alert if NTP unsynced or harvest >2h stale
 - **Security module**: network guard — planned, not started
