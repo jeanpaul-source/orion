@@ -228,6 +228,30 @@ def run_agent(
         working.append(msg)
         tool_calls = msg.get("tool_calls") or []
 
+        # Fallback: qwen sometimes outputs tool calls as JSON text in content
+        # instead of using the proper tool_calls field.
+        if not tool_calls and msg.get("content"):
+            content = msg["content"].strip()
+            # Strip markdown code fences if present
+            if content.startswith("```"):
+                lines = content.splitlines()
+                content = "\n".join(
+                    l for l in lines if not l.startswith("```")
+                ).strip()
+            if content.startswith("{") and '"name"' in content:
+                try:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict) and "name" in parsed:
+                        tool_calls = [{
+                            "function": {
+                                "name": parsed["name"],
+                                "arguments": parsed.get("arguments", {}),
+                            }
+                        }]
+                        msg["content"] = ""
+                except json.JSONDecodeError:
+                    pass
+
         if not tool_calls:
             # Text-only response — agent is done
             response_text = msg.get("content", "").strip()
