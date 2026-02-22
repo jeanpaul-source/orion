@@ -8,6 +8,7 @@ Usage:
     python -m hal.watchdog
 """
 import json
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,6 +21,8 @@ from hal.prometheus import PrometheusClient
 STATE_FILE = Path.home() / ".orion" / "watchdog_state.json"
 LOG_FILE = Path.home() / ".orion" / "watchdog.log"
 COOLDOWN_MINUTES = 30
+HARVEST_LAST_RUN = Path.home() / ".orion" / "harvest_last_run"
+HARVEST_LAG_HOURS = 2
 
 # metric_key: (threshold, label, urgency)
 THRESHOLDS: dict[str, tuple[float, str, str]] = {
@@ -88,6 +91,55 @@ def _log(msg: str) -> None:
         f.write(f"{ts}  {msg}\n")
 
 
+def _check_ntp() -> str | None:
+    """Returns an alert message if NTP is not synchronized, else None."""
+    try:
+        out = subprocess.run(
+            ["timedatectl", "show", "--property=NTPSynchronized"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if out == "NTPSynchronized=no":
+            return "NTP not synchronized — clock may drift"
+    except Exception:
+        pass
+    return None
+
+
+def _check_harvest() -> str | None:
+    """Returns an alert message if harvest_last_run is missing or stale."""
+    try:
+        mtime = HARVEST_LAST_RUN.stat().st_mtime
+        age_hours = (datetime.now().timestamp() - mtime) / 3600
+        if age_hours > HARVEST_LAG_HOURS:
+            return f"Harvest stale: last run {age_hours:.1f}h ago (threshold: {HARVEST_LAG_HOURS}h)"
+    except FileNotFoundError:
+        return "Harvest has never run (no harvest_last_run file)"
+    except Exception:
+        pass
+    return None
+
+
+def _send_ntfy_simple(ntfy_url: str, messages: list[str], urgency: str = "high") -> bool:
+    """Send a free-form ntfy notification for non-metric alerts. Returns True on success."""
+    if not ntfy_url:
+        return False
+    body = "\n".join(messages)
+    try:
+        r = requests.post(
+            ntfy_url,
+            data=body.encode(),
+            headers={
+                "Title": "Orion Alert — the-lab",
+                "Priority": urgency,
+                "Tags": "warning,server",
+            },
+            timeout=10,
+        )
+        return r.status_code < 300
+    except requests.exceptions.RequestException:
+        return False
+
+
 def run() -> None:
     config = cfg.load()
     prom = PrometheusClient(config.prometheus_url)
@@ -126,6 +178,34 @@ def run() -> None:
         # Update state with alert timestamps
         now = datetime.now().isoformat(timespec="seconds")
         for key in fired:
+            state[key] = now
+
+    # Boolean / time-based checks (NTP, harvest lag)
+    simple_alerts: list[str] = []
+    simple_fired: list[str] = []
+    for key, check_fn, urgency in [
+        ("ntp", _check_ntp, "urgent"),
+        ("harvest_lag", _check_harvest, "high"),
+    ]:
+        msg = check_fn()
+        if msg:
+            if not _in_cooldown(state, key):
+                simple_alerts.append(msg)
+                simple_fired.append(key)
+                _log(f"ALERT  {key}: {msg}")
+        else:
+            if key in state:
+                del state[key]
+                _log(f"CLEAR  {key}")
+
+    if simple_alerts:
+        ok = _send_ntfy_simple(config.ntfy_url, simple_alerts)
+        if ok:
+            _log(f"ntfy sent: {', '.join(simple_fired)}")
+        else:
+            _log(f"ntfy FAILED (url={'set' if config.ntfy_url else 'not set'}): {', '.join(simple_fired)}")
+        now = datetime.now().isoformat(timespec="seconds")
+        for key in simple_fired:
             state[key] = now
 
     _save_state(state)

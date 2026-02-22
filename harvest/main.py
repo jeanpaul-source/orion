@@ -6,6 +6,8 @@ Dry run:            python -m harvest --dry-run
 """
 import argparse
 import sys
+from datetime import datetime
+from pathlib import Path
 
 import hal.config as cfg
 from hal.llm import OllamaClient
@@ -54,6 +56,9 @@ def main() -> None:
         print(f"  inserted: {stats['chunks']} chunks from {stats['docs']} documents")
         if stats["errors"]:
             print(f"  errors:   {stats['errors']}")
+        stamp = Path.home() / ".orion" / "harvest_last_run"
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.write_text(datetime.now().isoformat(timespec="seconds"))
 
 
 if __name__ == "__main__":
