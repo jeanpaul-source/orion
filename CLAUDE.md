@@ -41,6 +41,10 @@ I'm drifting the explanation will sound wrong or thin. That is the catch mechani
 
 ```
 You → HAL (thin coordinator, LLM brain)
+        ├── IntentClassifier  (routes query before LLM sees it)
+        │     ├── health  → run_health()  (metrics, no tool loop)
+        │     ├── fact    → run_fact()    (KB search, no tool loop)
+        │     └── agentic → run_agent()  (full tool loop)
         ├── pgvector  (knows the lab — 2,244 doc chunks indexed)
         ├── Judge     (policy gate — "is this safe to do?", approval tiers)
         └── Workers   (do things)
@@ -94,9 +98,9 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 **Runtime data:** `/docker/` (not source of truth — compose runtime mounts)
 
 **Ollama models present:**
-- `qwen2.5-coder-14b-32k:latest` — default, 14B params, 32k context
-- `qwen2.5-coder:32b` — big model, available if needed
-- `nomic-embed-text:latest` — 768-dim embeddings, matches pgvector index
+- `qwen2.5-coder:32b` — **default**, 32B params
+- `qwen2.5-coder-14b-32k:latest` — available but not used
+- `nomic-embed-text:latest` — 768-dim embeddings, used by intent classifier + pgvector
 
 **pgvector knowledge base:**
 - 2,244 document chunks, 768-dim HNSW embeddings (cosine)
@@ -116,11 +120,12 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 | Path | What it is |
 |---|---|
-| `hal/main.py` | REPL entry point; `/remember`, `/search_memory`, `/sessions` commands |
-| `hal/agent.py` | Agentic loop (MAX_ITERATIONS=8); tools with Reason Tokens; Judge gating |
+| `hal/main.py` | REPL entry point; intent routing; all slash commands |
+| `hal/intent.py` | Embedding-based intent classifier (health / fact / agentic); threshold 0.65 |
+| `hal/agent.py` | `run_health()`, `run_fact()`, `run_agent()` — the three handlers |
 | `hal/judge.py` | Policy gate: tier 0-3, sensitive path blocklist, safe command allowlist, LLM risk eval, audit log |
 | `hal/workers.py` | `read_file`, `write_file`, `list_dir` — all gated through Judge |
-| `hal/executor.py` | Pure SSH runner |
+| `hal/executor.py` | SSH runner; detects localhost and runs directly (no self-SSH) |
 | `hal/memory.py` | SQLite session store (`~/.orion/memory.db`); `search_sessions()` full-text search |
 | `hal/facts.py` | `/remember` — embeds facts to pgvector as `category='memory'` |
 | `hal/watchdog.py` | Standalone monitoring watchdog (run via systemd timer) |
@@ -129,7 +134,10 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/knowledge.py` | pgvector KB search |
 | `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`) |
 | `harvest/` | Lab infrastructure harvester — re-indexes lab state into pgvector |
-| `requirements.txt` | Python deps |
+| `tests/` | pytest suite for intent classifier (21 tests); requires Ollama running |
+| `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
+| `requirements.txt` | Production Python deps |
+| `requirements-dev.txt` | Dev-only deps (pytest) |
 | `.env.example` | Config template |
 | `ops/` | Systemd units (`watchdog.service`, `watchdog.timer`) — gitignored |
 
@@ -176,14 +184,18 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 
 - Minimal HAL: Ollama + pgvector + Prometheus + SSH executor + REPL
 - Persistent memory: SQLite session store (`/remember`, `/search_memory`, `/sessions`)
-- Agentic loop: LLM calls tools autonomously, Judge gates everything, MAX_ITERATIONS=8
 - Judge: tier 0-3, sensitive path blocklist, safe command allowlist, LLM risk eval at approval prompts
 - Reason Tokens: tools declare `reason` field → logged in audit trail + shown at approval
 - Proactive monitoring watchdog: queries Prometheus, ntfy alerts, 30min cooldown per metric
 - Harvest: lab infrastructure state re-indexed into pgvector
+- Intent-based routing: embedding classifier routes health/fact/agentic before the LLM sees the query; health and fact queries never enter the tool loop
+- Test suite: 21 tests for intent classifier, all passing; pytest.ini configured
+- Dead code removed: JSON-in-content fallback parser (was for 14b model), tool-use rules from system prompt
 
 **Backlog:**
 
+- **Per-turn output size cap**: `run_agent` has no truncation on tool results; large `read_file` returns can blow up LLM context — cap at ~8000 chars
 - **Install watchdog on server**: add `NTFY_URL=https://ntfy.sh/your-topic` to `~/orion/.env`, then `sudo cp ~/orion/ops/watchdog.{service,timer} /etc/systemd/system/ && sudo systemctl enable --now watchdog.timer`
 - **`write_file` tool**: `workers.py` has it, but it's not in the agent's TOOLS list yet
+- **NTP + harvest lag checks**: add to `watchdog.py` — alert if NTP unsynced or harvest >2h stale
 - **Security module**: network guard — planned, not started
