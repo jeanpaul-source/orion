@@ -10,8 +10,10 @@ from rich.text import Text
 
 import hal.config as cfg
 from hal.executor import SSHExecutor
+from hal.facts import remember
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient
+from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tunnel import SSHTunnel, port_open
 
@@ -23,11 +25,12 @@ You know the infrastructure and help the operator understand, monitor, and manag
 
 Lab host: the-lab (192.168.5.10)
   CPU: Intel Core Ultra 7 265K (20 cores), 62 GB RAM, RTX 3090 Ti (24 GB VRAM)
-  Services: Prometheus :9090, Grafana :3000, pgvector :5432, Ollama :11434
+  Services: Prometheus :9091, Grafana :3001, pgvector :5432, Ollama :11434 (bare metal)
 
-You have access to a knowledge base of 2,244 homelab documentation chunks.
-When context is provided above the user's question, use it to give precise, grounded answers.
-Be concise. Cite file names when relevant. If you don't know something, say so.
+You have access to a knowledge base of homelab documentation, lab infrastructure configs,
+and live lab state. When context is provided above the user's question, use it to give
+precise, grounded answers. Be concise. Cite file names when relevant.
+If you don't know something, say so.
 Do not hallucinate service names, ports, or config values — verify against context.
 """
 
@@ -37,6 +40,10 @@ Commands:
   /search <query>  — search the knowledge base directly
   /run <command>   — run a command on the lab server (tiered approval)
   /kb              — list knowledge base categories
+  /remember <fact> — store a fact permanently in the knowledge base
+  /sessions        — list recent sessions
+  /resume <id>     — resume a past session
+  /new             — start a fresh session
   /exit            — quit
 
 Anything else is sent to HAL as a question (with knowledge base context).
@@ -153,12 +160,37 @@ def cmd_kb(kb: KnowledgeBase) -> None:
         console.print(f"  {count:>5}  {name}")
 
 
+def cmd_sessions(mem: MemoryStore) -> None:
+    sessions = mem.list_sessions(10)
+    if not sessions:
+        console.print("[dim]no sessions yet[/]")
+        return
+    for s in sessions:
+        ts = s["started_at"][:16].replace("T", " ")
+        label = s["label"] or "(no label)"
+        exchanges = s["turn_count"] // 2
+        console.print(
+            f"  [bold]{s['id']}[/]  {ts}  {exchanges} exchanges  [dim]{label}[/]"
+        )
+
+
+def cmd_remember(fact: str, dsn: str, llm: OllamaClient) -> None:
+    if not fact:
+        console.print("[yellow]Usage: /remember <fact>[/]")
+        return
+    with console.status("storing fact...", spinner="dots"):
+        remember(fact, dsn, llm)
+    console.print(f"[green]remembered:[/] {fact}")
+
+
 def run_query(
     user_input: str,
     history: list[dict],
     ollama: OllamaClient,
     kb: KnowledgeBase,
     prom: PrometheusClient,
+    mem: MemoryStore,
+    session_id: str,
 ) -> str:
     with console.status("[dim]thinking...[/]", spinner="dots"):
         chunks = kb.search(user_input, top_k=5)
@@ -189,9 +221,13 @@ def run_query(
     history[-1] = {"role": "user", "content": user_input}
     history.append({"role": "assistant", "content": response_text})
 
-    # Keep history bounded
-    if len(history) > 20:
-        history[:] = history[-20:]
+    # Persist to SQLite
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response_text)
+
+    # Keep in-memory context bounded
+    if len(history) > 40:
+        history[:] = history[-40:]
 
     return response_text
 
@@ -211,13 +247,26 @@ def main() -> None:
     kb = KnowledgeBase(config.pgvector_dsn, ollama)
     prom = PrometheusClient(config.prometheus_url)
     executor = SSHExecutor(config.lab_host, config.lab_user)
+    mem = MemoryStore()
 
-    console.print(
-        f"[green]connected[/] — model: [bold]{config.ollama_model}[/]  "
-        f"kb: 2,244 chunks  prom: {config.prometheus_url}"
-    )
-
-    history: list[dict] = []
+    # Resume last session or start fresh
+    session_id = mem.last_session_id()
+    if session_id:
+        history = mem.load_turns(session_id)
+        exchanges = len(history) // 2
+        console.print(
+            f"[green]connected[/] — model: [bold]{config.ollama_model}[/]  "
+            f"prom: {config.prometheus_url}"
+        )
+        console.print(f"[dim]resumed session {session_id} ({exchanges} exchanges)[/]")
+    else:
+        session_id = mem.new_session()
+        history = []
+        console.print(
+            f"[green]connected[/] — model: [bold]{config.ollama_model}[/]  "
+            f"prom: {config.prometheus_url}"
+        )
+        console.print(f"[dim]new session {session_id}[/]")
 
     try:
         while True:
@@ -244,14 +293,34 @@ def main() -> None:
                 cmd_run(user_input[5:].strip(), executor)
             elif user_input == "/kb":
                 cmd_kb(kb)
+            elif user_input.startswith("/remember "):
+                cmd_remember(user_input[10:].strip(), config.pgvector_dsn, ollama)
+            elif user_input == "/sessions":
+                cmd_sessions(mem)
+            elif user_input.startswith("/resume "):
+                sid = user_input[8:].strip()
+                if mem.session_exists(sid):
+                    session_id = sid
+                    turns = mem.load_turns(sid)
+                    history[:] = turns
+                    console.print(
+                        f"[dim]resumed session {session_id} ({len(turns) // 2} exchanges)[/]"
+                    )
+                else:
+                    console.print(f"[red]session {sid} not found[/]")
+            elif user_input == "/new":
+                session_id = mem.new_session()
+                history.clear()
+                console.print(f"[dim]new session {session_id}[/]")
             elif user_input.startswith("/"):
-                console.print(f"[yellow]Unknown command. Type /help.[/]")
+                console.print("[yellow]Unknown command. Type /help.[/]")
             else:
-                run_query(user_input, history, ollama, kb, prom)
+                run_query(user_input, history, ollama, kb, prom, mem, session_id)
 
     finally:
         if tunnel:
             tunnel.stop()
+        mem.close()
 
 
 if __name__ == "__main__":
