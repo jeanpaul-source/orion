@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """HAL — Orion's coordinator. Run with: python -m hal"""
-import readline  # noqa: F401 — enables history/editing in input()
+import argparse
+import os
+import readline
 import sys
 import textwrap
+from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
@@ -18,6 +21,8 @@ from hal.prometheus import PrometheusClient
 from hal.tunnel import SSHTunnel, port_open
 
 console = Console()
+
+HISTORY_FILE = Path.home() / ".orion" / "history"
 
 SYSTEM_PROMPT = """\
 You are HAL, the AI coordinator for the Orion homelab assistant.
@@ -44,6 +49,7 @@ Commands:
   /sessions        — list recent sessions
   /resume <id>     — resume a past session
   /new             — start a fresh session
+  /clear           — clear the screen
   /exit            — quit
 
 Anything else is sent to HAL as a question (with knowledge base context).
@@ -115,26 +121,32 @@ def setup_ollama(config: cfg.Config) -> tuple[OllamaClient, SSHTunnel | None]:
 
 
 def cmd_health(prom: PrometheusClient) -> None:
-    with console.status("querying prometheus...", spinner="dots"):
-        h = prom.health()
-    lines = []
-    for key, val in h.items():
-        if val is not None:
-            lines.append(f"  {key:<16} {val}")
-        else:
-            lines.append(f"  {key:<16} unavailable")
-    console.print(Panel("\n".join(lines), title="lab health", border_style="cyan"))
+    try:
+        with console.status("querying prometheus...", spinner="dots"):
+            h = prom.health()
+        lines = []
+        for key, val in h.items():
+            if val is not None:
+                lines.append(f"  {key:<16} {val}")
+            else:
+                lines.append(f"  {key:<16} unavailable")
+        console.print(Panel("\n".join(lines), title="lab health", border_style="cyan"))
+    except Exception as e:
+        console.print(f"[red]Prometheus unreachable: {e}[/]")
 
 
 def cmd_search(query: str, kb: KnowledgeBase) -> None:
     if not query:
         console.print("[yellow]Usage: /search <query>[/]")
         return
-    with console.status("searching...", spinner="dots"):
-        chunks = kb.search(query, top_k=5)
-    for i, c in enumerate(chunks, 1):
-        console.print(f"\n[bold]{i}. {c['file']}[/] [{c['category']}] score={c['score']:.3f}")
-        console.print(textwrap.indent(c["content"][:400].strip(), "   "))
+    try:
+        with console.status("searching...", spinner="dots"):
+            chunks = kb.search(query, top_k=5)
+        for i, c in enumerate(chunks, 1):
+            console.print(f"\n[bold]{i}. {c['file']}[/] [{c['category']}] score={c['score']:.3f}")
+            console.print(textwrap.indent(c["content"][:400].strip(), "   "))
+    except Exception as e:
+        console.print(f"[red]KB unavailable: {e}[/]")
 
 
 def cmd_run(command: str, executor: SSHExecutor) -> None:
@@ -154,10 +166,13 @@ def cmd_run(command: str, executor: SSHExecutor) -> None:
 
 
 def cmd_kb(kb: KnowledgeBase) -> None:
-    with console.status("querying...", spinner="dots"):
-        cats = kb.categories()
-    for name, count in cats:
-        console.print(f"  {count:>5}  {name}")
+    try:
+        with console.status("querying...", spinner="dots"):
+            cats = kb.categories()
+        for name, count in cats:
+            console.print(f"  {count:>5}  {name}")
+    except Exception as e:
+        console.print(f"[red]KB unavailable: {e}[/]")
 
 
 def cmd_sessions(mem: MemoryStore) -> None:
@@ -193,17 +208,24 @@ def run_query(
     session_id: str,
 ) -> str:
     with console.status("[dim]thinking...[/]", spinner="dots"):
-        chunks = kb.search(user_input, top_k=5)
+        try:
+            chunks = kb.search(user_input, top_k=5)
+        except Exception as e:
+            console.print(f"[yellow]KB unavailable ({e}), continuing without context.[/]")
+            chunks = []
 
         # Attach Prometheus metrics if the question looks health-related
         health_keywords = {"cpu", "memory", "disk", "load", "uptime", "health", "metrics", "status"}
         words = set(user_input.lower().split())
         prom_context = ""
         if words & health_keywords:
-            h = prom.health()
-            prom_context = "--- live metrics ---\n"
-            prom_context += "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
-            prom_context += "\n--- end metrics ---\n\n"
+            try:
+                h = prom.health()
+                prom_context = "--- live metrics ---\n"
+                prom_context += "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
+                prom_context += "\n--- end metrics ---\n\n"
+            except Exception:
+                pass  # Prometheus down — skip metrics, don't block the query
 
     context_str = format_context(chunks)
     augmented = f"{prom_context}{context_str}\n\n{user_input}".strip()
@@ -233,7 +255,24 @@ def run_query(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="hal",
+        description="HAL — Orion homelab AI coordinator",
+    )
+    parser.add_argument(
+        "--new", action="store_true", help="start a fresh session (don't resume last)"
+    )
+    args = parser.parse_args()
+
     config = cfg.load()
+
+    # Load readline history
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        readline.read_history_file(str(HISTORY_FILE))
+    except FileNotFoundError:
+        pass
+    readline.set_history_length(1000)
 
     console.print(
         Panel(
@@ -251,7 +290,7 @@ def main() -> None:
 
     # Resume last session or start fresh
     session_id = mem.last_session_id()
-    if session_id:
+    if session_id and not args.new:
         history = mem.load_turns(session_id)
         exchanges = len(history) // 2
         console.print(
@@ -312,6 +351,8 @@ def main() -> None:
                 session_id = mem.new_session()
                 history.clear()
                 console.print(f"[dim]new session {session_id}[/]")
+            elif user_input == "/clear":
+                os.system("clear")
             elif user_input.startswith("/"):
                 console.print("[yellow]Unknown command. Type /help.[/]")
             else:
@@ -321,6 +362,7 @@ def main() -> None:
         if tunnel:
             tunnel.stop()
         mem.close()
+        readline.write_history_file(str(HISTORY_FILE))
 
 
 if __name__ == "__main__":
