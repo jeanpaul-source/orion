@@ -208,7 +208,7 @@ def run_agent(
         chunks = kb.search(user_input, top_k=3)
         context_lines = []
         for c in chunks:
-            if c["score"] >= 0.4:
+            if c["score"] >= 0.6:
                 context_lines.append(f"[{c['file']} | score={c['score']:.2f}]")
                 context_lines.append(c["content"].strip())
         if context_lines:
