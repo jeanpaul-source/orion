@@ -4,17 +4,13 @@ A personal homelab AI assistant built intentionally. It knows the infrastructure
 questions about it, takes actions within it, monitors health, learns over time, and guards
 the home network.
 
-**This is the real start.** Everything in this repo before the first real commit is from the
-experimental phase — reference material and raw parts, not settled architecture.
-Nothing here is sacred.
-
 ---
 
 ## The Vision (what we're building)
 
 ```
 You → HAL (thin coordinator, LLM brain)
-        ├── pgvector  (knows the lab — 2,244 doc chunks already indexed)
+        ├── pgvector  (knows the lab — 2,244 doc chunks indexed)
         ├── Judge     (policy gate — "is this safe to do?", approval tiers)
         └── Workers   (do things)
               ├── SSH executor   (run commands on the server)
@@ -28,11 +24,11 @@ You → HAL (thin coordinator, LLM brain)
 - Tier 2: config change (explain plan, wait for approval, apply, verify)
 - Tier 3: destructive (explicit confirmation required)
 
-Security/network guard is a first-class subsystem from day one, not bolted on later.
-
 ---
 
 ## Lab Host: the-lab (192.168.5.10)
+
+**OS:** Fedora Linux 43 (Server Edition)
 
 **Hardware:**
 - CPU: Intel Core Ultra 7 265K (20 cores)
@@ -45,46 +41,67 @@ Security/network guard is a first-class subsystem from day one, not bolted on la
 
 | Service | Port | Notes |
 |---|---|---|
-| prometheus | 9091 | Scraping node-exporter, blackbox (9090 = Cockpit) |
-| grafana | 3000 | Dashboards, healthy |
-| node-exporter | 9100 | Host metrics |
-| blackbox-exporter | 9115 | Endpoint probing |
-| pgvector-kb | 5432 | PostgreSQL + pgvector; DB: knowledge_base, user: kb_user |
+| ollama | 11434 | Bare metal (`/usr/local/bin/ollama serve`), firewalled from LAN |
+| prometheus | 9091 | Docker; 9090 = Cockpit (don't confuse them) |
+| grafana | 3000 | Docker |
+| node-exporter | 9100 | Docker |
+| blackbox-exporter | 9115 | Docker |
+| pgvector-kb | 5432 | Docker; DB: knowledge_base, user: kb_user |
+| cockpit | 9090 | Server management UI (HTTPS redirect) |
 
-**Ollama:** Running bare metal (`/usr/local/bin/ollama serve`), port 11434, firewalled from LAN.
-HAL auto-tunnels via SSH. Models present:
-- `qwen2.5-coder-14b-32k:latest` (default — 14B, 32k ctx)
-- `qwen2.5-coder:32b` (big model, available if needed)
-- `nomic-embed-text:latest` (768-dim embeddings — matches pgvector index)
+**Ollama models present:**
+- `qwen2.5-coder-14b-32k:latest` — default, 14B params, 32k context
+- `qwen2.5-coder:32b` — big model, available if needed
+- `nomic-embed-text:latest` — 768-dim embeddings, matches pgvector index
 
 **pgvector knowledge base:**
-- 2,244 document chunks, 768-dim HNSW embeddings
-- Categories: ai-agents (1,440), rag (799), misc (5)
-- Connect: `psql -h 192.168.5.10 -U kb_user -d knowledge_base`
+- 2,244 document chunks, 768-dim HNSW embeddings (cosine)
+- Categories: ai-agents-and-multi-agent-systems (1,440), rag-and-knowledge-retrieval (799), misc (5)
+- Table: `documents` — columns: content, embedding, category, file_name, file_path, metadata
 
-**NOT running (old docs were wrong):** vLLM, Qdrant, AnythingLLM, n8n, Traefik, Authelia
+**NOT running:** vLLM, Qdrant, AnythingLLM, n8n, Traefik, Authelia
 
 ---
 
 ## This Repo
 
+**Remote:** https://github.com/jeanpaul-source/orion (private)
+
 | Path | What it is |
 |---|---|
-| `apps/core/` | Old FastAPI chat UI — reference only |
-| `apps/rag/` | Old RAG + harvester — reference only |
-| `infra/` | Old infra configs — reference only |
+| `hal/` | HAL coordinator — the real thing |
+| `hal/main.py` | REPL entry point |
+| `hal/llm.py` | Ollama client (embed + streaming chat) |
+| `hal/knowledge.py` | pgvector semantic search |
+| `hal/prometheus.py` | Prometheus metrics queries |
+| `hal/executor.py` | SSH executor, tiered approval |
+| `hal/tunnel.py` | SSH tunnel helper (used from laptop only) |
+| `hal/config.py` | Load settings from .env |
+| `requirements.txt` | Python deps |
+| `.env.example` | Config template |
 | `ops/` | Keys and tokens — gitignored, on disk only |
-
-Old code gets wiped on first real commit. Start fresh.
 
 ---
 
-## Architecture Docs (in ~/Downloads)
+## Dev Workflow
 
-- `orion_lean_sre_core_plan.md` — HAL + Judge + Workers, tiered governance ← best plan
-- `orion_homelab.md` — full homelab end-state (OPNsense, VLANs, Proxmox)
-- `forclaudecode.md` — Agent Zero + Ollama setup guide for this hardware
-- `ARCHITECTURE-DECISIONS.md` — 6 ADRs from experimental phase
+```
+Laptop (edit code)
+  → git push origin main
+  → github.com/jeanpaul-source/orion
+       ↓
+  Server: orion-update  (alias for: cd ~/orion && git pull)
+  Server: hal           (alias for: cd ~/orion && .venv/bin/python -m hal)
+```
+
+**Rule:** Laptop pushes only. Server pulls only. Server never has push credentials.
+
+**On the server, after pulling:**
+- HAL runs from `~/orion` with `.venv/bin/python -m hal`
+- `.env` on the server uses `localhost` for all services (no tunnel needed)
+- `.env` on the laptop uses `192.168.5.10` + auto SSH tunnel for Ollama
+
+**Server deploy key:** `~/.ssh/orion_deploy` (read-only, registered on GitHub)
 
 ---
 
@@ -93,19 +110,22 @@ Old code gets wiped on first real commit. Start fresh.
 - OS: Ubuntu desktop
 - Git identity: jean-paul carrerou <jeanpaul@protostarsolutions.com>
 - SSH to server: `ssh jp@192.168.5.10`
-- This repo lives at: `/home/jp/orion`
+- Repo: `/home/jp/orion`
+- GitHub CLI: authenticated as `jeanpaul-source`
 
 ---
 
 ## Where We Left Off
 
-1. Wiped old experimental code from this repo
-2. CLAUDE.md rewritten with accurate state
-3. **Next: start Ollama on the server, write minimal HAL coordinator, wire to pgvector**
+**Done (Feb 21, 2026):**
+- Wiped experimental code (apps/, infra/)
+- Built minimal HAL: Ollama + pgvector + Prometheus + SSH executor + REPL
+- HAL lives on the server, runs via SSH (`hal` alias)
+- GitHub private repo set up, deploy key on server
+- Discovered: Ollama is bare metal not Docker, Prometheus on 9091 not 9090
 
-The smallest useful Orion:
-- HAL talks to Ollama (qwen2.5-coder:14b, 32K context)
-- HAL queries pgvector for homelab knowledge
-- HAL can read Prometheus metrics
-- HAL SSHes to server for Tier 1+ actions (with approval)
-- One Python entry point, no microservices yet
+**Backlog (in order):**
+1. **KB harvester** — harvest actual lab state (docker configs, running services) into pgvector. Current KB is all academic papers, not infrastructure knowledge.
+2. **Persistent memory** — SQLite session store + fact memory written back to pgvector
+3. **Proactive monitoring** — background watchdog on server, alerts via ntfy when thresholds crossed
+4. **Judge + Workers** — policy gate, audit log, multi-step action planning
