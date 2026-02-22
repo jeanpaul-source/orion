@@ -188,6 +188,98 @@ def _dispatch(
         return f"Unknown tool: {name}"
 
 
+def run_health(
+    user_input: str,
+    history: list[dict],
+    ollama: OllamaClient,
+    prom: PrometheusClient,
+    mem: MemoryStore,
+    session_id: str,
+    system: str,
+    console: Console,
+) -> str:
+    """Health handler: fetch live metrics, answer in one LLM call with no tools."""
+    try:
+        with console.status("[dim]fetching metrics...[/]", spinner="dots"):
+            h = prom.health()
+        metrics_str = "\n".join(
+            f"{k}: {v}" for k, v in h.items() if v is not None
+        )
+    except Exception as e:
+        metrics_str = f"Metrics unavailable: {e}"
+
+    messages = list(history) + [{
+        "role": "user",
+        "content": f"Current lab metrics:\n{metrics_str}\n\n{user_input}",
+    }]
+
+    with console.status("[dim]thinking...[/]", spinner="dots"):
+        response = ollama.chat(messages, system=system)
+
+    response = _CONTROL_TOKEN_RE.sub("", response).strip()
+    console.print(f"\n[bold cyan]hal>[/] {response}")
+
+    history.append({"role": "user", "content": user_input})
+    history.append({"role": "assistant", "content": response})
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response)
+
+    if len(history) > 40:
+        history[:] = history[-40:]
+
+    return response
+
+
+def run_fact(
+    user_input: str,
+    history: list[dict],
+    ollama: OllamaClient,
+    kb: KnowledgeBase,
+    mem: MemoryStore,
+    session_id: str,
+    system: str,
+    console: Console,
+) -> str:
+    """Fact handler: search KB once, answer in one LLM call with no tools.
+
+    If the KB has nothing relevant, the LLM answers from the system prompt alone
+    (which contains key lab facts). If it still doesn't know, it says so.
+    """
+    try:
+        with console.status("[dim]searching knowledge base...[/]", spinner="dots"):
+            chunks = kb.search(user_input, top_k=3)
+        relevant = [c for c in chunks if c["score"] >= 0.5]
+    except Exception:
+        relevant = []
+
+    if relevant:
+        context = "\n\n".join(
+            f"[{c['file']} | score={c['score']:.2f}]\n{c['content'].strip()}"
+            for c in relevant
+        )
+        augmented = f"{context}\n\n{user_input}"
+    else:
+        augmented = user_input
+
+    messages = list(history) + [{"role": "user", "content": augmented}]
+
+    with console.status("[dim]thinking...[/]", spinner="dots"):
+        response = ollama.chat(messages, system=system)
+
+    response = _CONTROL_TOKEN_RE.sub("", response).strip()
+    console.print(f"\n[bold cyan]hal>[/] {response}")
+
+    history.append({"role": "user", "content": user_input})
+    history.append({"role": "assistant", "content": response})
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response)
+
+    if len(history) > 40:
+        history[:] = history[-40:]
+
+    return response
+
+
 def run_agent(
     user_input: str,
     history: list[dict],
