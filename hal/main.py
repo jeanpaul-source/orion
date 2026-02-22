@@ -12,6 +12,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 import hal.config as cfg
+from hal.agent import run_agent
 from hal.executor import SSHExecutor
 from hal.facts import remember
 from hal.judge import AUDIT_LOG, Judge
@@ -61,22 +62,6 @@ Commands:
 Anything else is sent to HAL as a question (with knowledge base context).
 """
 
-
-def format_context(chunks: list[dict]) -> str:
-    if not chunks:
-        return ""
-    lines = ["--- knowledge base context ---"]
-    for c in chunks:
-        score = c["score"]
-        if score < 0.4:
-            continue  # skip low-relevance chunks
-        lines.append(f"[{c['file']} | {c['category']} | score={score:.2f}]")
-        lines.append(c["content"].strip())
-        lines.append("")
-    if len(lines) == 1:
-        return ""
-    lines.append("--- end context ---")
-    return "\n".join(lines)
 
 
 def setup_ollama(config: cfg.Config) -> tuple[OllamaClient, SSHTunnel | None]:
@@ -265,60 +250,6 @@ def cmd_remember(fact: str, dsn: str, llm: OllamaClient) -> None:
     console.print(f"[green]remembered:[/] {fact}")
 
 
-def run_query(
-    user_input: str,
-    history: list[dict],
-    ollama: OllamaClient,
-    kb: KnowledgeBase,
-    prom: PrometheusClient,
-    mem: MemoryStore,
-    session_id: str,
-) -> str:
-    with console.status("[dim]thinking...[/]", spinner="dots"):
-        try:
-            chunks = kb.search(user_input, top_k=5)
-        except Exception as e:
-            console.print(f"[yellow]KB unavailable ({e}), continuing without context.[/]")
-            chunks = []
-
-        # Attach Prometheus metrics if the question looks health-related
-        health_keywords = {"cpu", "memory", "disk", "load", "uptime", "health", "metrics", "status"}
-        words = set(user_input.lower().split())
-        prom_context = ""
-        if words & health_keywords:
-            try:
-                h = prom.health()
-                prom_context = "--- live metrics ---\n"
-                prom_context += "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
-                prom_context += "\n--- end metrics ---\n\n"
-            except Exception:
-                pass  # Prometheus down — skip metrics, don't block the query
-
-    context_str = format_context(chunks)
-    augmented = f"{prom_context}{context_str}\n\n{user_input}".strip()
-
-    history.append({"role": "user", "content": augmented})
-
-    console.print("\n[bold cyan]hal>[/] ", end="")
-    response_text = ""
-    for token in ollama.stream_chat(history, system=SYSTEM_PROMPT):
-        console.print(token, end="")
-        response_text += token
-    console.print()
-
-    # Store clean message in history (without the injected context)
-    history[-1] = {"role": "user", "content": user_input}
-    history.append({"role": "assistant", "content": response_text})
-
-    # Persist to SQLite
-    mem.save_turn(session_id, "user", user_input)
-    mem.save_turn(session_id, "assistant", response_text)
-
-    # Keep in-memory context bounded
-    if len(history) > 40:
-        history[:] = history[-40:]
-
-    return response_text
 
 
 def main() -> None:
@@ -432,7 +363,10 @@ def main() -> None:
             elif user_input.startswith("/"):
                 console.print("[yellow]Unknown command. Type /help.[/]")
             else:
-                run_query(user_input, history, ollama, kb, prom, mem, session_id)
+                run_agent(
+                    user_input, history, ollama, kb, prom,
+                    executor, judge, mem, session_id, SYSTEM_PROMPT, console,
+                )
 
     finally:
         if tunnel:

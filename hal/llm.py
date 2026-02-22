@@ -27,6 +27,23 @@ class OllamaClient:
         r.raise_for_status()
         return r.json()["embedding"]
 
+    def chat_with_tools(
+        self, messages: list[dict], tools: list[dict], system: str | None = None
+    ) -> dict:
+        """Non-streaming chat with tool schemas. Returns the full message dict.
+        The returned dict may contain 'tool_calls' if the model wants to call a tool."""
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+        }
+        if system:
+            payload["system"] = system
+        r = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=120)
+        r.raise_for_status()
+        return r.json()["message"]
+
     def chat(self, messages: list[dict], system: str | None = None) -> str:
         """Non-streaming chat — returns full response string."""
         payload = {"model": self.model, "messages": messages, "stream": False}
