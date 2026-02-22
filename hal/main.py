@@ -14,11 +14,13 @@ from rich.text import Text
 import hal.config as cfg
 from hal.executor import SSHExecutor
 from hal.facts import remember
+from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tunnel import SSHTunnel, port_open
+from hal.workers import list_dir, read_file, write_file
 
 console = Console()
 
@@ -44,6 +46,10 @@ Commands:
   /health          — live Prometheus metrics (cpu, mem, disk, load)
   /search <query>  — search the knowledge base directly
   /run <command>   — run a command on the lab server (tiered approval)
+  /read <path>     — read a file from the server
+  /ls <path>       — list a directory on the server
+  /write <path>    — write a file on the server (prompts for content)
+  /audit           — show recent audit log
   /kb              — list knowledge base categories
   /remember <fact> — store a fact permanently in the knowledge base
   /sessions        — list recent sessions
@@ -149,20 +155,81 @@ def cmd_search(query: str, kb: KnowledgeBase) -> None:
         console.print(f"[red]KB unavailable: {e}[/]")
 
 
-def cmd_run(command: str, executor: SSHExecutor) -> None:
+def cmd_run(command: str, executor: SSHExecutor, judge: Judge) -> None:
     if not command:
         console.print("[yellow]Usage: /run <shell command>[/]")
         return
-    result = executor.run(command)
-    if not result["approved"]:
+    if not judge.approve("run_command", command):
         console.print("[yellow]Cancelled.[/]")
         return
+    result = executor.run(command)
     if result["stdout"]:
         console.print(result["stdout"])
     if result["stderr"]:
         console.print(f"[red]{result['stderr']}[/]")
     if result["returncode"] != 0:
         console.print(f"[red]exit code {result['returncode']}[/]")
+
+
+def cmd_read(path: str, executor: SSHExecutor, judge: Judge) -> None:
+    if not path:
+        console.print("[yellow]Usage: /read <path>[/]")
+        return
+    content = read_file(path, executor, judge)
+    if content is None:
+        console.print(f"[red]Could not read {path}[/]")
+    else:
+        console.print(content)
+
+
+def cmd_ls(path: str, executor: SSHExecutor, judge: Judge) -> None:
+    if not path:
+        console.print("[yellow]Usage: /ls <path>[/]")
+        return
+    output = list_dir(path, executor, judge)
+    if output is None:
+        console.print(f"[red]Could not list {path}[/]")
+    else:
+        console.print(output)
+
+
+def cmd_write(path: str, executor: SSHExecutor, judge: Judge) -> None:
+    if not path:
+        console.print("[yellow]Usage: /write <path>[/]")
+        return
+    console.print(f"[dim]Enter content for {path} (Ctrl+D on empty line to finish):[/]")
+    lines = []
+    try:
+        while True:
+            lines.append(input())
+    except EOFError:
+        pass
+    content = "\n".join(lines)
+    if not content.strip():
+        console.print("[yellow]Empty content — aborted.[/]")
+        return
+    ok = write_file(path, content, executor, judge)
+    if ok:
+        console.print(f"[green]wrote {len(content)} bytes to {path}[/]")
+    else:
+        console.print(f"[red]write failed or cancelled[/]")
+
+
+def cmd_audit(n: int = 20) -> None:
+    try:
+        lines = AUDIT_LOG.read_text().splitlines()
+        if not lines:
+            console.print("[dim]audit log is empty[/]")
+            return
+        for line in lines[-n:]:
+            if "denied" in line:
+                console.print(f"  [red]{line}[/]")
+            elif "tier=0" in line:
+                console.print(f"  [dim]{line}[/]")
+            else:
+                console.print(f"  [yellow]{line}[/]")
+    except FileNotFoundError:
+        console.print("[dim]no audit log yet[/]")
 
 
 def cmd_kb(kb: KnowledgeBase) -> None:
@@ -286,6 +353,7 @@ def main() -> None:
     kb = KnowledgeBase(config.pgvector_dsn, ollama)
     prom = PrometheusClient(config.prometheus_url)
     executor = SSHExecutor(config.lab_host, config.lab_user)
+    judge = Judge()
     mem = MemoryStore()
 
     # Resume last session or start fresh
@@ -329,7 +397,15 @@ def main() -> None:
             elif user_input.startswith("/search "):
                 cmd_search(user_input[8:].strip(), kb)
             elif user_input.startswith("/run "):
-                cmd_run(user_input[5:].strip(), executor)
+                cmd_run(user_input[5:].strip(), executor, judge)
+            elif user_input.startswith("/read "):
+                cmd_read(user_input[6:].strip(), executor, judge)
+            elif user_input.startswith("/ls "):
+                cmd_ls(user_input[4:].strip(), executor, judge)
+            elif user_input.startswith("/write "):
+                cmd_write(user_input[7:].strip(), executor, judge)
+            elif user_input == "/audit":
+                cmd_audit()
             elif user_input == "/kb":
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):
