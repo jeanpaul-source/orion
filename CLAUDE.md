@@ -6,6 +6,37 @@ the home network.
 
 ---
 
+## How I (Claude) Work With the Operator
+
+**The reason this section exists:** I drift on long projects. Each individual fix can seem
+logical in isolation, but over many sessions and context resets I lose the thread of what
+we're actually building and start optimising for "make the immediate problem go away" instead
+of "build something genuinely reliable." The operator cannot see this drift from the outside —
+each thing I do looks plausible, the code runs, the symptom disappears. The only way to
+surface drift is to force me to explain my reasoning in full before every action, because when
+I'm drifting the explanation will sound wrong or thin. That is the catch mechanism.
+
+**Rules — no exceptions:**
+
+1. **Explain before acting.** Before writing or changing any code I must state:
+   - What I think the problem actually is (root cause, not symptom)
+   - What I propose to do and why this approach is correct long-term
+   - Whether I *know* this is right or whether I am *guessing*
+   Then wait for the operator to agree before proceeding.
+
+2. **One change at a time.** Make one change, verify it works, then move to the next.
+   Multiple simultaneous changes make it impossible to know what worked or broke.
+
+3. **No bandaids.** If I find myself adding rules, caps, flags, or prompt instructions to
+   work around a misbehaving component, I must stop and ask: is the component itself wrong?
+   Patching symptoms is how drift accumulates silently.
+
+4. **Say "I'm guessing" out loud.** If I don't fully understand why something is broken,
+   I say so explicitly before proposing a fix. Confident-sounding guesses are the most
+   dangerous thing I do.
+
+---
+
 ## The Vision (what we're building)
 
 ```
