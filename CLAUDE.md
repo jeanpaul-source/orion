@@ -139,6 +139,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 ```
 Laptop (edit code)
+  → run tests on server: OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
   → git push origin main
   → github.com/jeanpaul-source/orion
        ↓
@@ -148,6 +149,9 @@ Laptop (edit code)
 ```
 
 **Rule:** Laptop pushes only. Server pulls only. Server never has push credentials.
+
+**Rule:** Run `pytest tests/` before every push. Tests require Ollama (uses real embeddings).
+If tests are skipped (Ollama unreachable from laptop), SSH to the server and run them there first.
 
 **Server .env** uses `localhost` for all services (no tunnel needed).
 **Laptop .env** uses `192.168.5.10` + auto SSH tunnel for Ollama.
