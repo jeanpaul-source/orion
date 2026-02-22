@@ -12,7 +12,8 @@ from rich.panel import Panel
 from rich.text import Text
 
 import hal.config as cfg
-from hal.agent import run_agent
+from hal.agent import run_agent, run_health, run_fact
+from hal.intent import IntentClassifier
 from hal.executor import SSHExecutor
 from hal.facts import remember
 from hal.judge import AUDIT_LOG, Judge
@@ -322,6 +323,9 @@ def main() -> None:
     judge = Judge(ollama=ollama)
     mem = MemoryStore()
 
+    with console.status("[dim]building intent classifier...[/]", spinner="dots"):
+        classifier = IntentClassifier(ollama)
+
     # Resume last session or start fresh
     session_id = mem.last_session_id()
     if session_id and not args.new:
@@ -400,10 +404,24 @@ def main() -> None:
             elif user_input.startswith("/"):
                 console.print("[yellow]Unknown command. Type /help.[/]")
             else:
-                run_agent(
-                    user_input, history, ollama, kb, prom,
-                    executor, judge, mem, session_id, SYSTEM_PROMPT, console,
-                )
+                intent, confidence = classifier.classify(user_input)
+                console.print(f"[dim]  intent: {intent} ({confidence:.2f})[/]")
+
+                if intent == "health":
+                    run_health(
+                        user_input, history, ollama, prom,
+                        mem, session_id, SYSTEM_PROMPT, console,
+                    )
+                elif intent == "fact":
+                    run_fact(
+                        user_input, history, ollama, kb,
+                        mem, session_id, SYSTEM_PROMPT, console,
+                    )
+                else:
+                    run_agent(
+                        user_input, history, ollama, kb, prom,
+                        executor, judge, mem, session_id, SYSTEM_PROMPT, console,
+                    )
 
     finally:
         if tunnel:
