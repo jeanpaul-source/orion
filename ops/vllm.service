@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=jp
 WorkingDirectory=%h
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
 ExecStart=%h/vllm-env/bin/vllm serve Qwen/Qwen2.5-32B-Instruct-AWQ \
     --enable-auto-tool-choice \
     --tool-call-parser hermes \
@@ -13,7 +14,7 @@ ExecStart=%h/vllm-env/bin/vllm serve Qwen/Qwen2.5-32B-Instruct-AWQ \
     --enforce-eager \
     --max-model-len 8192 \
     --gpu-memory-utilization 0.95
-Restart=on-failure
+Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
