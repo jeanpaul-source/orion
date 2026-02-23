@@ -278,5 +278,4 @@ Laptop (edit code)
 **Backlog:**
 
 - **Clean foreign KB data**: `ghs-genome` (4 rows) and `ghs-rejections` (1 row) don't belong. Delete with: `DELETE FROM documents WHERE category IN ('ghs-genome', 'ghs-rejections');`
-- **Judge no-tools constraint**: `_llm_reason()` in `hal/judge.py` should tell the LLM "do not call tools or fetch external data" — prevents the risk evaluator from trying to use tools
 - **Security module**: network guard — planned, needs design conversation before any code
