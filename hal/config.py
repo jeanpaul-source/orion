@@ -6,7 +6,7 @@ import os
 @dataclass
 class Config:
     ollama_host: str
-    ollama_model: str
+    chat_model: str
     embed_model: str
     pgvector_dsn: str
     prometheus_url: str
@@ -14,21 +14,23 @@ class Config:
     lab_user: str
     use_ssh_tunnel: bool
     ntfy_url: str  # e.g. https://ntfy.sh/your-topic — empty string disables alerts
+    vllm_url: str  # vLLM OpenAI-compatible API endpoint
 
 
 def load() -> Config:
     load_dotenv()
     return Config(
         ollama_host=os.getenv("OLLAMA_HOST", "http://192.168.5.10:11434"),
-        ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder-14b-32k:latest"),
+        chat_model=os.getenv("CHAT_MODEL", "Qwen/Qwen2.5-32B-Instruct-AWQ"),
         embed_model=os.getenv("EMBED_MODEL", "nomic-embed-text:latest"),
         pgvector_dsn=os.getenv(
             "PGVECTOR_DSN",
             "postgresql://kb_user@192.168.5.10:5432/knowledge_base",
         ),
-        prometheus_url=os.getenv("PROMETHEUS_URL", "http://192.168.5.10:9090"),
+        prometheus_url=os.getenv("PROMETHEUS_URL", "http://192.168.5.10:9091"),
         lab_host=os.getenv("LAB_HOST", "192.168.5.10"),
         lab_user=os.getenv("LAB_USER", "jp"),
         use_ssh_tunnel=os.getenv("USE_SSH_TUNNEL", "false").lower() == "true",
         ntfy_url=os.getenv("NTFY_URL", ""),
+        vllm_url=os.getenv("VLLM_URL", "http://localhost:8000"),
     )
