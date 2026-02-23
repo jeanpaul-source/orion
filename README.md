@@ -253,7 +253,7 @@ HAL today is a single-machine coordinator running on or connecting to `the-lab`
 
 - A working terminal REPL with session memory
 - A deterministic intent classifier that routes ~80% of queries without calling the LLM
-- A pgvector knowledge base with 2,293 indexed chunks of lab documentation and config
+- A pgvector knowledge base with 2,288 indexed chunks of lab documentation and config
 - A full agentic tool loop gated by a tiered policy Judge
 - A standalone watchdog running as a user systemd timer
 - An eval harness with 24 queries and scored baselines
@@ -445,7 +445,7 @@ The lab's infrastructure documentation, service configs, and state are chunked, 
 with `nomic-embed-text`, and stored in a pgvector database. HAL searches this via
 `search_kb` to answer factual questions without running commands.
 
-Current size: **2,293 chunks** (as of Feb 2026). Re-harvest to update:
+Current size: **2,288 chunks** (as of Feb 2026). Re-harvest to update:
 ```bash
 python -m harvest
 ```
