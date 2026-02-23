@@ -133,7 +133,10 @@ def setup_clients(
         tunnels.append(t)
     llm = VLLMClient(vllm_url, config.chat_model)
     if not llm.ping():
-        console.print("[red]vLLM is not responding. Is it running?[/]")
+        console.print(
+            "[red]vLLM is not ready.[/] The service may still be loading the model. "
+            "Check with: [dim]journalctl --user -u vllm -n 30[/]"
+        )
         sys.exit(1)
 
     ollama_url, t = _connect("Ollama", config.ollama_host, config.lab_user, config.lab_host, 11434)

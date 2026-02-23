@@ -35,9 +35,13 @@ class VLLMClient:
         self._headers = {"Authorization": "Bearer not-needed"}
 
     def ping(self) -> bool:
+        """Return True only when the target model is loaded and ready to serve."""
         try:
             r = requests.get(f"{self.base_url}/v1/models", timeout=3)
-            return r.status_code == 200
+            if r.status_code != 200:
+                return False
+            models = [m.get("id", "") for m in r.json().get("data", [])]
+            return any(self.model in m or m in self.model for m in models)
         except requests.exceptions.RequestException:
             return False
 
@@ -65,6 +69,11 @@ class VLLMClient:
                 headers=self._headers,
                 timeout=120,
             )
+            if r.status_code == 404:
+                raise RuntimeError(
+                    f"vLLM returned 404 — model '{self.model}' is still loading. "
+                    "Wait ~30 s and try again."
+                )
             r.raise_for_status()
             result = r.json()["choices"][0]["message"]
             has_tool_calls = bool(result.get("tool_calls"))
@@ -91,6 +100,11 @@ class VLLMClient:
                 headers=self._headers,
                 timeout=timeout,
             )
+            if r.status_code == 404:
+                raise RuntimeError(
+                    f"vLLM returned 404 — model '{self.model}' is still loading. "
+                    "Wait ~30 s and try again."
+                )
             r.raise_for_status()
             content = r.json()["choices"][0]["message"]["content"]
             span.set_attribute("llm.response_len", len(content))
