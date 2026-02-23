@@ -1,7 +1,46 @@
 """LLM clients — OllamaClient (embeddings only) and VLLMClient (chat via OpenAI-compatible API)."""
+import json
+import re
+import uuid
 import requests
 
 from hal.tracing import get_tracer
+
+# Qwen2.5-Coder with --tool-call-parser hermes outputs tool calls wrapped in
+# <tools> or <tool_call> tags instead of the OpenAI tool_calls field.
+# These patterns extract them so the agent loop works without parser changes.
+_TOOL_TAG_RE = re.compile(
+    r"<(?:tool_call|tools)>\s*(?P<json>\{.*?\})\s*</(?:tool_call|tools)>",
+    re.DOTALL,
+)
+
+
+def _extract_tool_calls_from_content(content: str) -> list[dict]:
+    """Parse tool call JSON blocks from model content when tool_calls is empty.
+
+    Handles both <tool_call>{json}</tool_call> (Hermes) and
+    <tools>{json}</tools> (Qwen2.5-Coder native) wrappers.
+    Returns a list of OpenAI-style tool_call dicts, or [] if nothing found.
+    """
+    calls = []
+    for m in _TOOL_TAG_RE.finditer(content):
+        try:
+            data = json.loads(m.group("json"))
+        except json.JSONDecodeError:
+            continue
+        name = data.get("name") or data.get("function", {}).get("name", "")
+        args = data.get("arguments") or data.get("parameters") or {}
+        if not name:
+            continue
+        calls.append({
+            "id": f"call_{uuid.uuid4().hex[:8]}",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": args if isinstance(args, str) else json.dumps(args),
+            },
+        })
+    return calls
 
 
 class OllamaClient:
@@ -78,6 +117,15 @@ class VLLMClient:
                 )
             r.raise_for_status()
             result = r.json()["choices"][0]["message"]
+            # Fallback: Qwen2.5-Coder emits tool calls as <tools>/{json}</tools>
+            # in content rather than in the tool_calls field when using the
+            # hermes parser. Extract them so the agent loop sees proper calls.
+            if not result.get("tool_calls") and result.get("content"):
+                extracted = _extract_tool_calls_from_content(result["content"])
+                if extracted:
+                    result = dict(result)
+                    result["tool_calls"] = extracted
+                    result["content"] = None  # consumed; prevent poison detection
             has_tool_calls = bool(result.get("tool_calls"))
             span.set_attribute("llm.has_tool_calls", has_tool_calls)
             if has_tool_calls:
