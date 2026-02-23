@@ -1,11 +1,31 @@
 """SQLite-backed session and conversation history store."""
+import logging
 import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
 
+log = logging.getLogger(__name__)
+
 DB_PATH = Path.home() / ".orion" / "memory.db"
 TURN_WINDOW = 40  # messages loaded into LLM context (20 exchanges)
+
+
+def is_poison_response(text: str) -> bool:
+    """Return True if text looks like a raw tool-call JSON dump, not a real response.
+
+    Pre-vLLM, Ollama's qwen2.5-coder would emit tool calls as JSON in the content
+    field rather than via the structured tool_calls field.  Those turns were saved to
+    SQLite and re-injected into later sessions, compounding identity and routing bugs.
+
+    The pattern is unambiguous: {"name": "<tool>", "arguments": {...}}.  No legitimate
+    HAL response starts with a bare JSON object that contains both "name" and
+    "arguments" as top-level keys.
+    """
+    stripped = text.strip()
+    if not stripped.startswith("{"):
+        return False
+    return '"name"' in stripped and '"arguments"' in stripped
 
 
 def _connect() -> sqlite3.Connection:
@@ -55,6 +75,9 @@ class MemoryStore:
         return row["id"] if row else None
 
     def save_turn(self, session_id: str, role: str, content: str) -> None:
+        if role == "assistant" and is_poison_response(content):
+            log.warning("save_turn: dropping poison assistant turn (raw tool-call JSON)")
+            return
         self.conn.execute(
             "INSERT INTO turns (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
             (session_id, role, content, datetime.now().isoformat()),

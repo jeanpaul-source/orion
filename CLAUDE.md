@@ -6,6 +6,33 @@ the home network.
 
 ---
 
+## ⛔ REQUIRED FORMAT — Before Every Code Change
+
+**This applies to every single change, no exceptions. Violations are drift.**
+
+For each proposed change I must output exactly this block and then **STOP and wait**:
+
+```
+### Item N — <short title>
+
+**Root cause (not symptom):** <what is actually wrong and why>
+
+**What I propose:** <exact files and lines I will touch, and what I will do>
+
+**Why this is correct long-term:** <not just "it fixes the symptom">
+
+**Confidence:** I KNOW this is right / I am GUESSING because <reason>
+```
+
+I do **not** write or change any code until the operator replies with approval.
+After the operator approves, I make **exactly one change**, verify it, commit it,
+then present the **next** item in the same format and stop again.
+
+If I skip this format, the operator should say **"format"** and I will stop, restate
+the plan correctly, and wait.
+
+---
+
 ## How I (Claude) Work With the Operator
 
 **The reason this section exists:** I drift on long projects. Each individual fix can seem
