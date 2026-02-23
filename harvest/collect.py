@@ -231,6 +231,48 @@ def collect_systemd_units() -> list[dict]:
     return docs
 
 
+# Extensions that are treated as plain text for ingestion
+_TEXT_EXTENSIONS = {".md", ".txt", ".rst", ".conf", ".yaml", ".yml", ".json", ".sh", ".py", ".toml", ".ini"}
+_STATIC_DOCS_ROOT = Path("/data/orion/orion-data/documents/raw")
+
+
+def collect_static_docs(root: Path = _STATIC_DOCS_ROOT) -> list[dict]:
+    """Ingest pre-scraped documents from the raw documents directory.
+
+    Each top-level subdirectory becomes a category (e.g.
+    ``ai-agents-and-multi-agent-systems``).  Files are read as-is; binary
+    and unrecognised extensions are skipped.  The raw files are never moved
+    or modified.
+    """
+    if not root.exists():
+        return []
+
+    docs = []
+    for category_dir in sorted(root.iterdir()):
+        if not category_dir.is_dir():
+            continue
+        category = category_dir.name  # use dir name verbatim as category
+        for file_path in sorted(category_dir.rglob("*")):
+            if not file_path.is_file():
+                continue
+            if file_path.suffix.lower() not in _TEXT_EXTENSIONS:
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if not content.strip():
+                continue
+            docs.append(_doc(
+                file_path=str(file_path),
+                file_name=file_path.name,
+                category=category,
+                content=f"# {file_path.name}\n\n{content}",
+                metadata={"source_path": str(file_path), "category": category},
+            ))
+    return docs
+
+
 def collect_all() -> list[dict]:
     collectors = [
         ("docker containers", collect_docker_containers),
@@ -238,6 +280,7 @@ def collect_all() -> list[dict]:
         ("hardware",          collect_hardware),
         ("config files",      collect_config_files),
         ("systemd units",     collect_systemd_units),
+        ("static docs",       collect_static_docs),
     ]
     all_docs = []
     for name, fn in collectors:

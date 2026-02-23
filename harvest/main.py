@@ -37,7 +37,7 @@ def main() -> None:
         sys.exit(0)
 
     # Ingest
-    llm = OllamaClient(config.ollama_host, config.ollama_model, config.embed_model)
+    llm = OllamaClient(config.ollama_host, config.embed_model)
 
     if not llm.ping():
         print("ERROR: Ollama not reachable — is it running?")
