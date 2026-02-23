@@ -18,7 +18,7 @@ from hal.executor import SSHExecutor
 from hal.facts import remember
 from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
-from hal.llm import OllamaClient
+from hal.llm import OllamaClient, VLLMClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tunnel import SSHTunnel, port_open
@@ -74,51 +74,53 @@ Anything else is sent to HAL as a question (with knowledge base context).
 
 
 
-def setup_ollama(config: cfg.Config) -> tuple[OllamaClient, SSHTunnel | None]:
+def _connect(
+    name: str, url: str, lab_user: str, lab_host: str, default_port: int
+) -> tuple[str, SSHTunnel | None]:
+    """Return (reachable_url, tunnel_or_None). Tries direct first, then SSH tunnel."""
     from urllib.parse import urlparse
 
-    parsed = urlparse(config.ollama_host)
+    parsed = urlparse(url)
     host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or 11434
+    port = parsed.port or default_port
 
-    tunnel = None
+    if port_open(host, port):
+        return url, None
 
-    if not port_open(host, port):
-        if config.use_ssh_tunnel:
-            console.print(
-                f"[yellow]Ollama not directly reachable — starting SSH tunnel "
-                f"({config.lab_user}@{config.lab_host}:{port})[/]"
-            )
-            tunnel = SSHTunnel(config.lab_user, config.lab_host, port, 11434)
-            tunnel.start()
-            ollama_url = f"http://127.0.0.1:{tunnel.local_port}"
-        else:
-            # Auto-try SSH tunnel even if not explicitly configured
-            console.print(
-                "[yellow]Ollama not reachable directly — trying SSH tunnel...[/]"
-            )
-            tunnel = SSHTunnel(config.lab_user, config.lab_host, port, 11434)
-            try:
-                tunnel.start()
-                ollama_url = f"http://127.0.0.1:{tunnel.local_port}"
-                console.print("[green]SSH tunnel established.[/]")
-            except RuntimeError as e:
-                tunnel = None
-                console.print(f"[red]Tunnel failed: {e}[/]")
-                console.print(
-                    "[red]Cannot reach Ollama. Check SSH access or set OLLAMA_HOST.[/]"
-                )
-                sys.exit(1)
-    else:
-        ollama_url = config.ollama_host
-
-    client = OllamaClient(ollama_url, config.ollama_model, config.embed_model)
-
-    if not client.ping():
-        console.print("[red]Ollama is not responding. Is the service running?[/]")
+    console.print(f"[yellow]{name} not directly reachable — trying SSH tunnel...[/]")
+    tunnel = SSHTunnel(lab_user, lab_host, port, default_port)
+    try:
+        tunnel.start()
+        console.print(f"[green]{name} SSH tunnel established.[/]")
+        return f"http://127.0.0.1:{tunnel.local_port}", tunnel
+    except RuntimeError as e:
+        console.print(f"[red]{name} tunnel failed: {e}[/]")
         sys.exit(1)
 
-    return client, tunnel
+
+def setup_clients(
+    config: cfg.Config,
+) -> tuple[VLLMClient, OllamaClient, list[SSHTunnel]]:
+    """Connect to vLLM (chat) and Ollama (embeddings). Returns both clients and any tunnels opened."""
+    tunnels: list[SSHTunnel] = []
+
+    vllm_url, t = _connect("vLLM", config.vllm_url, config.lab_user, config.lab_host, 8000)
+    if t:
+        tunnels.append(t)
+    llm = VLLMClient(vllm_url, config.chat_model)
+    if not llm.ping():
+        console.print("[red]vLLM is not responding. Is it running?[/]")
+        sys.exit(1)
+
+    ollama_url, t = _connect("Ollama", config.ollama_host, config.lab_user, config.lab_host, 11434)
+    if t:
+        tunnels.append(t)
+    embed = OllamaClient(ollama_url, "", config.embed_model)
+    if not embed.ping():
+        console.print("[red]Ollama is not responding. Is it running?[/]")
+        sys.exit(1)
+
+    return llm, embed, tunnels
 
 
 def cmd_health(prom: PrometheusClient) -> None:
@@ -270,12 +272,12 @@ def cmd_sessions(mem: MemoryStore) -> None:
         )
 
 
-def cmd_remember(fact: str, dsn: str, llm: OllamaClient) -> None:
+def cmd_remember(fact: str, dsn: str, embed: OllamaClient) -> None:
     if not fact:
         console.print("[yellow]Usage: /remember <fact>[/]")
         return
     with console.status("storing fact...", spinner="dots"):
-        remember(fact, dsn, llm)
+        remember(fact, dsn, embed)
     console.print(f"[green]remembered:[/] {fact}")
 
 
@@ -309,15 +311,15 @@ def main() -> None:
         )
     )
 
-    ollama, tunnel = setup_ollama(config)
-    kb = KnowledgeBase(config.pgvector_dsn, ollama)
+    llm, embed, tunnels = setup_clients(config)
+    kb = KnowledgeBase(config.pgvector_dsn, embed)
     prom = PrometheusClient(config.prometheus_url)
     executor = SSHExecutor(config.lab_host, config.lab_user)
-    judge = Judge(ollama=ollama)
+    judge = Judge(ollama=llm)
     mem = MemoryStore()
 
     with console.status("[dim]building intent classifier...[/]", spinner="dots"):
-        classifier = IntentClassifier(ollama)
+        classifier = IntentClassifier(embed)
 
     # Resume last session or start fresh
     session_id = mem.last_session_id()
@@ -325,7 +327,7 @@ def main() -> None:
         history = mem.load_turns(session_id)
         exchanges = len(history) // 2
         console.print(
-            f"[green]connected[/] — model: [bold]{config.ollama_model}[/]  "
+            f"[green]connected[/] — model: [bold]{config.chat_model}[/]  "
             f"prom: {config.prometheus_url}"
         )
         console.print(f"[dim]resumed session {session_id} ({exchanges} exchanges)[/]")
@@ -333,7 +335,7 @@ def main() -> None:
         session_id = mem.new_session()
         history = []
         console.print(
-            f"[green]connected[/] — model: [bold]{config.ollama_model}[/]  "
+            f"[green]connected[/] — model: [bold]{config.chat_model}[/]  "
             f"prom: {config.prometheus_url}"
         )
         console.print(f"[dim]new session {session_id}[/]")
@@ -372,7 +374,7 @@ def main() -> None:
             elif user_input == "/kb":
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):
-                cmd_remember(user_input[10:].strip(), config.pgvector_dsn, ollama)
+                cmd_remember(user_input[10:].strip(), config.pgvector_dsn, embed)
             elif user_input.startswith("/search_memory "):
                 cmd_search_memory(user_input[15:].strip(), mem)
             elif user_input == "/sessions":
@@ -402,22 +404,22 @@ def main() -> None:
 
                 if intent == "health":
                     run_health(
-                        user_input, history, ollama, prom,
+                        user_input, history, llm, prom,
                         mem, session_id, SYSTEM_PROMPT, console,
                     )
                 elif intent == "fact":
                     run_fact(
-                        user_input, history, ollama, kb,
+                        user_input, history, llm, kb,
                         mem, session_id, SYSTEM_PROMPT, console,
                     )
                 else:
                     run_agent(
-                        user_input, history, ollama, kb, prom,
+                        user_input, history, llm, kb, prom,
                         executor, judge, mem, session_id, SYSTEM_PROMPT, console,
                     )
 
     finally:
-        if tunnel:
+        for tunnel in tunnels:
             tunnel.stop()
         mem.close()
         readline.write_history_file(str(HISTORY_FILE))

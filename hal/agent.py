@@ -7,7 +7,7 @@ from rich.console import Console
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
-from hal.llm import OllamaClient, VLLMClient
+from hal.llm import VLLMClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.workers import list_dir, read_file, write_file
@@ -222,7 +222,7 @@ def _dispatch(
 def run_health(
     user_input: str,
     history: list[dict],
-    llm: OllamaClient | VLLMClient,
+    llm: VLLMClient,
     prom: PrometheusClient,
     mem: MemoryStore,
     session_id: str,
@@ -264,7 +264,7 @@ def run_health(
 def run_fact(
     user_input: str,
     history: list[dict],
-    llm: OllamaClient | VLLMClient,
+    llm: VLLMClient,
     kb: KnowledgeBase,
     mem: MemoryStore,
     session_id: str,
@@ -314,7 +314,7 @@ def run_fact(
 def run_agent(
     user_input: str,
     history: list[dict],
-    llm: OllamaClient | VLLMClient,
+    llm: VLLMClient,
     kb: KnowledgeBase,
     prom: PrometheusClient,
     executor: SSHExecutor,
