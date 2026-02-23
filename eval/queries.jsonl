@@ -1,0 +1,24 @@
+{"query": "please check the lab for anything that seems off", "expected_intent": "agentic", "failure_case": "B1", "description": "Exact query from session history that produced raw JSON tool call as response text"}
+{"query": "what port does prometheus run on?", "expected_intent": "fact", "failure_case": "B1", "description": "Simple fact query that triggered get_metrics JSON dump instead of an answer"}
+{"query": "hello", "expected_intent": "agentic", "failure_case": "B1", "description": "Single word greeting that triggered search_kb JSON with AWS query as response"}
+{"query": "what are you?", "expected_intent": "agentic", "failure_case": "B2", "description": "Direct identity question — model tends to respond as Qwen not HAL"}
+{"query": "who made you?", "expected_intent": "agentic", "failure_case": "B2", "description": "Identity provenance question — RLHF training overrides system prompt"}
+{"query": "are you qwen?", "expected_intent": "agentic", "failure_case": "B2", "description": "Direct challenge — model should deny or redirect, not confirm Qwen identity"}
+{"query": "do you have a system prompt?", "expected_intent": "agentic", "failure_case": "B2", "description": "Exact question from session 550cae47 that triggered Qwen identity response"}
+{"query": "do you remember our talks?", "expected_intent": "agentic", "failure_case": "B2", "description": "Memory probe from B2 session — model denied having memory, contradicting system prompt"}
+{"query": "hello Hal, how are you today?", "expected_intent": "agentic", "failure_case": "B3", "description": "Exact greeting from B3 session that was answered with Prometheus container docs"}
+{"query": "thanks", "expected_intent": "agentic", "failure_case": "B3", "description": "Casual acknowledgement — no intent category exists, falls to agentic, KB seeds noise"}
+{"query": "good morning", "expected_intent": "agentic", "failure_case": "B3", "description": "Casual greeting with no KB-relevant content — should be answered naturally"}
+{"query": "is everything ok with the lab?", "expected_intent": "health", "failure_case": "B4", "description": "Exact query from session 834492e3 that exhausted max iterations without an answer"}
+{"query": "run a full health check on all services", "expected_intent": "agentic", "failure_case": "B4", "description": "Broad agentic query that tends to trigger repeated get_metrics loops"}
+{"query": "jp@the-lab:~/orion$ hal --new", "expected_intent": "agentic", "failure_case": "B5", "description": "Terminal prompt pasted into HAL — model tried to execute it as a command"}
+{"query": "hows the lab today?", "expected_intent": "health", "failure_case": "B6", "description": "Exact query from B6 session that was answered with hardware specs from KB instead of live metrics"}
+{"query": "what is the current memory usage?", "expected_intent": "health", "failure_case": "positive", "description": "Clear health query — should route correctly and return live metrics"}
+{"query": "is the server healthy?", "expected_intent": "health", "failure_case": "positive", "description": "Direct health query — positive working case"}
+{"query": "what port does grafana run on?", "expected_intent": "fact", "failure_case": "positive", "description": "Clear fact query — should return 3001 from KB"}
+{"query": "is ollama in docker or bare metal?", "expected_intent": "fact", "failure_case": "positive", "description": "Documented infrastructure fact — should answer from KB"}
+{"query": "where are secrets stored?", "expected_intent": "fact", "failure_case": "positive", "description": "Fact query with a known answer — /run/homelab-secrets/"}
+{"query": "why is prometheus not responding?", "expected_intent": "agentic", "failure_case": "positive", "description": "Diagnosis query — should enter agentic loop with tool calls"}
+{"query": "check if ollama is running", "expected_intent": "agentic", "failure_case": "positive", "description": "Service status check — should run a command and report back"}
+{"query": "what is the pgvector table structure?", "expected_intent": "agentic", "failure_case": "positive", "description": "Technical question requiring KB search and possibly a command"}
+{"query": "show me the last 20 lines of the watchdog log", "expected_intent": "agentic", "failure_case": "positive", "description": "File read request — should use read_file tool"}

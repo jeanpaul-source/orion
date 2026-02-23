@@ -45,7 +45,7 @@ You → HAL (thin coordinator, LLM brain)
         │     ├── health  → run_health()  (metrics, no tool loop)
         │     ├── fact    → run_fact()    (KB search, no tool loop)
         │     └── agentic → run_agent()  (full tool loop)
-        ├── pgvector  (knows the lab — 2,244 doc chunks indexed)
+        ├── pgvector  (knows the lab — 2,293 doc chunks indexed)
         ├── Judge     (policy gate — "is this safe to do?", approval tiers)
         └── Workers   (do things)
               ├── SSH executor   (run commands on the server)
@@ -72,7 +72,7 @@ You → HAL (thin coordinator, LLM brain)
 - Storage: Samsung 990 PRO 2TB (boot/root), 2x WD SN850X 2TB (/docker, /data/projects)
 - Tailscale: 100.82.66.91
 
-**What's actually running (verified Feb 21, 2026):**
+**What's actually running (verified Feb 22, 2026):**
 
 | Service | Host Port | Container Port | Type | Notes |
 |---|---|---|---|---|
@@ -83,8 +83,11 @@ You → HAL (thin coordinator, LLM brain)
 | grafana | 3001 | 3000 | Docker | same compose stack |
 | node-exporter | — | 9100 | Docker | internal to monitoring network only |
 | blackbox-exporter | — | 9115 | Docker | internal to monitoring network only |
-| agent-zero | 50080 | 80 | Docker | AI agent UI; uses Ollama via host.docker.internal:11434 |
 | cockpit | 9090 | — | systemd | Server management UI — NOT Prometheus |
+
+**NOT running (but planned):**
+- vLLM — port 8000; HAL code expects it here; blocked by RTX 3090 Ti CUDA driver issue (see SESSION_FINDINGS RC1)
+- agent-zero — container is absent (not just stopped); decomissioned or never deployed on this host
 
 **Secrets:** Managed by SOPS + `homelab-secrets.service` (tmpfs at `/run/homelab-secrets/`).
 Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
@@ -97,18 +100,23 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 **Runtime data:** `/docker/` (not source of truth — compose runtime mounts)
 
-**Ollama models present:**
-- `qwen2.5-coder:32b` — **default**, 32B params
-- `qwen2.5-coder-14b-32k:latest` — available but not used
+**Ollama models present (verified Feb 22, 2026):**
+- `qwen2.5-coder:32b` — primary fallback; 32B params
+- `qwen2.5-coder-32b-16k:latest` — 32B, 16k context variant
+- `qwen2.5-coder:14b` — 14B params
+- `qwen2.5-coder-14b-32k:latest` — 14B, 32k context variant
 - `nomic-embed-text:latest` — 768-dim embeddings, used by intent classifier + pgvector
 
-**pgvector knowledge base:**
-- 2,244 document chunks, 768-dim HNSW embeddings (cosine)
-- Categories: ai-agents-and-multi-agent-systems (1,440), rag-and-knowledge-retrieval (799), misc (5)
-- After harvest: also `lab-infrastructure` and `lab-state` categories
+**Chat LLM:** HAL uses vLLM (OpenAI-compatible API at port 8000) as its primary chat backend. Ollama is used only for embeddings. Model: `Qwen/Qwen2.5-32B-Instruct-AWQ` (19GB AWQ-quantised).
+
+**pgvector knowledge base (verified Feb 22, 2026):**
+- 2,293 document chunks, 768-dim HNSW embeddings (cosine)
+- Categories: ai-agents-and-multi-agent-systems (1,440), rag-and-knowledge-retrieval (799), lab-infrastructure (35), lab-state (14), ghs-genome (4), ghs-rejections (1)
+- Harvest HAS been run; `harvest_last_run` timestamp file not yet written → watchdog incorrectly reports harvest_lag
+- `ghs-genome` and `ghs-rejections` (5 rows) are foreign data — don't belong, low harm, should be cleaned
 - Table: `documents` — columns: content, embedding, category, file_name, file_path, metadata
 
-**NOT running:** vLLM, Qdrant, AnythingLLM, n8n, Traefik, Authelia
+**NOT running:** Qdrant, AnythingLLM, n8n, Traefik, Authelia
 
 **Watch:** Swap usage was 7.3G/8G despite 49G RAM free (Feb 21 2026) — worth investigating
 
@@ -130,14 +138,19 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/facts.py` | `/remember` — embeds facts to pgvector as `category='memory'` |
 | `hal/watchdog.py` | Standalone monitoring watchdog (run via systemd timer) |
 | `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk/swap/load |
-| `hal/llm.py` | `OllamaClient`: `chat_with_tools()`, `chat()` |
+| `hal/llm.py` | `OllamaClient` (embeddings), `VLLMClient` (chat via OpenAI-compatible API) |
+| `hal/tracing.py` | OTel setup; `setup_tracing()` + `get_tracer()`; no-op fallback if collector absent |
+| `hal/tunnel.py` | SSH tunnel for laptop-side use (auto-tunnel when vLLM/Ollama not directly reachable) |
 | `hal/knowledge.py` | pgvector KB search |
-| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`) |
+| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`) |
 | `harvest/` | Lab infrastructure harvester — re-indexes lab state into pgvector |
+| `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
+| `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
+| `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
 | `tests/` | pytest suite for intent classifier (21 tests); requires Ollama running |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
-| `requirements.txt` | Production Python deps |
-| `requirements-dev.txt` | Dev-only deps (pytest) |
+| `requirements.txt` | Production Python deps (includes opentelemetry-*) |
+| `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
 | `.env.example` | Config template |
 | `ops/` | Systemd units (`watchdog.service`, `watchdog.timer`) — gitignored |
 
@@ -193,6 +206,9 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 - Dead code removed: JSON-in-content fallback parser (was for 14b model), tool-use rules from system prompt
 - Per-turn output size cap: tool results capped at 8000 chars in run_agent
 - write_file tool added to agent TOOLS list
+- Switched LLM backend from Ollama chat → vLLM OpenAI-compatible API (`VLLMClient`); Ollama now embeddings-only
+- OTel tracing: `hal/tracing.py`; spans on every turn, intent classify, LLM call, tool call; collector at localhost:4318
+- Evaluation framework: `eval/` — 24 queries targeting B1–B6, runner + 5 evaluators (azure-ai-evaluation)
 
 **Watchdog deployment (server):**
 
@@ -205,6 +221,9 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 
 **Backlog:**
 
-- **Run harvest on server**: `python -m harvest` — clears the current `harvest_lag` watchdog alert (timestamp file not yet written on server)
+- **Fix harvest_lag watchdog alert**: Harvest already ran and the data is in pgvector. Just write the timestamp: `touch ~/.orion/harvest_last_run`. Or re-run `python -m harvest` to refresh data and write it properly.
+- **Clean foreign KB data**: `ghs-genome` (4 rows) and `ghs-rejections` (1 row) don't belong. Delete with: `DELETE FROM documents WHERE category IN ('ghs-genome', 'ghs-rejections');`
+- **Get vLLM running**: RTX 3090 Ti CUDA driver issue (device-side assert in sampler). Next step: `VLLM_ATTENTION_BACKEND=XFORMERS vllm serve ...` — see last session for full debug sequence.
 - **Judge no-tools constraint**: `_llm_reason()` in `hal/judge.py` should tell the LLM "do not call tools or fetch external data" — prevents the risk evaluator from trying to use tools
 - **Security module**: network guard — planned, needs design conversation before any code
+- **RC3 — session history pruning**: Bad turns (Qwen identity, JSON dumps) accumulate in SQLite and compound future failures. Need a pruning strategy or quality filter on what gets saved.
