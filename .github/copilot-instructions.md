@@ -17,7 +17,7 @@ Key data flow: `hal/main.py` → `IntentClassifier` → one of three handlers in
 ## LLM Backend Split (Critical)
 
 - **Chat (`VLLMClient`):** vLLM OpenAI-compatible API at `VLLM_URL` (default `http://localhost:8000`),
-  model `Qwen/Qwen2.5-Coder-32B-Instruct-AWQ`. Uses `/v1/chat/completions`.
+  model `Qwen/Qwen2.5-32B-Instruct-AWQ`. Uses `/v1/chat/completions`.
 - **Embeddings (`OllamaClient`):** Ollama at `OLLAMA_HOST`, model `nomic-embed-text:latest`.
   Ollama is **embeddings-only** — never used for chat.
 
@@ -26,7 +26,7 @@ Venv: `~/vllm-env/`. Two required env vars in the unit file:
 - `VLLM_USE_FLASHINFER_SAMPLER=0` — fixes CUDA device-side assert on RTX 3090 Ti
 - `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` — prevents KV cache OOM under load
 
-`Restart=always` + `RestartSec=10`. Flags: `--enforce-eager --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.95`.
+`Restart=always` + `RestartSec=10`. Flags: `--enable-auto-tool-choice --tool-call-parser hermes --enforce-eager --max-model-len 8192 --gpu-memory-utilization 0.95`.
 Manage: `systemctl --user [start|stop|status] vllm.service`. Logs: `journalctl --user -u vllm`.
 
 **Ollama GPU:** `OLLAMA_NUM_GPU=0` is set in `/etc/systemd/system/ollama.service.d/override.conf` — Ollama runs on CPU. This is required: Ollama was consuming ~800 MB VRAM, causing vLLM to OOM during inference. Do not remove this flag.
