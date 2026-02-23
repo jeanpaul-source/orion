@@ -25,6 +25,7 @@ from rich.console import Console
 # ── HAL imports ─────────────────────────────────────────────────────────────
 import hal.config as cfg
 from hal.agent import run_agent, run_fact, run_health
+from hal.main import SYSTEM_PROMPT
 from hal.executor import SSHExecutor
 from hal.intent import IntentClassifier
 from hal.judge import Judge, tier_for
@@ -170,12 +171,7 @@ def main(argv: list[str] | None = None) -> None:
     console.print("[dim]Building intent classifier...[/]")
     classifier = IntentClassifier(embed)
 
-    SYSTEM = """\
-You are HAL, the AI coordinator for the Orion homelab assistant. Do not refer to yourself as Qwen, \
-Claude, or any other model name. You are HAL.
-Lab host: the-lab (192.168.5.10). Services: Prometheus :9091, Grafana :3001, Ollama :11434 (bare metal).
-Keep answers concise. Do not hallucinate values. If you don't know, say so.
-"""
+    SYSTEM = SYSTEM_PROMPT
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     results: list[dict] = []
