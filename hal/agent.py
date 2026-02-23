@@ -453,11 +453,14 @@ def run_agent(
         span.set_attribute("hal.session_id", session_id)
         span.set_attribute("hal.query", user_input[:200])
         # Seed the first message with KB context (fast, cheap, often helpful)
+        # Threshold 0.75: only inject context that is a strong semantic match.
+        # At 0.6 casual queries pulled in loosely-related docs (e.g. Prometheus
+        # config for a greeting) which the LLM answered instead of the question.
         try:
             chunks = kb.search(user_input, top_k=3)
             context_lines = []
             for c in chunks:
-                if c["score"] >= 0.6:
+                if c["score"] >= 0.75:
                     context_lines.append(f"[{c['file']} | score={c['score']:.2f}]")
                     context_lines.append(c["content"].strip())
             if context_lines:
