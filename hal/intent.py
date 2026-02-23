@@ -17,7 +17,7 @@ from typing import Literal
 from hal.llm import OllamaClient
 from hal.tracing import get_tracer
 
-Intent = Literal["health", "fact", "agentic"]
+Intent = Literal["health", "fact", "agentic", "conversational"]
 
 # Minimum cosine similarity score to trust a health or fact classification.
 # Below this, the query falls through to the agentic loop.
@@ -26,6 +26,23 @@ THRESHOLD = 0.65
 # ~13 example sentences per category covering natural variation in phrasing.
 # To fix a misroute: add a sentence here that looks like the misrouted query.
 EXAMPLES: dict[str, list[str]] = {
+    "conversational": [
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank you",
+        "bye",
+        "goodbye",
+        "ok",
+        "cool",
+        "got it",
+        "makes sense",
+        "sounds good",
+        "nice",
+        "great",
+        "cheers",
+    ],
     "health": [
         "how's the lab?",
         "is everything ok?",

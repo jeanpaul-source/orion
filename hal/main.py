@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 import hal.config as cfg
-from hal.agent import run_agent, run_health, run_fact
+from hal.agent import run_agent, run_health, run_fact, run_conversational
 from hal.intent import IntentClassifier
 from hal.executor import SSHExecutor
 from hal.facts import remember
@@ -306,6 +306,10 @@ def main() -> None:
     parser.add_argument(
         "--new", action="store_true", help="start a fresh session (don't resume last)"
     )
+    parser.add_argument(
+        "--print", dest="query", metavar="QUERY",
+        help="run a single query non-interactively, print the answer, and exit",
+    )
     args = parser.parse_args()
 
     config = cfg.load()
@@ -313,21 +317,23 @@ def main() -> None:
     # Start tracing before any clients are built
     setup_tracing()
 
-    # Load readline history
-    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        readline.read_history_file(str(HISTORY_FILE))
-    except FileNotFoundError:
-        pass
-    readline.set_history_length(1000)
+    # Load readline history (skip in non-interactive --print mode)
+    if not args.query:
+        HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            readline.read_history_file(str(HISTORY_FILE))
+        except FileNotFoundError:
+            pass
+        readline.set_history_length(1000)
 
-    console.print(
-        Panel(
-            Text("HAL — Orion homelab coordinator", style="bold cyan"),
-            subtitle="type /help for commands",
-            border_style="cyan",
+    if not args.query:
+        console.print(
+            Panel(
+                Text("HAL \u2014 Orion homelab coordinator", style="bold cyan"),
+                subtitle="type /help for commands",
+                border_style="cyan",
+            )
         )
-    )
 
     llm, embed, tunnels = setup_clients(config)
     kb = KnowledgeBase(config.pgvector_dsn, embed)
@@ -344,19 +350,40 @@ def main() -> None:
     if session_id and not args.new:
         history = mem.load_turns(session_id)
         exchanges = len(history) // 2
-        console.print(
-            f"[green]connected[/] — model: [bold]{config.chat_model}[/]  "
-            f"prom: {config.prometheus_url}"
-        )
-        console.print(f"[dim]resumed session {session_id} ({exchanges} exchanges)[/]")
+        if not args.query:
+            console.print(
+                f"[green]connected[/] \u2014 model: [bold]{config.chat_model}[/]  "
+                f"prom: {config.prometheus_url}"
+            )
+            console.print(f"[dim]resumed session {session_id} ({exchanges} exchanges)[/]")
     else:
         session_id = mem.new_session()
         history = []
-        console.print(
-            f"[green]connected[/] — model: [bold]{config.chat_model}[/]  "
-            f"prom: {config.prometheus_url}"
-        )
-        console.print(f"[dim]new session {session_id}[/]")
+        if not args.query:
+            console.print(
+                f"[green]connected[/] \u2014 model: [bold]{config.chat_model}[/]  "
+                f"prom: {config.prometheus_url}"
+            )
+            console.print(f"[dim]new session {session_id}[/]")
+
+    # --print mode: single-shot query, no REPL
+    if args.query:
+        try:
+            user_input = args.query.strip()
+            intent, confidence = classifier.classify(user_input)
+            if intent == "conversational":
+                run_conversational(user_input, history, llm, mem, session_id, SYSTEM_PROMPT, console)
+            elif intent == "health":
+                run_health(user_input, history, llm, prom, mem, session_id, SYSTEM_PROMPT, console)
+            elif intent == "fact":
+                run_fact(user_input, history, llm, kb, mem, session_id, SYSTEM_PROMPT, console)
+            else:
+                run_agent(user_input, history, llm, kb, prom, executor, judge, mem, session_id, SYSTEM_PROMPT, console)
+        finally:
+            for tunnel in tunnels:
+                tunnel.stop()
+            mem.close()
+        return
 
     try:
         while True:
@@ -426,7 +453,12 @@ def main() -> None:
                     turn_span.set_attribute("hal.intent", intent)
                     turn_span.set_attribute("hal.confidence", confidence)
 
-                    if intent == "health":
+                    if intent == "conversational":
+                        run_conversational(
+                            user_input, history, llm,
+                            mem, session_id, SYSTEM_PROMPT, console,
+                        )
+                    elif intent == "health":
                         run_health(
                             user_input, history, llm, prom,
                             mem, session_id, SYSTEM_PROMPT, console,

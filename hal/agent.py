@@ -11,7 +11,7 @@ from hal.llm import VLLMClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tracing import get_tracer
-from hal.workers import list_dir, read_file, write_file
+from hal.workers import list_dir, read_file, write_file, patch_file, git_status, git_diff
 
 MAX_ITERATIONS = 8
 
@@ -148,6 +148,92 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "patch_file",
+            "description": (
+                "Edit a file on the lab server by replacing an exact string. "
+                "Safer than write_file — only the changed lines are touched. "
+                "Shows a diff before applying. Use for targeted config edits."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the file",
+                    },
+                    "old_str": {
+                        "type": "string",
+                        "description": "The exact text currently in the file to replace",
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "The new text to substitute in",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why this edit is needed",
+                    },
+                },
+                "required": ["path", "old_str", "new_str"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_status",
+            "description": (
+                "Show uncommitted file changes in a git repository on the lab server. "
+                "Use to see what has recently changed in a project or config directory."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Absolute path to the git repository root",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need git status",
+                    },
+                },
+                "required": ["repo_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": (
+                "Show the diff of uncommitted or committed changes in a git repository "
+                "on the lab server. Defaults to comparing working tree against HEAD. "
+                "Pass a commit ref to compare that specific point."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Absolute path to the git repository root",
+                    },
+                    "ref": {
+                        "type": "string",
+                        "description": "Git ref to diff against (default: HEAD)",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need the diff",
+                    },
+                },
+                "required": ["repo_path"],
+            },
+        },
+    },
 ]
 
 
@@ -208,6 +294,24 @@ def _dispatch(
             return "\n".join(lines) if lines else "No relevant results found."
         except Exception as e:
             return f"KB search failed: {e}"
+
+    elif name == "patch_file":
+        path = args.get("path", "")
+        old_str = args.get("old_str", "")
+        new_str = args.get("new_str", "")
+        reason = args.get("reason", "")
+        return patch_file(path, old_str, new_str, executor, judge, reason=reason)
+
+    elif name == "git_status":
+        repo_path = args.get("repo_path", "")
+        reason = args.get("reason", "")
+        return git_status(repo_path, executor, judge, reason=reason)
+
+    elif name == "git_diff":
+        repo_path = args.get("repo_path", "")
+        ref = args.get("ref", "HEAD")
+        reason = args.get("reason", "")
+        return git_diff(repo_path, executor, judge, ref=ref, reason=reason)
 
     elif name == "get_metrics":
         try:
@@ -415,7 +519,7 @@ def run_agent(
                     continue
                 seen_calls.add(call_key)
 
-                console.print(f"\n  [dim cyan]→ {name}({_fmt_args(raw_args)})[/]")
+                console.print(f"\n[bold green]⏺[/] [cyan]{name}[/]({_fmt_args(raw_args)})")
                 with get_tracer().start_as_current_span("hal.tool_call") as tool_span:
                     tool_span.set_attribute("tool.name", name)
                     tool_span.set_attribute("tool.iteration", iteration)
@@ -430,7 +534,7 @@ def run_agent(
                     result = result[:_MAX_TOOL_OUTPUT] + f"\n[…{omitted} chars omitted]"
 
                 preview = textwrap.shorten(result, width=140, placeholder="…")
-                console.print(f"  [dim]↳ {preview}[/]")
+                console.print(f"  [dim]{preview}[/]")
 
                 working.append({"role": "tool", "content": result, "tool_call_id": call_id})
                 new_calls += 1
@@ -465,6 +569,28 @@ def run_agent(
             history[:] = history[-40:]
 
         return response_text
+
+
+def run_conversational(
+    user_input: str,
+    history: list[dict],
+    llm: VLLMClient,
+    mem: MemoryStore,
+    session_id: str,
+    system: str,
+    console: Console,
+) -> str:
+    """Fast path for greetings and small talk — one LLM call, no tools, no KB lookup."""
+    messages = list(history) + [{"role": "user", "content": user_input}]
+    response = llm.chat(messages, system=system).strip()
+    console.print(f"\n[bold cyan]hal>[/] {response}")
+    history.append({"role": "user", "content": user_input})
+    history.append({"role": "assistant", "content": response})
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response)
+    if len(history) > 40:
+        history[:] = history[-40:]
+    return response
 
 
 def _fmt_args(args: dict) -> str:
