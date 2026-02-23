@@ -9,6 +9,10 @@ To add a test for a misrouted query you observed:
 """
 import pytest
 
+# All tests in this module require a live Ollama instance for embeddings.
+# They will be skipped automatically when Ollama is unreachable.
+pytestmark = pytest.mark.usefixtures("require_ollama")
+
 # ---------------------------------------------------------------------------
 # Test data — organised by expected intent
 # ---------------------------------------------------------------------------

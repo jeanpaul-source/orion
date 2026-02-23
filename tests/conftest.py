@@ -36,12 +36,15 @@ def classifier():
     return IntentClassifier(ollama)
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def require_ollama(classifier):
     """
-    Auto-runs before every test session. If the classifier failed to build its
-    embeddings (Ollama unreachable), skip the whole suite with a clear message
-    rather than letting every test fail with a confusing error.
+    Skip Ollama-dependent tests when the embedding model is unreachable.
+
+    NOT autouse — only tests that explicitly request this fixture (or modules
+    that declare pytestmark = pytest.mark.usefixtures("require_ollama")) will
+    be skipped.  Pure unit tests (judge, memory) must not be affected by
+    Ollama availability.
     """
     if not classifier._ready:
         pytest.skip(
