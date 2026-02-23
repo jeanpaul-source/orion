@@ -69,6 +69,7 @@ I'm drifting the explanation will sound wrong or thin. That is the catch mechani
 ```text
 You → HAL (thin coordinator, LLM brain)
         ├── IntentClassifier  (routes query before LLM sees it)
+        │     ├── conversational → run_conversational()  (direct reply, no tools)
         │     ├── health  → run_health()  (metrics, no tool loop)
         │     ├── fact    → run_fact()    (KB search, no tool loop)
         │     └── agentic → run_agent()  (full tool loop)
@@ -162,8 +163,8 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | Path | What it is |
 | --- | --- |
 | `hal/main.py` | REPL entry point; intent routing; all slash commands |
-| `hal/intent.py` | Embedding-based intent classifier (health / fact / agentic); threshold 0.65 |
-| `hal/agent.py` | `run_health()`, `run_fact()`, `run_agent()` — the three handlers |
+| `hal/intent.py` | Embedding-based intent classifier (conversational / health / fact / agentic); threshold 0.65 |
+| `hal/agent.py` | `run_conversational()`, `run_health()`, `run_fact()`, `run_agent()` — the four handlers |
 | `hal/judge.py` | Policy gate: tier 0-3, sensitive path blocklist, safe command allowlist, LLM risk eval, audit log |
 | `hal/workers.py` | `read_file`, `write_file`, `list_dir` — all gated through Judge |
 | `hal/executor.py` | SSH runner; detects localhost and runs directly (no self-SSH) |

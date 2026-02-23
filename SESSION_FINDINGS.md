@@ -48,18 +48,21 @@ Started: 2026-02-22 | Step 1 complete — awaiting operator review before Step 2
 - Impact: if HAL is run without a `.env` file (e.g. fresh checkout, CI, testing), Prometheus queries silently fail
 - Severity: low in practice (server .env overrides to 9091), but a latent trap for anyone setting up fresh
 - The `.env.example` correctly shows 9091 — the default in the Python code is inconsistent with the template
+- **✅ RESOLVED (2026-02-23):** `config.py` default updated to `http://192.168.5.10:9091`. Verified in source.
 
 #### D3 — `.env.example` has stale default model
 
 - CLAUDE.md: active model is `qwen2.5-coder:32b`
 - `.env.example` line 6: still shows `OLLAMA_MODEL=qwen2.5-coder-14b-32k:latest`
 - Severity: cosmetic — anyone copying `.env.example` to set up a new instance will get the 14b model by default, not 32b
+- **✅ RESOLVED (2026-02-23):** `.env.example` updated: `OLLAMA_MODEL` removed (Ollama is embeddings-only now); `CHAT_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` and `VLLM_URL` added. Verified in source.
 
 #### D4 — `hal/tunnel.py` is not documented in the CLAUDE.md file table
 
 - File exists, is imported and used by `hal/main.py`
 - Provides SSH tunnel for the laptop-side use case (auto-tunnel when Ollama not directly reachable)
 - Severity: minor omission — but it means the file table in CLAUDE.md is incomplete
+- **✅ RESOLVED (2026-02-23):** `hal/tunnel.py` added to CLAUDE.md file table and to README.md Key Files table.
 
 #### D5 — Undocumented Ollama model present
 
