@@ -253,7 +253,7 @@ HAL today is a single-machine coordinator running on or connecting to `the-lab`
 
 - A working terminal REPL with session memory
 - A deterministic intent classifier that routes ~80% of queries without calling the LLM
-- A pgvector knowledge base with 2,288 indexed chunks of lab documentation and config
+- A pgvector knowledge base with ~19,900 indexed chunks across 18 categories of lab documentation, configs, and domain knowledge
 - A full agentic tool loop gated by a tiered policy Judge
 - A standalone watchdog running as a user systemd timer
 - An eval harness with 24 queries and scored baselines
@@ -445,13 +445,14 @@ The lab's infrastructure documentation, service configs, and state are chunked, 
 with `nomic-embed-text`, and stored in a pgvector database. HAL searches this via
 `search_kb` to answer factual questions without running commands.
 
-Current size: **2,288 chunks** (as of Feb 2026). Re-harvest to update:
+Current size: **~19,900 chunks across 18 categories** (as of Feb 23, 2026). Re-harvest to update:
 ```bash
 python -m harvest
 ```
 
-The harvest pipeline lives in `harvest/`. It scrapes defined sources, chunks them,
-embeds them, and upserts into pgvector.
+The harvest pipeline lives in `harvest/`. It collects live lab state (containers, system metrics, configs, systemd units) and ingests pre-scraped static documents from `/data/orion/orion-data/documents/raw`, chunks them, embeds them via `nomic-embed-text`, and upserts into pgvector.
+
+Stale chunks from deleted files are cleared automatically on each harvest run. A nightly harvest timer (`harvest.timer`) runs at 3am on the server to keep lab state current and pick up new static docs.
 
 ### Session Memory (SQLite)
 
@@ -592,7 +593,16 @@ If a change causes any baseline to regress, do not merge.
 Re-index the lab state into pgvector after infrastructure changes:
 
 ```bash
-python -m harvest
+python -m harvest              # live run
+python -m harvest --dry-run   # preview what would be written, no DB changes
+```
+
+The nightly harvest timer on the server (`harvest.timer`) runs automatically at 3am. To deploy or update it:
+
+```bash
+cp ops/harvest.service ops/harvest.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now harvest.timer
 ```
 
 ### Deploy (laptop → server)
@@ -656,7 +666,7 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 | `harvest/` | Full harvest pipeline: scrape sources, chunk, embed, upsert to pgvector |
 | `eval/` | Evaluation harness: 24-query suite, response collector, scorer, baseline results |
 | `tests/` | 117 tests: 21 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore (no Ollama needed) |
-| `ops/` | Systemd unit files (`vllm.service`, `watchdog.service`, `watchdog.timer`), `KEYS_AND_TOKENS.md` |
+| `ops/` | Systemd unit files (`vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`), `KEYS_AND_TOKENS.md` |
 | `~/ntopng/docker-compose.yml` | ntopng + Redis Compose stack on server (not in repo — lives on server only) |
 | `CLAUDE.md` | AI operating contract — required reading before any code change. Contains the rules that prevent drift. |
 | `SESSION_FINDINGS.md` | Ground-truth audit of what actually runs on the server vs. what is documented |

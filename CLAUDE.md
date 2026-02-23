@@ -145,12 +145,13 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 **Chat LLM:** HAL uses vLLM (OpenAI-compatible API at port 8000) as its primary chat backend. Ollama is used only for embeddings. Model: `Qwen/Qwen2.5-32B-Instruct-AWQ` (19GB AWQ-quantised). The Coder variant (`Qwen2.5-Coder-32B-Instruct-AWQ`) is also on disk but is NOT used — it emits tool calls in `<tools>` tag format that `--tool-call-parser hermes` does not handle.
 
-**pgvector knowledge base (verified Feb 22, 2026):**
+**pgvector knowledge base (verified Feb 23, 2026 — session 4):**
 
-- 2,288 document chunks, 768-dim HNSW embeddings (cosine)
-- Categories: ai-agents-and-multi-agent-systems (1,440), rag-and-knowledge-retrieval (799), lab-infrastructure (35), lab-state (14)
-- `ghs-genome` and `ghs-rejections` (5 rows) deleted Feb 23 2026
-- `harvest_last_run` timestamp written — watchdog harvest_lag alarm silenced
+- ~19,900 document chunks, 768-dim HNSW embeddings (cosine)
+- 18 categories: github (7,197), virtualization (1,980), ai-agents-and-multi-agent-systems (1,771), databases (1,183), llm-serving-and-inference (1,145), homelab-networking-security (1,092), homelab-infrastructure (1,054), rag-and-knowledge-retrieval (1,048), readthedocs (960), gpu-passthrough-and-vgpu (669), vector-databases (511), self-healing-and-remediation (432), container-platforms (399), observability-and-alerting (316), workflow-automation-n8n (79), lab-infrastructure (35), lab-state (18), vendor_pdf (7)
+- Static docs ingested from `/data/orion/orion-data/documents/raw` — 727 documents, 17,657 chunks (Feb 23 2026)
+- Nightly harvest timer (`harvest.timer`) deployed on server — clears and re-ingests at 3am daily
+- `search_kb` threshold 0.45, top_k 8 (raised from 0.3/5 to reduce low-quality results with larger KB)
 - Table: `documents` — columns: content, embedding, category, file_name, file_path, metadata
 
 **NOT running:** Qdrant, AnythingLLM, n8n, Traefik, Authelia
@@ -191,7 +192,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
 | `.env.example` | Config template |
-| `ops/` | Systemd units (`watchdog.service`, `watchdog.timer`) — gitignored |
+| `ops/` | Systemd units: `vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`; `KEYS_AND_TOKENS.md` |
 
 ---
 
@@ -301,9 +302,18 @@ Laptop (edit code)
 - **harvest_last_run written on server**: `touch ~/.orion/harvest_last_run` — silences false watchdog harvest_lag alarm (harvest had already run; timestamp file was missing)
 - **CLAUDE.md required-format block added**: strict plan-before-code format enforced at top of file to prevent drift
 
+**Done (as of Feb 23, 2026 — session 4):**
+
+- **Static docs ingested into pgvector**: 727 documents, 17,657 chunks from `/data/orion/orion-data/documents/raw` — subdirectory names used as categories
+- **`collect_static_docs()` added** to `harvest/collect.py` — reads raw docs directory without moving or modifying files; registered in `collect_all()`
+- **`clear_static_docs()` added** to `harvest/ingest.py` — deletes all rows under the static docs path before re-harvest to prevent orphan chunks from deleted files
+- **`harvest/main.py` bug fixed**: `OllamaClient` was called with 3 args (`ollama_host, ollama_model, embed_model`) but the constructor only takes 2 (`base_url, embed_model`); `ollama_model` doesn't exist on `Config`. This caused every harvest run to crash at the ingest step.
+- **KB search quality raised**: `search_kb` threshold raised `0.3 → 0.45`, `top_k 5 → 8` in `hal/agent.py` — with 17k+ chunks, 0.3 was too permissive and returned irrelevant results
+- **Nightly harvest timer deployed**: `ops/harvest.service` + `ops/harvest.timer` created and deployed to server (`~/.config/systemd/user/`); fires at 3:00am daily; `Persistent=true` so missed runs catch up on next boot
+
 **Backlog:**
 
 - **Falco noise filter**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` (same pattern as existing `unix_chkpwd` entry)
 - **ntfy for watchdog**: `NTFY_URL` is in config but watchdog only logs to file; wire up the ntfy alert path
 - **Swap investigation**: 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
-- **Eval re-run**: baseline predates security tools and prompt rewrite; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline
+- **Eval re-run**: baseline predates security tools, prompt rewrite, and KB expansion; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline

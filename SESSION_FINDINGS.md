@@ -312,6 +312,74 @@ ghs-rejections                    |     1     ← undocumented, foreign data
 
 ---
 
+## STEP 4: Static Docs Ingestion and KB Quality (Feb 23, 2026 — session 4)
+
+### Changes made
+
+#### S4-1 — `collect_static_docs()` added to `harvest/collect.py`
+
+Pre-scraped documents in `/data/orion/orion-data/documents/raw` were not being ingested into the KB. HAL had no access to any of the domain knowledge in those files.
+
+Root cause: no collector existed for the static docs directory. The existing harvest pipeline only scraped live lab state (containers, system metrics, configs, systemd units).
+
+Fix: added `collect_static_docs()` to `harvest/collect.py`. Each top-level subdirectory becomes a pgvector category (directory name used verbatim). Recognised text extensions: `.md`, `.txt`, `.rst`, `.conf`, `.yaml`, `.yml`, `.json`, `.sh`, `.py`, `.toml`, `.ini`. Raw files are never moved or modified. Registered in `collect_all()`.
+
+Result: 727 documents, 17,657 chunks ingested on first run.
+
+#### S4-2 — Pre-existing `harvest/main.py` bug fixed
+
+Root cause: `harvest/main.py` called `OllamaClient(config.ollama_host, config.ollama_model, config.embed_model)`. `OllamaClient.__init__` only takes `(base_url, embed_model)` — 2 arguments. `config.ollama_model` does not exist on the `Config` dataclass. This caused every harvest run to crash with `AttributeError` at the ingest step. The harvester has likely never successfully completed a live run from this codebase.
+
+Fix: removed the spurious `config.ollama_model` argument.
+
+#### S4-3 — `clear_static_docs()` added to `harvest/ingest.py`
+
+Root cause: the existing `clear_lab_docs()` only cleared `lab-state` and `lab-infrastructure` categories. Static doc categories accumulated chunks on each run; files removed from disk left orphan chunks in the KB indefinitely.
+
+Fix: `clear_static_docs()` deletes all rows where `file_path LIKE '/data/orion/orion-data/documents/raw/%'` before re-ingest. Pre-existing old-pipeline PDFs (under `/docker/orion-data/...`) are not affected.
+
+#### S4-4 — KB search threshold raised
+
+Root cause: `search_kb` in `hal/agent.py` used threshold `0.3`, `top_k=5`. With ~19,900 chunks now in the DB across 18 categories (including 7,197 noisy `github` chunks), 0.3 was too permissive — HAL would confidently surface low-relevance matches.
+
+Fix: threshold raised `0.3 → 0.45`, `top_k 5 → 8`. HAL now returns "No relevant results found" instead of noise when no strong match exists.
+
+#### S4-5 — Nightly harvest timer deployed
+
+Root cause: no scheduled harvest existed. Live lab state (containers, memory, services) went stale immediately after a manual run. New static files added to the raw docs directory were never picked up.
+
+Fix: `ops/harvest.service` + `ops/harvest.timer` created. Timer fires at `03:00:00` daily, `Persistent=true`. Deployed to `~/.config/systemd/user/` on the server. First run: 2026-02-24 03:00 EST.
+
+Verify: `systemctl --user list-timers harvest.timer`
+
+### KB state after session 4
+
+| Category | Files | Chunks |
+|---|---|---|
+| github | 518 | 7,197 |
+| virtualization | 9 | 1,980 |
+| ai-agents-and-multi-agent-systems | 75 | 1,771 |
+| databases | 9 | 1,183 |
+| llm-serving-and-inference | 19 | 1,145 |
+| homelab-networking-security | 5 | 1,092 |
+| homelab-infrastructure | 18 | 1,054 |
+| rag-and-knowledge-retrieval | 52 | 1,048 |
+| readthedocs | 63 | 960 |
+| gpu-passthrough-and-vgpu | 17 | 669 |
+| vector-databases | 8 | 511 |
+| self-healing-and-remediation | 5 | 432 |
+| container-platforms | 7 | 399 |
+| observability-and-alerting | 10 | 316 |
+| workflow-automation-n8n | 5 | 79 |
+| lab-infrastructure | 8 | 35 |
+| lab-state | 12 | 18 |
+| vendor_pdf | 7 | 7 |
+| **TOTAL** | | **~19,896** |
+
+Note: `github` and other categories above lab-state/lab-infrastructure are a mix of our new static doc ingest (via `/data/orion/orion-data/documents/raw`) and a pre-existing ingest from a different pipeline (under `/docker/orion-data/...`, PDFs and readthedocs). These are separate rows — no deduplication has been done. On next nightly harvest, `clear_static_docs()` will remove and re-insert our rows only; the old-pipeline rows persist.
+
+---
+
 ### Tool installation note (completed during session)
 
 `sqlite3` and `psql` CLI tools were missing from the server. Installed via `dnf install sqlite postgresql`.
