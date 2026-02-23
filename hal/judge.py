@@ -68,10 +68,15 @@ _SAFE_COMPOUND: frozenset[tuple[str, str]] = frozenset({
 
 # Fixed tiers for non-command action types
 _ACTION_TIERS: dict[str, int] = {
-    "write_file":   2,
-    "search_kb":    0,
-    "get_metrics":  0,
-    "remember_fact": 0,
+    "write_file":             2,
+    "search_kb":              0,
+    "get_metrics":            0,
+    "remember_fact":          0,
+    # Security workers — reads are tier 0, active LAN scan is tier 1
+    "get_security_events":    0,
+    "get_host_connections":   0,
+    "get_traffic_summary":    0,
+    "scan_lan":               1,
 }
 
 console = Console()

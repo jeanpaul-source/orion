@@ -15,6 +15,7 @@ class Config:
     use_ssh_tunnel: bool
     ntfy_url: str  # e.g. https://ntfy.sh/your-topic — empty string disables alerts
     vllm_url: str  # vLLM OpenAI-compatible API endpoint
+    ntopng_url: str  # ntopng community REST base, e.g. http://localhost:3000
 
 
 def load() -> Config:
@@ -33,4 +34,5 @@ def load() -> Config:
         use_ssh_tunnel=os.getenv("USE_SSH_TUNNEL", "false").lower() == "true",
         ntfy_url=os.getenv("NTFY_URL", ""),
         vllm_url=os.getenv("VLLM_URL", "http://localhost:8000"),
+        ntopng_url=os.getenv("NTOPNG_URL", "http://localhost:3000"),
     )

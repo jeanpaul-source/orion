@@ -87,6 +87,22 @@ EXAMPLES: dict[str, list[str]] = {
         "help me debug this problem",
         "is anything consuming too much disk space?",
         "diagnose why this service is failing",
+        # Security queries
+        "anything suspicious on the server?",
+        "any falco alerts?",
+        "what security events happened recently?",
+        "what's listening on the server?",
+        "show me open ports",
+        "what processes are listening?",
+        "who is connected to the server right now?",
+        "show me active network connections",
+        "what's on the LAN?",
+        "scan the network",
+        "what devices are on 192.168.5.0/24?",
+        "how much traffic is the server seeing?",
+        "any unusual network activity?",
+        "show me the busiest network flows",
+        "is anything making suspicious outbound connections?",
     ],
 }
 

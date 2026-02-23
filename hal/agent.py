@@ -12,6 +12,12 @@ from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tracing import get_tracer
 from hal.workers import list_dir, read_file, write_file, patch_file, git_status, git_diff
+from hal.security import (
+    get_security_events,
+    get_host_connections,
+    get_traffic_summary,
+    scan_lan,
+)
 
 MAX_ITERATIONS = 8
 
@@ -234,6 +240,105 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_security_events",
+            "description": (
+                "Return recent Falco security events from the lab server. "
+                "Use for questions like 'anything suspicious?', 'any alerts?', "
+                "'what did Falco catch?'. Known-noisy rules are filtered automatically. "
+                "Returns a list of events with time, rule, priority, and process name."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "n": {
+                        "type": "integer",
+                        "description": "Number of recent events to return (default: 50)",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need security events",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_host_connections",
+            "description": (
+                "Return listening ports, established TCP connections, and ARP cache "
+                "for the lab server via Osquery. "
+                "Use for 'what's listening on this host?', 'who is connected?', "
+                "'show me active network connections'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need host connection data",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_traffic_summary",
+            "description": (
+                "Return aggregate network traffic stats and top active flows from ntopng. "
+                "Use for 'how much traffic?', 'what are the busiest flows?', "
+                "'is there unusual traffic?', 'show me bandwidth usage'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "top_flows": {
+                        "type": "integer",
+                        "description": "Number of active flows to return (default: 20)",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need traffic data",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scan_lan",
+            "description": (
+                "Ping-sweep a subnet to discover live hosts (no port probing). "
+                "Use for 'what's on the network?', 'scan the LAN', "
+                "'show me all devices on 192.168.5.0/24'. "
+                "Requires approval — will prompt the user before running."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subnet": {
+                        "type": "string",
+                        "description": "CIDR subnet to scan, e.g. 192.168.5.0/24",
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "One sentence explaining why you need a LAN scan",
+                    },
+                },
+                "required": ["subnet"],
+            },
+        },
+    },
 ]
 
 
@@ -244,6 +349,7 @@ def _dispatch(
     judge: Judge,
     kb: KnowledgeBase,
     prom: PrometheusClient,
+    ntopng_url: str = "http://localhost:3000",
 ) -> str:
     """Route a tool call to the right worker. Returns a result string."""
     if name == "run_command":
@@ -319,6 +425,31 @@ def _dispatch(
             return "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
         except Exception as e:
             return f"Metrics unavailable: {e}"
+
+    elif name == "get_security_events":
+        n = int(args.get("n", 50))
+        reason = args.get("reason", "")
+        events = get_security_events(executor, judge, n=n, reason=reason)
+        return json.dumps(events, indent=2)
+
+    elif name == "get_host_connections":
+        reason = args.get("reason", "")
+        data = get_host_connections(executor, judge, reason=reason)
+        return json.dumps(data, indent=2) if data else "Denied."
+
+    elif name == "get_traffic_summary":
+        top_flows = int(args.get("top_flows", 20))
+        reason = args.get("reason", "")
+        data = get_traffic_summary(executor, judge, ntopng_url=ntopng_url, top_flows=top_flows, reason=reason)
+        return json.dumps(data, indent=2) if data else "Denied."
+
+    elif name == "scan_lan":
+        subnet = args.get("subnet", "")
+        reason = args.get("reason", "")
+        if not subnet:
+            return "Error: subnet is required."
+        hosts = scan_lan(subnet, executor, judge, reason=reason)
+        return json.dumps(hosts, indent=2)
 
     else:
         return f"Unknown tool: {name}"
@@ -444,6 +575,7 @@ def run_agent(
     session_id: str,
     system: str,
     console: Console,
+    ntopng_url: str = "http://localhost:3000",
 ) -> str:
     """Agentic loop: LLM calls tools autonomously until it produces a final answer.
 
@@ -527,7 +659,7 @@ def run_agent(
                     tool_span.set_attribute("tool.name", name)
                     tool_span.set_attribute("tool.iteration", iteration)
                     tool_span.set_attribute("tool.args", json.dumps(raw_args, sort_keys=True)[:500])
-                    result = _dispatch(name, raw_args, executor, judge, kb, prom)
+                    result = _dispatch(name, raw_args, executor, judge, kb, prom, ntopng_url)
                     tool_span.set_attribute("tool.result_len", len(result))
 
                 # Cap tool output to protect the context window
