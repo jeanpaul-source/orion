@@ -567,7 +567,7 @@ The system prompt establishes HAL's identity — it is not Qwen, not Claude. It 
 OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 ```
 
-21 tests cover the intent classifier. The agentic loop has no automated tests yet.
+117 tests total: 21 intent classifier tests (require Ollama — live embeddings) and 96 unit tests for Judge and MemoryStore (no Ollama needed, run anywhere).
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
 
 ### Evaluation
@@ -655,7 +655,7 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 | `hal/tracing.py` | OpenTelemetry tracing setup |
 | `harvest/` | Full harvest pipeline: scrape sources, chunk, embed, upsert to pgvector |
 | `eval/` | Evaluation harness: 24-query suite, response collector, scorer, baseline results |
-| `tests/` | 21 intent classifier tests with live embedding fixtures |
+| `tests/` | 117 tests: 21 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore (no Ollama needed) |
 | `ops/` | Systemd unit files (`vllm.service`, `watchdog.service`, `watchdog.timer`), `KEYS_AND_TOKENS.md` |
 | `~/ntopng/docker-compose.yml` | ntopng + Redis Compose stack on server (not in repo — lives on server only) |
 | `CLAUDE.md` | AI operating contract — required reading before any code change. Contains the rules that prevent drift. |
