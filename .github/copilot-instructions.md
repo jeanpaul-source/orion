@@ -22,9 +22,14 @@ Key data flow: `hal/main.py` → `IntentClassifier` → one of three handlers in
   Ollama is **embeddings-only** — never used for chat.
 
 **vLLM status (Feb 2026): RUNNING** as a user systemd service (`vllm.service`, enabled).
-Venv: `~/vllm-env/`. CUDA device-side assert was fixed with `VLLM_USE_FLASHINFER_SAMPLER=0`.
-Flags: `--enforce-eager --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.95`.
+Venv: `~/vllm-env/`. Two required env vars in the unit file:
+- `VLLM_USE_FLASHINFER_SAMPLER=0` — fixes CUDA device-side assert on RTX 3090 Ti
+- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` — prevents KV cache OOM under load
+
+`Restart=always` + `RestartSec=10`. Flags: `--enforce-eager --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.95`.
 Manage: `systemctl --user [start|stop|status] vllm.service`. Logs: `journalctl --user -u vllm`.
+
+**Ollama GPU:** `OLLAMA_NUM_GPU=0` is set in `/etc/systemd/system/ollama.service.d/override.conf` — Ollama runs on CPU. This is required: Ollama was consuming ~800 MB VRAM, causing vLLM to OOM during inference. Do not remove this flag.
 
 ## Developer Workflow
 
@@ -61,16 +66,22 @@ All tool calls pass through `hal/judge.py`. Tiers:
 
 `run_command` in `hal/workers.py` calls `judge.approve()` before SSH execution. Never bypass Judge.
 
-## Known Failure Modes (SESSION_FINDINGS RC1–RC6)
+## Known Failure Modes
 
-- **RC1 (critical):** `qwen2.5-coder:32b` via Ollama emits tool calls as JSON text in `content`
-  instead of `tool_calls`. This is a model-layer problem — no code fix. Solved by using vLLM +
-  the instruct model (`Qwen2.5-32B-Instruct-AWQ`).
-- **RC2:** Model reverts to "I'm Qwen" on identity questions — RLHF beats system prompt.
-- **RC3:** Broken turns (JSON dumps, Qwen identity) accumulate in SQLite and compound future sessions.
-  No pruning yet. Use `hal --new` to start a fresh session context.
-- **RC4/5:** Casual input (greetings) falls to `agentic`, seeds irrelevant KB context. A
-  `conversational` intent category would fix this cleanly.
+- **RC1 — resolved:** Ollama + `qwen2.5-coder:32b` emitted tool calls as JSON text in `content`. Fixed by switching to vLLM + `Qwen2.5-32B-Instruct-AWQ`. Eval baseline: `no_raw_json=100%`.
+- **RC2 — resolved:** Model identity override. Fixed by vLLM instruct model + stronger system prompt. Eval baseline: `hal_identity=100%`.
+- **RC3 — open:** Broken turns accumulate in SQLite and compound future sessions. No pruning. Use `hal --new` to start fresh.
+- **RC4/5 — open:** Casual input (greetings) falls to `agentic`, seeds irrelevant KB context. A `conversational` intent category would fix this cleanly.
+- **SQLite init race:** If HAL crashes between opening `~/.orion/memory.db` and completing `_init()`, the file is left as an empty schema-0 database. Next start fails with `sqlite3.OperationalError: disk I/O error`. Fix: `rm ~/.orion/memory.db` — HAL recreates it on next launch.
+
+## Evaluation
+
+Run on server after changes:
+```bash
+python -m eval.run_eval                              # 24 queries → eval/responses.jsonl
+python -m eval.evaluate --skip-llm-eval              # score → eval/results/eval_out.json
+```
+Baseline (Feb 23 2026): `hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=95.8%`.
 
 ## Conventions
 

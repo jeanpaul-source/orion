@@ -161,6 +161,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 ```
 Laptop (edit code)
   → run tests on server: OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
+  → run eval on server:  python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval
   → git push origin main
   → github.com/jeanpaul-source/orion
        ↓
@@ -209,6 +210,20 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 - Switched LLM backend from Ollama chat → vLLM OpenAI-compatible API (`VLLMClient`); Ollama now embeddings-only
 - OTel tracing: `hal/tracing.py`; spans on every turn, intent classify, LLM call, tool call; collector at localhost:4318
 - Evaluation framework: `eval/` — 24 queries targeting B1–B6, runner + 5 evaluators (azure-ai-evaluation)
+
+**Done (as of Feb 23, 2026):**
+
+- **vLLM fully operational**: service running, model loaded, inference verified end-to-end from laptop
+  - `Restart=always` + `RestartSec=10` added to `vllm.service` (was `Restart=no`)
+  - `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` added — fixes KV cache fragmentation OOM on RTX 3090 Ti
+  - `OLLAMA_NUM_GPU=0` added to `/etc/systemd/system/ollama.service.d/override.conf` — forces Ollama onto CPU, gives vLLM full 24 GB VRAM
+- **System prompt rewritten** (`hal/main.py:SYSTEM_PROMPT`): five explicit roles (know/answer/act/monitor/guard), stronger identity assertion, tool-use decision rule (tools for live state, KB for documented answers)
+- **Evaluation baseline established**: `eval/run_eval.py` fixed to import real `SYSTEM_PROMPT` from `hal.main`; full 24-query run completed; results in `eval/responses.jsonl` + `eval/results/eval_out.json`
+  - `hal_identity`: 100% — never identifies as Qwen (RC2 resolved with instruct model + prompt)
+  - `no_raw_json`: 100% — no raw JSON tool calls in responses (RC1 resolved by vLLM)
+  - `intent_accuracy`: 95.8% (23/24) — 1 misroute remaining
+  - Run eval: `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval`
+- **SQLite memory.db fragility documented**: if HAL crashes mid-init, DB is left as empty schema-0 file causing `sqlite3.OperationalError: disk I/O error` on next start. Fix: `rm ~/.orion/memory.db` — HAL recreates it cleanly on next launch
 
 **Watchdog deployment (server):**
 
