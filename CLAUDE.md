@@ -39,7 +39,7 @@ I'm drifting the explanation will sound wrong or thin. That is the catch mechani
 
 ## The Vision (what we're building)
 
-```
+```text
 You → HAL (thin coordinator, LLM brain)
         ├── IntentClassifier  (routes query before LLM sees it)
         │     ├── health  → run_health()  (metrics, no tool loop)
@@ -158,7 +158,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 ## Dev Workflow
 
-```
+```text
 Laptop (edit code)
   → run tests on server: OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
   → run eval on server:  python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval

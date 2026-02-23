@@ -57,7 +57,7 @@ cd ~/orion
 
 A passing run looks like:
 
-```
+```text
 tests/test_intent.py::test_health_queries[how's the lab?] PASSED
 tests/test_intent.py::test_health_queries[is everything ok?] PASSED
 ...

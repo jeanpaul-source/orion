@@ -5,7 +5,7 @@
 HAL is a thin coordinator. Every query passes through `hal/intent.py` (embedding classifier,
 threshold 0.65) **before** the LLM sees it. Three routes:
 
-```
+```text
 health  → run_health()  — Prometheus query only, no tool loop
 fact    → run_fact()    — pgvector KB search only, no tool loop
 agentic → run_agent()   — full VLLMClient tool loop, Judge-gated

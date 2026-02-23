@@ -85,7 +85,7 @@ What happens:
 - The user receives raw JSON
 
 Real examples from session history:
-```
+```text
 user:      "What port does Prometheus run on?"
 assistant: {"name": "get_metrics", "arguments": {}}
 
@@ -130,7 +130,7 @@ What happens:
 - LLM answers the KB context, not the actual question
 
 Real example:
-```
+```text
 user:      "hello Hal, how are you today?"
 assistant: "Based on the information provided:
             1. Prometheus Container Status:
@@ -270,7 +270,7 @@ This is related to RC4 but separate: even if we add a conversational category, o
 **What CLAUDE.md says**: harvest has never run on server; lab-infrastructure and lab-state categories don't exist yet; 2,244 doc chunks
 
 **What actually exists** (verified with psql now installed):
-```
+```text
 category                          | count
 ----------------------------------+-------
 ai-agents-and-multi-agent-systems |  1440
