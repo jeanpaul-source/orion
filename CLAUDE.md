@@ -54,6 +54,7 @@ You → HAL (thin coordinator, LLM brain)
 ```
 
 **Tiered action approval:**
+
 - Tier 0: read-only (free, no approval)
 - Tier 1: restart a service (ask, then do)
 - Tier 2: config change (explain plan, wait for approval, apply, verify)
@@ -66,6 +67,7 @@ You → HAL (thin coordinator, LLM brain)
 **OS:** Fedora Linux 43 (Server Edition)
 
 **Hardware:**
+
 - CPU: Intel Core Ultra 7 265K (20 cores)
 - RAM: 62GB DDR5
 - GPU: RTX 3090 Ti (24GB VRAM — usually idle)
@@ -75,7 +77,7 @@ You → HAL (thin coordinator, LLM brain)
 **What's actually running (verified Feb 22, 2026):**
 
 | Service | Host Port | Container Port | Type | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | ollama | 11434 | — | systemd | Bare metal, all interfaces, firewalled from LAN |
 | pgvector-kb | 5432 | 5432 | Docker | PostgreSQL+pgvector; DB: knowledge_base, user: kb_user |
 | pgvector-kb-api | 5001 | — | systemd | Python search API wrapping pgvector; at /opt/homelab-infrastructure/pgvector-kb/api.py |
@@ -87,12 +89,14 @@ You → HAL (thin coordinator, LLM brain)
 | vLLM | 8000 | — | user systemd | `~/vllm-env/bin/vllm`; `VLLM_USE_FLASHINFER_SAMPLER=0` workaround for RTX 3090 Ti CUDA issue; `--enforce-eager --tool-call-parser hermes` |
 
 **NOT running (but planned):**
+
 - agent-zero — container is absent (not just stopped); decomissioned or never deployed on this host
 
 **Secrets:** Managed by SOPS + `homelab-secrets.service` (tmpfs at `/run/homelab-secrets/`).
 Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 **Config source of truth:** `/opt/homelab-infrastructure/` (git-tracked)
+
 - `monitoring-stack/` — prometheus, grafana, blackbox, node-exporter compose + configs
 - `pgvector-kb/` — pgvector compose + api.py
 - `agent-zero/` — agent-zero compose + production.env
@@ -101,6 +105,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 **Runtime data:** `/docker/` (not source of truth — compose runtime mounts)
 
 **Ollama models present (verified Feb 22, 2026):**
+
 - `qwen2.5-coder:32b` — primary fallback; 32B params
 - `qwen2.5-coder-32b-16k:latest` — 32B, 16k context variant
 - `qwen2.5-coder:14b` — 14B params
@@ -110,6 +115,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 **Chat LLM:** HAL uses vLLM (OpenAI-compatible API at port 8000) as its primary chat backend. Ollama is used only for embeddings. Model: `Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` (19GB AWQ-quantised).
 
 **pgvector knowledge base (verified Feb 22, 2026):**
+
 - 2,293 document chunks, 768-dim HNSW embeddings (cosine)
 - Categories: ai-agents-and-multi-agent-systems (1,440), rag-and-knowledge-retrieval (799), lab-infrastructure (35), lab-state (14), ghs-genome (4), ghs-rejections (1)
 - Harvest HAS been run; `harvest_last_run` timestamp file not yet written → watchdog incorrectly reports harvest_lag
@@ -124,10 +130,10 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 ## This Repo
 
-**Remote:** https://github.com/jeanpaul-source/orion (private)
+**Remote:** <https://github.com/jeanpaul-source/orion> (private)
 
 | Path | What it is |
-|---|---|
+| --- | --- |
 | `hal/main.py` | REPL entry point; intent routing; all slash commands |
 | `hal/intent.py` | Embedding-based intent classifier (health / fact / agentic); threshold 0.65 |
 | `hal/agent.py` | `run_health()`, `run_fact()`, `run_agent()` — the three handlers |

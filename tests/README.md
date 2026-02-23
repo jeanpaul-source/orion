@@ -14,7 +14,7 @@ visible and catchable before deployment.
 Asserts that specific natural-language queries are classified into the right category:
 
 | Category | Meaning | Handler it routes to |
-|---|---|---|
+| --- | --- | --- |
 | `health` | Questions about live metrics / system state | `run_health()` — no tools |
 | `fact` | Questions about documented config / infrastructure | `run_fact()` — no tools |
 | `agentic` | Multi-step investigation or action requests | `run_agent()` — full tool loop |

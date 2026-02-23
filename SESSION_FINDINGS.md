@@ -1,5 +1,6 @@
 # SESSION_FINDINGS.md
-_Started: 2026-02-22 | Step 1 complete — awaiting operator review before Step 2_
+
+Started: 2026-02-22 | Step 1 complete — awaiting operator review before Step 2
 
 ---
 
@@ -8,7 +9,7 @@ _Started: 2026-02-22 | Step 1 complete — awaiting operator review before Step 
 ### ✅ Confirmed Accurate
 
 | Claim | Verified |
-|---|---|
+| --- | --- |
 | Prometheus at port 9091 | Docker: `0.0.0.0:9091->9090/tcp` |
 | Grafana at port 3001 | Docker: `0.0.0.0:3001->3000/tcp` |
 | pgvector at port 5432 | Docker: `0.0.0.0:5432->5432/tcp` |
@@ -32,13 +33,15 @@ _Started: 2026-02-22 | Step 1 complete — awaiting operator review before Step 
 
 ### ⚠️ Discrepancies Found
 
-**D1 — agent-zero is completely absent (not just stopped)**
+#### D1 — agent-zero is completely absent (not just stopped)
+
 - CLAUDE.md: documents agent-zero as running at `50080:80`
 - Reality: no container exists at all. `docker ps -a | grep agent` returns nothing.
 - Severity: medium — CLAUDE.md service table is wrong. Unknown if intentionally decomissioned.
 - Action needed: confirm whether agent-zero should be re-added to the running service table, or removed from CLAUDE.md.
 
-**D2 — `hal/config.py` hardcoded default Prometheus port is wrong**
+#### D2 — `hal/config.py` hardcoded default Prometheus port is wrong
+
 - CLAUDE.md: correctly documents Prometheus at port 9091
 - Reality: `config.py` line 29 hardcodes `http://192.168.5.10:9090` as the default fallback
 - Port 9090 is cockpit — a completely different service
@@ -46,23 +49,27 @@ _Started: 2026-02-22 | Step 1 complete — awaiting operator review before Step 
 - Severity: low in practice (server .env overrides to 9091), but a latent trap for anyone setting up fresh
 - The `.env.example` correctly shows 9091 — the default in the Python code is inconsistent with the template
 
-**D3 — `.env.example` has stale default model**
+#### D3 — `.env.example` has stale default model
+
 - CLAUDE.md: active model is `qwen2.5-coder:32b`
 - `.env.example` line 6: still shows `OLLAMA_MODEL=qwen2.5-coder-14b-32k:latest`
 - Severity: cosmetic — anyone copying `.env.example` to set up a new instance will get the 14b model by default, not 32b
 
-**D4 — `hal/tunnel.py` is not documented in the CLAUDE.md file table**
+#### D4 — `hal/tunnel.py` is not documented in the CLAUDE.md file table
+
 - File exists, is imported and used by `hal/main.py`
 - Provides SSH tunnel for the laptop-side use case (auto-tunnel when Ollama not directly reachable)
 - Severity: minor omission — but it means the file table in CLAUDE.md is incomplete
 
-**D5 — Undocumented Ollama model present**
+#### D5 — Undocumented Ollama model present
+
 - CLAUDE.md: lists `qwen2.5-coder:32b` and `qwen2.5-coder-14b-32k:latest` as the two installed models
 - Reality: 5 models present: `nomic-embed-text:latest`, `qwen2.5-coder-32b-16k:latest`, `qwen2.5-coder:32b`, `qwen2.5-coder:14b`, `qwen2.5-coder-14b-32k:latest`
 - New/undocumented: `qwen2.5-coder-32b-16k:latest` and `qwen2.5-coder:14b`
 - Severity: cosmetic — doesn't affect operation, but the model inventory is stale
 
-**D6 — `psql` CLI not installed on server**
+#### D6 — `psql` CLI not installed on server
+
 - CLAUDE.md doesn't claim psql is installed, but any procedure that says "query pgvector" using `psql` from the shell will fail
 - Reality: `psql: command not found`. The database is accessible via Python/psycopg2 only from the shell
 - Severity: minor — affects diagnostics/debugging but not HAL operation
@@ -75,16 +82,18 @@ Evidence drawn from the actual session history in `~/.orion/memory.db`.
 
 ### Failure catalog
 
-**B1 — Model emits raw tool call JSON as plain text (most common failure)**
+#### B1 — Model emits raw tool call JSON as plain text (most common failure)
 
 Observed in: sessions 40162676, 61348e14, ef83921a, 600b0cf4
 
 What happens:
+
 - The LLM, instead of making a proper structured tool call (which Ollama delivers via the `tool_calls` field), outputs the tool call as a JSON block in the `content` field
 - The code checks `msg.get("tool_calls") or []` — finds nothing, treats the JSON as the final answer
 - The user receives raw JSON
 
 Real examples from session history:
+
 ```text
 user:      "What port does Prometheus run on?"
 assistant: {"name": "get_metrics", "arguments": {}}
@@ -97,6 +106,7 @@ assistant: {"name": "<function-name>", "arguments": <args-json-object>}
 ```
 
 The JSON content is always wrong in two ways:
+
 1. It's the wrong format to show to a user (a raw tool call schema)
 2. The tool chosen is usually wrong (calling `get_metrics` for a static fact question; hallucinating an AWS query for "hello")
 
@@ -104,11 +114,12 @@ No code path catches this. The `_CONTROL_TOKEN_RE` strips `<|...|>` tokens, but 
 
 ---
 
-**B2 — Model identity override**
+#### B2 — Model identity override
 
 Observed in: session 550cae47 (all 5 turns)
 
 What happens:
+
 - User asks "whats up man?"
 - Model responds: "Hey! I'm Qwen, created by Alibaba Cloud."
 - User asks "no prompt at all?" → model doubles down: "I don't have any specific 'prompt'"
@@ -118,11 +129,12 @@ This is the model's RLHF training completely overriding the SYSTEM_PROMPT. The s
 
 ---
 
-**B3 — Greeting/casual input answered with infrastructure docs**
+#### B3 — Greeting/casual input answered with infrastructure docs
 
 Observed in: session 46ccf9ab
 
 What happens:
+
 - User: "hello Hal, how are you today?"
 - Classifier has no "conversational" category → query falls to agentic
 - `run_agent()` seeds the first message with KB context (anything scoring ≥ 0.6)
@@ -130,6 +142,7 @@ What happens:
 - LLM answers the KB context, not the actual question
 
 Real example:
+
 ```text
 user:      "hello Hal, how are you today?"
 assistant: "Based on the information provided:
@@ -141,11 +154,12 @@ The intent classifier has no "conversational/chitchat" category. There is no exa
 
 ---
 
-**B4 — Agentic loop exhausted without producing an answer**
+#### B4 — Agentic loop exhausted without producing an answer
 
 Observed in: session 834492e3
 
 What happens:
+
 - User: "is everything ok with the lab?"
 - Routes to agentic (despite being a health question — classifier misclassification possible)
 - Model calls tools repeatedly
@@ -155,11 +169,12 @@ The loop-breaking mechanism (dedup + injected "you have all the data" message) d
 
 ---
 
-**B5 — Terminal text fed as input to HAL → model tries to execute it**
+#### B5 — Terminal text fed as input to HAL → model tries to execute it
 
 Observed in: session ef83921a
 
 What happens:
+
 - User pasted a terminal prompt line (`jp@the-lab:~/orion$ hal --new`) into HAL
 - Model responded with: `{"name": "run_command", "arguments": {"command": "hal --new"}}`
 - User pasted HAL's welcome banner (the Rich panel) → model responded with a KB search for "End-to-end solution for e-commerce search via embedding learning"
@@ -168,16 +183,18 @@ These are one-off user errors, but they reveal that the agentic KB seeding can p
 
 ---
 
-**B6 — Health question sometimes answered with KB docs instead of live metrics**
+#### B6 — Health question sometimes answered with KB docs instead of live metrics
 
 Observed in: session c090338a
 
 What happens:
+
 - "hows the lab today?" → should route to health, get live metrics
 - Session shows answer is hardware specs and OS info: "The lab server is currently running Fedora Linux 43 with a robust hardware configuration..."
 - This is KB content, not Prometheus metrics
 
 Either:
+
 1. The classifier routed to `fact` instead of `health` (threshold boundary), or
 2. The classifier routed to `agentic`, KB was seeded, and the LLM answered KB content without calling `get_metrics`
 
@@ -270,6 +287,7 @@ This is related to RC4 but separate: even if we add a conversational category, o
 **What CLAUDE.md says**: harvest has never run on server; lab-infrastructure and lab-state categories don't exist yet; 2,244 doc chunks
 
 **What actually exists** (verified with psql now installed):
+
 ```text
 category                          | count
 ----------------------------------+-------
@@ -285,6 +303,7 @@ ghs-rejections                    |     1     ← undocumented, foreign data
 **What actually happened**: harvest was run at some point, but before the `harvest_last_run` timestamp file was added to the code. So the data is there, but the watchdog can't detect it. The watchdog fires every 30 minutes complaining about a problem that doesn't fully exist.
 
 **Two real issues here**:
+
 1. `harvest_last_run` is missing → fix by running `touch ~/.orion/harvest_last_run` OR running harvest again to refresh the data and write the stamp
 2. Foreign data in the KB: `ghs-genome` and `ghs-rejections` (5 rows combined) — these don't belong in a homelab assistant KB. Low harm (5 rows out of 2,293) but should be understood and cleaned.
 
@@ -300,32 +319,37 @@ ghs-rejections                    |     1     ← undocumented, foreign data
 
 These are listed here as reference for the diagnosis step. Not proposing to fix any of them yet.
 
-**P1 — Control token stripping (`_CONTROL_TOKEN_RE`)**
+### P1 — Control token stripping (`_CONTROL_TOKEN_RE`)
+
 - File: `hal/agent.py` lines 7, 254, 304, 372
 - What it does: strips `<|...|>` tokens from all LLM responses in all three handlers
 - Why it exists: qwen2.5-coder sometimes emits its own chat template markers (`<|im_start|>`, `<|im_end|>`) in plain text output
 - Patch nature: symptom treatment — the model is leaking internal tokens; the code hides them instead of preventing them
 
-**P2 — Loop-breaking user message injection**
+### P2 — Loop-breaking user message injection
+
 - File: `hal/agent.py` lines 415-424
 - What it does: when the model calls duplicate tools (all calls are deduped), injects a user message "You already have all the data you need..."
 - Why it exists: model loops on the same tool call instead of producing a final answer
 - Patch nature: behavioral prompt patch for a stuck-loop failure mode
 
-**P3 — Forced no-tools on final iteration**
+### P3 — Forced no-tools on final iteration
+
 - File: `hal/agent.py` line 362
 - What it does: passes empty tools list on last iteration to force a text response
 - Why it exists: without this, the model can exhaust iterations without ever producing a final answer
 - Patch nature: guard rail — not wrong per se, but it exists because the model doesn't reliably self-terminate
 
-**P4 — Tool result format missing `tool_call_id`**
+### P4 — Tool result format missing `tool_call_id`
+
 - File: `hal/agent.py` line 409
 - What it does: appends `{"role": "tool", "content": result}` to the working history
 - OpenAI/Ollama spec: tool results should include `tool_call_id` to correlate with the originating call
 - Impact: Qwen via Ollama appears to handle this by position, not ID. But it diverges from spec and may cause subtle multi-call ordering issues if the model makes parallel tool calls.
 - Note: this hasn't been observed to cause failures in practice (21/21 tests pass), but tests only cover the intent classifier, not the agent loop
 
-**P5 — Judge `_llm_reason()` system prompt (pending, documented in backlog)**
+### P5 — Judge `_llm_reason()` system prompt (pending, documented in backlog)
+
 - File: `hal/judge.py` lines 144-163
 - What it does: asks LLM for a risk assessment using `ollama.chat()` — no tools passed, but system prompt doesn't tell it to avoid external data/tool calls
 - Risk: if the model somehow tries to generate a tool call in this single `chat()` call, the response might be malformed
@@ -340,5 +364,6 @@ The watchdog has been firing `harvest_lag` every 30 minutes since 13:58:26 today
 Cooldown mechanism is working correctly — fires every 30 minutes, not every 5.
 
 The fix is one of:
+
 1. Run `python -m harvest` on the server (clears the root cause)
 2. Add `NTFY_URL` to server `.env` (enables ntfy delivery — separate issue)
