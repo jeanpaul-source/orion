@@ -114,7 +114,7 @@ You → HAL (thin coordinator, LLM brain)
 | node-exporter | — | 9100 | Docker | internal to monitoring network only |
 | blackbox-exporter | — | 9115 | Docker | internal to monitoring network only |
 | cockpit | 9090 | — | systemd | Server management UI — NOT Prometheus |
-| vLLM | 8000 | — | user systemd | `~/vllm-env/bin/vllm`; `VLLM_USE_FLASHINFER_SAMPLER=0` workaround for RTX 3090 Ti CUDA issue; `--enforce-eager --tool-call-parser hermes`; model `Qwen/Qwen2.5-32B-Instruct-AWQ` |
+| vLLM | 8000 | — | user systemd | `~/vllm-env/bin/vllm`; `VLLM_USE_FLASHINFER_SAMPLER=0` workaround for RTX 3090 Ti CUDA issue; `--enable-auto-tool-choice --tool-call-parser hermes --enforce-eager --max-model-len 8192 --gpu-memory-utilization 0.95`; model `Qwen/Qwen2.5-32B-Instruct-AWQ` |
 | ntopng | 3000 | 3000 | Docker | `~/ntopng/docker-compose.yml`; Redis on same stack; interface `enp130s0`; login disabled; Community API at `/lua/rest/v2/` |
 | Falco | — | — | system systemd | `falco-modern-bpf.service`; JSON events at `/var/log/falco/events.json`; group `falco-readers` (jp is member) |
 | Osquery | — | — | bare metal | 5.21.0; `/etc/sudoers.d/osquery-hal` scopes `jp` to `osqueryi` only (no password) |
