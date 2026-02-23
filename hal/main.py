@@ -78,7 +78,12 @@ Anything else is sent to HAL as a question (with knowledge base context).
 def _connect(
     name: str, url: str, lab_user: str, lab_host: str, default_port: int
 ) -> tuple[str, SSHTunnel | None]:
-    """Return (reachable_url, tunnel_or_None). Tries direct first, then SSH tunnel."""
+    """Return (reachable_url, tunnel_or_None). Tries direct first, then SSH tunnel.
+
+    SSH tunnel is only attempted when the target host is a remote address.
+    If the URL already points to localhost/127.0.0.1 and the port is closed,
+    the service simply isn't running — tunneling can't help.
+    """
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
@@ -87,6 +92,11 @@ def _connect(
 
     if port_open(host, port):
         return url, None
+
+    # Don't try to SSH-tunnel to ourselves — it can't help.
+    if host in ("localhost", "127.0.0.1"):
+        console.print(f"[red]{name} is not reachable on {host}:{port} — is it running?[/]")
+        sys.exit(1)
 
     console.print(f"[yellow]{name} not directly reachable — trying SSH tunnel...[/]")
     tunnel = SSHTunnel(lab_user, lab_host, port, default_port)
