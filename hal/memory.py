@@ -135,5 +135,27 @@ class MemoryStore:
         ).fetchone()
         return row is not None
 
+    def prune_old_turns(self, days: int = 30) -> int:
+        """Delete turns older than `days` days and orphaned session rows.
+
+        Returns the number of turns deleted.  Called at startup so old
+        broken sessions (e.g. raw-JSON dumps from the pre-vLLM era) don't
+        accumulate indefinitely and re-contaminate future context windows.
+        """
+        cur = self.conn.execute(
+            "DELETE FROM turns WHERE timestamp < datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        deleted = cur.rowcount
+        # Remove sessions that now have no turns left
+        self.conn.execute(
+            "DELETE FROM sessions WHERE id NOT IN "
+            "(SELECT DISTINCT session_id FROM turns)"
+        )
+        self.conn.commit()
+        if deleted:
+            log.info("prune_old_turns: removed %d turns older than %d days", deleted, days)
+        return deleted
+
     def close(self) -> None:
         self.conn.close()

@@ -341,6 +341,7 @@ def main() -> None:
     executor = SSHExecutor(config.lab_host, config.lab_user)
     judge = Judge(llm=llm)
     mem = MemoryStore()
+    mem.prune_old_turns()  # silently drop turns older than 30 days on every startup
 
     with console.status("[dim]building intent classifier...[/]", spinner="dots"):
         classifier = IntentClassifier(embed)
