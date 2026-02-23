@@ -22,7 +22,7 @@ def load() -> Config:
     load_dotenv()
     return Config(
         ollama_host=os.getenv("OLLAMA_HOST", "http://192.168.5.10:11434"),
-        chat_model=os.getenv("CHAT_MODEL", "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"),
+        chat_model=os.getenv("CHAT_MODEL", "Qwen/Qwen2.5-32B-Instruct-AWQ"),
         embed_model=os.getenv("EMBED_MODEL", "nomic-embed-text:latest"),
         pgvector_dsn=os.getenv(
             "PGVECTOR_DSN",
