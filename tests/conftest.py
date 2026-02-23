@@ -30,7 +30,6 @@ def classifier():
     """
     ollama = OllamaClient(
         base_url=_OLLAMA_HOST,
-        model="qwen2.5-coder:32b",   # model field required but not used for embedding
         embed_model=_EMBED_MODEL,
     )
     return IntentClassifier(ollama)

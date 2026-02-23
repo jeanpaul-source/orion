@@ -5,9 +5,8 @@ from hal.tracing import get_tracer
 
 
 class OllamaClient:
-    def __init__(self, base_url: str, model: str, embed_model: str):
+    def __init__(self, base_url: str, embed_model: str):
         self.base_url = base_url.rstrip("/")
-        self.model = model
         self.embed_model = embed_model
 
     def ping(self) -> bool:

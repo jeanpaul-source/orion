@@ -130,7 +130,7 @@ def setup_clients(
     ollama_url, t = _connect("Ollama", config.ollama_host, config.lab_user, config.lab_host, 11434)
     if t:
         tunnels.append(t)
-    embed = OllamaClient(ollama_url, "", config.embed_model)
+    embed = OllamaClient(ollama_url, config.embed_model)
     if not embed.ping():
         console.print("[red]Ollama is not responding. Is it running?[/]")
         sys.exit(1)
@@ -379,7 +379,7 @@ def main() -> None:
             elif intent == "fact":
                 run_fact(user_input, history, llm, kb, mem, session_id, SYSTEM_PROMPT, console)
             else:
-                run_agent(user_input, history, llm, kb, prom, executor, judge, mem, session_id, SYSTEM_PROMPT, console)
+                run_agent(user_input, history, llm, kb, prom, executor, judge, mem, session_id, SYSTEM_PROMPT, console, ntopng_url=config.ntopng_url)
         finally:
             for tunnel in tunnels:
                 tunnel.stop()
@@ -473,6 +473,7 @@ def main() -> None:
                         run_agent(
                             user_input, history, llm, kb, prom,
                             executor, judge, mem, session_id, SYSTEM_PROMPT, console,
+                            ntopng_url=config.ntopng_url,
                         )
 
     finally:
