@@ -1,17 +1,13 @@
 """Agentic loop — LLM calls tools autonomously, Judge gates everything."""
 import json
-import re
 import textwrap
-
-# Qwen model control tokens that sometimes leak into responses
-_CONTROL_TOKEN_RE = re.compile(r"<\|[^|>]+\|>")
 
 from rich.console import Console
 
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
-from hal.llm import OllamaClient
+from hal.llm import OllamaClient, VLLMClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.workers import list_dir, read_file, write_file
@@ -226,7 +222,7 @@ def _dispatch(
 def run_health(
     user_input: str,
     history: list[dict],
-    ollama: OllamaClient,
+    llm: OllamaClient | VLLMClient,
     prom: PrometheusClient,
     mem: MemoryStore,
     session_id: str,
@@ -249,9 +245,9 @@ def run_health(
     }]
 
     with console.status("[dim]thinking...[/]", spinner="dots"):
-        response = ollama.chat(messages, system=system)
+        response = llm.chat(messages, system=system)
 
-    response = _CONTROL_TOKEN_RE.sub("", response).strip()
+    response = response.strip()
     console.print(f"\n[bold cyan]hal>[/] {response}")
 
     history.append({"role": "user", "content": user_input})
@@ -268,7 +264,7 @@ def run_health(
 def run_fact(
     user_input: str,
     history: list[dict],
-    ollama: OllamaClient,
+    llm: OllamaClient | VLLMClient,
     kb: KnowledgeBase,
     mem: MemoryStore,
     session_id: str,
@@ -299,9 +295,9 @@ def run_fact(
     messages = list(history) + [{"role": "user", "content": augmented}]
 
     with console.status("[dim]thinking...[/]", spinner="dots"):
-        response = ollama.chat(messages, system=system)
+        response = llm.chat(messages, system=system)
 
-    response = _CONTROL_TOKEN_RE.sub("", response).strip()
+    response = response.strip()
     console.print(f"\n[bold cyan]hal>[/] {response}")
 
     history.append({"role": "user", "content": user_input})
@@ -318,7 +314,7 @@ def run_fact(
 def run_agent(
     user_input: str,
     history: list[dict],
-    ollama: OllamaClient,
+    llm: OllamaClient | VLLMClient,
     kb: KnowledgeBase,
     prom: PrometheusClient,
     executor: SSHExecutor,
@@ -361,21 +357,21 @@ def run_agent(
         # and force a text-only response regardless of iteration count
         effective_tools = TOOLS if (iteration < MAX_ITERATIONS - 1 and total_calls < 5) else []
         with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
-            msg = ollama.chat_with_tools(working, effective_tools, system=system)
+            msg = llm.chat_with_tools(working, effective_tools, system=system)
 
         working.append(msg)
         tool_calls = msg.get("tool_calls") or []
 
         if not tool_calls:
-            # Text-only response — agent is done; strip any leaked control tokens
-            raw_content = msg.get("content", "")
-            response_text = _CONTROL_TOKEN_RE.sub("", raw_content).strip()
+            # Text-only response — agent is done
+            response_text = (msg.get("content") or "").strip()
             console.print(f"\n[bold cyan]hal>[/] {response_text}")
             break
 
         # Execute each tool call and feed results back
         new_calls = 0
         for tc in tool_calls:
+            call_id = tc.get("id", "")
             fn = tc.get("function", {})
             name = fn.get("name", "")
             raw_args = fn.get("arguments", {})
@@ -390,7 +386,7 @@ def run_agent(
             # Detect repeat calls — model stuck in a loop
             call_key = (name, json.dumps(raw_args, sort_keys=True))
             if call_key in seen_calls:
-                working.append({"role": "tool", "content": "[Already called — use the result above.]"})
+                working.append({"role": "tool", "content": "[Already called — use the result above.]", "tool_call_id": call_id})
                 continue
             seen_calls.add(call_key)
 
@@ -406,7 +402,7 @@ def run_agent(
             preview = textwrap.shorten(result, width=140, placeholder="…")
             console.print(f"  [dim]↳ {preview}[/]")
 
-            working.append({"role": "tool", "content": result})
+            working.append({"role": "tool", "content": result, "tool_call_id": call_id})
             new_calls += 1
             total_calls += 1
 
