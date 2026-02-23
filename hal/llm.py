@@ -35,13 +35,15 @@ class VLLMClient:
         self._headers = {"Authorization": "Bearer not-needed"}
 
     def ping(self) -> bool:
-        """Return True only when the target model is loaded and ready to serve."""
+        """Return True only when vLLM is fully loaded and ready to serve.
+
+        /v1/models returns 200 as soon as the API server starts — before the
+        model weights are in VRAM.  /health only returns 200 once the model is
+        actually ready to accept completions requests.
+        """
         try:
-            r = requests.get(f"{self.base_url}/v1/models", timeout=3)
-            if r.status_code != 200:
-                return False
-            models = [m.get("id", "") for m in r.json().get("data", [])]
-            return any(self.model in m or m in self.model for m in models)
+            r = requests.get(f"{self.base_url}/health", timeout=3)
+            return r.status_code == 200
         except requests.exceptions.RequestException:
             return False
 
