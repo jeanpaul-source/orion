@@ -180,7 +180,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite for intent classifier (21 tests); requires Ollama running |
+| `tests/` | pytest suite: 21 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore (no Ollama needed) |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
@@ -205,8 +205,7 @@ Laptop (edit code)
 
 **Rule:** Laptop pushes only. Server pulls only. Server never has push credentials.
 
-**Rule:** Run `pytest tests/` before every push. Tests require Ollama (uses real embeddings).
-If tests are skipped (Ollama unreachable from laptop), SSH to the server and run them there first.
+**Rule:** Run `pytest tests/` before every push. Unit tests (Judge, MemoryStore) run anywhere with no dependencies. Intent classifier tests require Ollama — if skipped on laptop, SSH to server and run there first.
 
 **Server .env** uses `localhost` for all services (no tunnel needed).
 **Laptop .env** uses `192.168.5.10` + auto SSH tunnel for Ollama.
@@ -267,10 +266,17 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 - ops/ files updated to match user-service format (use `%h`, no `User=jp`)
 - ntfy not yet configured — alerts log to `~/.orion/watchdog.log` only
 
+**Done (as of Feb 23, 2026 — session 2):**
+
+- **Poison-turn filter**: `is_poison_response()` in `memory.py` + guard in `save_turn()` — raw tool-call JSON dumps from pre-vLLM era are no longer persisted to SQLite (RC3 mitigation)
+- **Session history pruning**: `MemoryStore.prune_old_turns(days=30)` — deletes turns older than 30 days and orphaned sessions on every startup; called from `main.py` (RC3 structural fix)
+- **Agentic KB seeding threshold raised**: `run_agent()` threshold `0.6 → 0.75` — only strong semantic matches seed the first message; prevents low-confidence KB docs biasing the LLM on casual queries (RC5)
+- **Unit tests for Judge and MemoryStore**: 96 new tests in `tests/test_judge.py` and `tests/test_memory.py`; run without Ollama; `conftest.py` `require_ollama` fixture changed from `autouse=True` to explicit opt-in so unit tests are never skipped
+- **harvest_last_run written on server**: `touch ~/.orion/harvest_last_run` — silences false watchdog harvest_lag alarm (harvest had already run; timestamp file was missing)
+- **CLAUDE.md required-format block added**: strict plan-before-code format enforced at top of file to prevent drift
+
 **Backlog:**
 
-- **Fix harvest_lag watchdog alert**: Harvest already ran and the data is in pgvector. Just write the timestamp: `touch ~/.orion/harvest_last_run`. Or re-run `python -m harvest` to refresh data and write it properly.
 - **Clean foreign KB data**: `ghs-genome` (4 rows) and `ghs-rejections` (1 row) don't belong. Delete with: `DELETE FROM documents WHERE category IN ('ghs-genome', 'ghs-rejections');`
 - **Judge no-tools constraint**: `_llm_reason()` in `hal/judge.py` should tell the LLM "do not call tools or fetch external data" — prevents the risk evaluator from trying to use tools
 - **Security module**: network guard — planned, needs design conversation before any code
-- **RC3 — session history pruning**: Bad turns (Qwen identity, JSON dumps) accumulate in SQLite and compound future failures. Need a pruning strategy or quality filter on what gets saved.
