@@ -373,7 +373,7 @@ during inference on the RTX 3090 Ti. Both models running on GPU simultaneously i
 
 | Client | Backend | Role | Model |
 |---|---|---|---|
-| `VLLMClient` | vLLM at `VLLM_URL` (`:8000`) | All LLM inference: chat, reasoning, tool calls | `Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` |
+| `VLLMClient` | vLLM at `VLLM_URL` (`:8000`) | All LLM inference: chat, reasoning, tool calls | `Qwen/Qwen2.5-32B-Instruct-AWQ` |
 | `OllamaClient` | Ollama at `OLLAMA_HOST` (`:11434`) | Embeddings **only** — intent classification and KB search | `nomic-embed-text:latest` |
 
 **Ollama is CPU-bound.** `OLLAMA_NUM_GPU=0` is set in
@@ -395,8 +395,9 @@ journalctl --user -u vllm -f             # follow logs
 
 **vLLM launch flags:**
 ```
---enforce-eager
+--enable-auto-tool-choice
 --tool-call-parser hermes
+--enforce-eager
 --max-model-len 8192
 --gpu-memory-utilization 0.95
 ```
@@ -526,7 +527,7 @@ cp .env.example .env
 | Variable | Default value | Notes |
 |---|---|---|
 | `OLLAMA_HOST` | `http://192.168.5.10:11434` | Embeddings only — do not point at vLLM |
-| `CHAT_MODEL` | `Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` | Must exactly match the model loaded in vLLM |
+| `CHAT_MODEL` | `Qwen/Qwen2.5-32B-Instruct-AWQ` | Must exactly match the model loaded in vLLM |
 | `EMBED_MODEL` | `nomic-embed-text:latest` | Must be pulled in Ollama (`ollama pull nomic-embed-text`) |
 | `PGVECTOR_DSN` | `postgresql://kb_user@192.168.5.10:5432/knowledge_base` | **Fill in the password** |
 | `PROMETHEUS_URL` | `http://192.168.5.10:9091` | Port **9091** — 9090 is Cockpit, a completely different service |
