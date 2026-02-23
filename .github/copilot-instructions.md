@@ -21,9 +21,10 @@ Key data flow: `hal/main.py` → `IntentClassifier` → one of three handlers in
 - **Embeddings (`OllamaClient`):** Ollama at `OLLAMA_HOST`, model `nomic-embed-text:latest`.
   Ollama is **embeddings-only** — never used for chat.
 
-**vLLM status (Feb 2026): NOT running.** RTX 3090 Ti has a CUDA device-side assert in the
-sampler. Next debug step: `VLLM_ATTENTION_BACKEND=XFORMERS vllm serve Qwen/Qwen2.5-32B-Instruct-AWQ --port 8000`.
-HAL falls back to Ollama chat if vLLM is unreachable (see `hal/main.py`).
+**vLLM status (Feb 2026): RUNNING** as a user systemd service (`vllm.service`, enabled).
+Venv: `~/vllm-env/`. CUDA device-side assert was fixed with `VLLM_USE_FLASHINFER_SAMPLER=0`.
+Flags: `--enforce-eager --tool-call-parser hermes --max-model-len 8192 --gpu-memory-utilization 0.95`.
+Manage: `systemctl --user [start|stop|status] vllm.service`. Logs: `journalctl --user -u vllm`.
 
 ## Developer Workflow
 

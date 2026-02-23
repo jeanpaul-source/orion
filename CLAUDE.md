@@ -84,9 +84,9 @@ You → HAL (thin coordinator, LLM brain)
 | node-exporter | — | 9100 | Docker | internal to monitoring network only |
 | blackbox-exporter | — | 9115 | Docker | internal to monitoring network only |
 | cockpit | 9090 | — | systemd | Server management UI — NOT Prometheus |
+| vLLM | 8000 | — | user systemd | `~/vllm-env/bin/vllm`; `VLLM_USE_FLASHINFER_SAMPLER=0` workaround for RTX 3090 Ti CUDA issue; `--enforce-eager --tool-call-parser hermes` |
 
 **NOT running (but planned):**
-- vLLM — port 8000; HAL code expects it here; blocked by RTX 3090 Ti CUDA driver issue (see SESSION_FINDINGS RC1)
 - agent-zero — container is absent (not just stopped); decomissioned or never deployed on this host
 
 **Secrets:** Managed by SOPS + `homelab-secrets.service` (tmpfs at `/run/homelab-secrets/`).
@@ -223,7 +223,6 @@ If tests are skipped (Ollama unreachable from laptop), SSH to the server and run
 
 - **Fix harvest_lag watchdog alert**: Harvest already ran and the data is in pgvector. Just write the timestamp: `touch ~/.orion/harvest_last_run`. Or re-run `python -m harvest` to refresh data and write it properly.
 - **Clean foreign KB data**: `ghs-genome` (4 rows) and `ghs-rejections` (1 row) don't belong. Delete with: `DELETE FROM documents WHERE category IN ('ghs-genome', 'ghs-rejections');`
-- **Get vLLM running**: RTX 3090 Ti CUDA driver issue (device-side assert in sampler). Next step: `VLLM_ATTENTION_BACKEND=XFORMERS vllm serve ...` — see last session for full debug sequence.
 - **Judge no-tools constraint**: `_llm_reason()` in `hal/judge.py` should tell the LLM "do not call tools or fetch external data" — prevents the risk evaluator from trying to use tools
 - **Security module**: network guard — planned, needs design conversation before any code
 - **RC3 — session history pruning**: Bad turns (Qwen identity, JSON dumps) accumulate in SQLite and compound future failures. Need a pruning strategy or quality filter on what gets saved.
