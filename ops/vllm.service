@@ -7,6 +7,7 @@ Type=simple
 User=jp
 WorkingDirectory=%h
 Environment=VLLM_USE_FLASHINFER_SAMPLER=0
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ExecStart=%h/vllm-env/bin/vllm serve Qwen/Qwen2.5-32B-Instruct-AWQ \
     --enable-auto-tool-choice \
     --tool-call-parser hermes \
