@@ -4,6 +4,8 @@ from typing import Generator
 
 import requests
 
+from hal.tracing import get_tracer
+
 
 class OllamaClient:
     def __init__(self, base_url: str, model: str, embed_model: str):
@@ -98,33 +100,48 @@ class VLLMClient:
         self, messages: list[dict], tools: list[dict], system: str | None = None
     ) -> dict:
         """Non-streaming chat with tool schemas. Returns the full message dict."""
-        payload = {
-            "model": self.model,
-            "messages": self._messages(messages, system),
-            "tools": tools,
-        }
-        r = requests.post(
-            f"{self.base_url}/v1/chat/completions",
-            json=payload,
-            headers=self._headers,
-            timeout=120,
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]
+        with get_tracer().start_as_current_span("hal.llm.chat_with_tools") as span:
+            span.set_attribute("llm.model", self.model)
+            span.set_attribute("llm.message_count", len(messages))
+            span.set_attribute("llm.tool_count", len(tools))
+            payload = {
+                "model": self.model,
+                "messages": self._messages(messages, system),
+                "tools": tools,
+            }
+            r = requests.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers,
+                timeout=120,
+            )
+            r.raise_for_status()
+            result = r.json()["choices"][0]["message"]
+            has_tool_calls = bool(result.get("tool_calls"))
+            span.set_attribute("llm.has_tool_calls", has_tool_calls)
+            if has_tool_calls:
+                names = [tc.get("function", {}).get("name", "") for tc in result["tool_calls"]]
+                span.set_attribute("llm.tool_calls", ",".join(names))
+            return result
 
     def chat(
         self, messages: list[dict], system: str | None = None, timeout: int = 120
     ) -> str:
         """Non-streaming chat — returns full response string."""
-        payload = {
-            "model": self.model,
-            "messages": self._messages(messages, system),
-        }
-        r = requests.post(
-            f"{self.base_url}/v1/chat/completions",
-            json=payload,
-            headers=self._headers,
-            timeout=timeout,
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        with get_tracer().start_as_current_span("hal.llm.chat") as span:
+            span.set_attribute("llm.model", self.model)
+            span.set_attribute("llm.message_count", len(messages))
+            payload = {
+                "model": self.model,
+                "messages": self._messages(messages, system),
+            }
+            r = requests.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers,
+                timeout=timeout,
+            )
+            r.raise_for_status()
+            content = r.json()["choices"][0]["message"]["content"]
+            span.set_attribute("llm.response_len", len(content))
+            return content

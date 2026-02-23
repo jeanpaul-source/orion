@@ -15,6 +15,7 @@ import math
 from typing import Literal
 
 from hal.llm import OllamaClient
+from hal.tracing import get_tracer
 
 Intent = Literal["health", "fact", "agentic"]
 
@@ -109,20 +110,33 @@ class IntentClassifier:
         Return (intent, confidence score 0-1).
         Always returns ("agentic", 0.0) on any failure or low confidence.
         """
-        if not self._ready:
-            return "agentic", 0.0
-        try:
-            q_vec = self._ollama.embed(query)
-            best_intent: Intent = "agentic"
-            best_score = 0.0
-            for category, vecs in self._embeddings.items():
-                # Best-matching example within this category
-                score = max(_cosine(q_vec, v) for v in vecs)
-                if score > best_score:
-                    best_score = score
-                    best_intent = category  # type: ignore[assignment]
-            if best_score < THRESHOLD:
-                return "agentic", best_score
-            return best_intent, best_score
-        except Exception:
-            return "agentic", 0.0
+        with get_tracer().start_as_current_span("hal.intent.classify") as span:
+            span.set_attribute("intent.query", query[:200])
+            if not self._ready:
+                span.set_attribute("intent.result", "agentic")
+                span.set_attribute("intent.confidence", 0.0)
+                span.set_attribute("intent.classifier_ready", False)
+                return "agentic", 0.0
+            try:
+                q_vec = self._ollama.embed(query)
+                best_intent: Intent = "agentic"
+                best_score = 0.0
+                for category, vecs in self._embeddings.items():
+                    # Best-matching example within this category
+                    score = max(_cosine(q_vec, v) for v in vecs)
+                    if score > best_score:
+                        best_score = score
+                        best_intent = category  # type: ignore[assignment]
+                if best_score < THRESHOLD:
+                    span.set_attribute("intent.result", "agentic")
+                    span.set_attribute("intent.confidence", best_score)
+                    span.set_attribute("intent.below_threshold", True)
+                    return "agentic", best_score
+                span.set_attribute("intent.result", best_intent)
+                span.set_attribute("intent.confidence", best_score)
+                span.set_attribute("intent.below_threshold", False)
+                return best_intent, best_score
+            except Exception:
+                span.set_attribute("intent.result", "agentic")
+                span.set_attribute("intent.confidence", 0.0)
+                return "agentic", 0.0

@@ -10,6 +10,7 @@ from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
+from hal.tracing import get_tracer
 from hal.workers import list_dir, read_file, write_file
 
 MAX_ITERATIONS = 8
@@ -230,35 +231,41 @@ def run_health(
     console: Console,
 ) -> str:
     """Health handler: fetch live metrics, answer in one LLM call with no tools."""
-    try:
-        with console.status("[dim]fetching metrics...[/]", spinner="dots"):
-            h = prom.health()
-        metrics_str = "\n".join(
-            f"{k}: {v}" for k, v in h.items() if v is not None
-        )
-    except Exception as e:
-        metrics_str = f"Metrics unavailable: {e}"
+    with get_tracer().start_as_current_span("hal.run_health") as span:
+        span.set_attribute("hal.session_id", session_id)
+        span.set_attribute("hal.query", user_input[:200])
+        try:
+            with console.status("[dim]fetching metrics...[/]", spinner="dots"):
+                h = prom.health()
+            metrics_str = "\n".join(
+                f"{k}: {v}" for k, v in h.items() if v is not None
+            )
+            span.set_attribute("hal.metrics_available", True)
+        except Exception as e:
+            metrics_str = f"Metrics unavailable: {e}"
+            span.set_attribute("hal.metrics_available", False)
 
-    messages = list(history) + [{
-        "role": "user",
-        "content": f"Current lab metrics:\n{metrics_str}\n\n{user_input}",
-    }]
+        messages = list(history) + [{
+            "role": "user",
+            "content": f"Current lab metrics:\n{metrics_str}\n\n{user_input}",
+        }]
 
-    with console.status("[dim]thinking...[/]", spinner="dots"):
-        response = llm.chat(messages, system=system)
+        with console.status("[dim]thinking...[/]", spinner="dots"):
+            response = llm.chat(messages, system=system)
 
-    response = response.strip()
-    console.print(f"\n[bold cyan]hal>[/] {response}")
+        response = response.strip()
+        span.set_attribute("hal.response_len", len(response))
+        console.print(f"\n[bold cyan]hal>[/] {response}")
 
-    history.append({"role": "user", "content": user_input})
-    history.append({"role": "assistant", "content": response})
-    mem.save_turn(session_id, "user", user_input)
-    mem.save_turn(session_id, "assistant", response)
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": response})
+        mem.save_turn(session_id, "user", user_input)
+        mem.save_turn(session_id, "assistant", response)
 
-    if len(history) > 40:
-        history[:] = history[-40:]
+        if len(history) > 40:
+            history[:] = history[-40:]
 
-    return response
+        return response
 
 
 def run_fact(
@@ -276,39 +283,49 @@ def run_fact(
     If the KB has nothing relevant, the LLM answers from the system prompt alone
     (which contains key lab facts). If it still doesn't know, it says so.
     """
-    try:
-        with console.status("[dim]searching knowledge base...[/]", spinner="dots"):
-            chunks = kb.search(user_input, top_k=3)
-        relevant = [c for c in chunks if c["score"] >= 0.5]
-    except Exception:
-        relevant = []
+    with get_tracer().start_as_current_span("hal.run_fact") as span:
+        span.set_attribute("hal.session_id", session_id)
+        span.set_attribute("hal.query", user_input[:200])
+        try:
+            with console.status("[dim]searching knowledge base...[/]", spinner="dots"):
+                chunks = kb.search(user_input, top_k=3)
+            relevant = [c for c in chunks if c["score"] >= 0.5]
+            span.set_attribute("hal.kb.chunks_returned", len(chunks))
+            span.set_attribute("hal.kb.relevant_chunks", len(relevant))
+            if relevant:
+                span.set_attribute("hal.kb.top_score", relevant[0]["score"])
+        except Exception:
+            relevant = []
+            span.set_attribute("hal.kb.chunks_returned", 0)
+            span.set_attribute("hal.kb.relevant_chunks", 0)
 
-    if relevant:
-        context = "\n\n".join(
-            f"[{c['file']} | score={c['score']:.2f}]\n{c['content'].strip()}"
-            for c in relevant
-        )
-        augmented = f"{context}\n\n{user_input}"
-    else:
-        augmented = user_input
+        if relevant:
+            context = "\n\n".join(
+                f"[{c['file']} | score={c['score']:.2f}]\n{c['content'].strip()}"
+                for c in relevant
+            )
+            augmented = f"{context}\n\n{user_input}"
+        else:
+            augmented = user_input
 
-    messages = list(history) + [{"role": "user", "content": augmented}]
+        messages = list(history) + [{"role": "user", "content": augmented}]
 
-    with console.status("[dim]thinking...[/]", spinner="dots"):
-        response = llm.chat(messages, system=system)
+        with console.status("[dim]thinking...[/]", spinner="dots"):
+            response = llm.chat(messages, system=system)
 
-    response = response.strip()
-    console.print(f"\n[bold cyan]hal>[/] {response}")
+        response = response.strip()
+        span.set_attribute("hal.response_len", len(response))
+        console.print(f"\n[bold cyan]hal>[/] {response}")
 
-    history.append({"role": "user", "content": user_input})
-    history.append({"role": "assistant", "content": response})
-    mem.save_turn(session_id, "user", user_input)
-    mem.save_turn(session_id, "assistant", response)
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": response})
+        mem.save_turn(session_id, "user", user_input)
+        mem.save_turn(session_id, "assistant", response)
 
-    if len(history) > 40:
-        history[:] = history[-40:]
+        if len(history) > 40:
+            history[:] = history[-40:]
 
-    return response
+        return response
 
 
 def run_agent(
@@ -328,110 +345,126 @@ def run_agent(
 
     Returns the final text response.
     """
-    # Seed the first message with KB context (fast, cheap, often helpful)
-    try:
-        chunks = kb.search(user_input, top_k=3)
-        context_lines = []
-        for c in chunks:
-            if c["score"] >= 0.6:
-                context_lines.append(f"[{c['file']} | score={c['score']:.2f}]")
-                context_lines.append(c["content"].strip())
-        if context_lines:
-            context_str = "\n".join(context_lines)
-            augmented = f"{context_str}\n\n{user_input}"
-        else:
+    with get_tracer().start_as_current_span("hal.run_agent") as span:
+        span.set_attribute("hal.session_id", session_id)
+        span.set_attribute("hal.query", user_input[:200])
+        # Seed the first message with KB context (fast, cheap, often helpful)
+        try:
+            chunks = kb.search(user_input, top_k=3)
+            context_lines = []
+            for c in chunks:
+                if c["score"] >= 0.6:
+                    context_lines.append(f"[{c['file']} | score={c['score']:.2f}]")
+                    context_lines.append(c["content"].strip())
+            if context_lines:
+                context_str = "\n".join(context_lines)
+                augmented = f"{context_str}\n\n{user_input}"
+            else:
+                augmented = user_input
+            span.set_attribute("hal.kb.seeded_chunks", len(context_lines) // 2)
+        except Exception:
             augmented = user_input
-    except Exception:
-        augmented = user_input
+            span.set_attribute("hal.kb.seeded_chunks", 0)
 
-    # Working history — don't mutate the session history until we have a final answer
-    working = list(history) + [{"role": "user", "content": augmented}]
+        # Working history — don't mutate the session history until we have a final answer
+        working = list(history) + [{"role": "user", "content": augmented}]
 
-    response_text = ""
-    seen_calls: set[tuple] = set()  # (name, args_json) — detect repeat tool calls
-    total_calls = 0  # total unique tool calls dispatched this turn
+        response_text = ""
+        seen_calls: set[tuple] = set()  # (name, args_json) — detect repeat tool calls
+        total_calls = 0  # total unique tool calls dispatched this turn
 
-    for iteration in range(MAX_ITERATIONS):
-        label = f" (step {iteration + 1})" if iteration > 0 else ""
-        # If we've already dispatched 5 unique tool calls, stop collecting data
-        # and force a text-only response regardless of iteration count
-        effective_tools = TOOLS if (iteration < MAX_ITERATIONS - 1 and total_calls < 5) else []
-        with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
-            msg = llm.chat_with_tools(working, effective_tools, system=system)
+        for iteration in range(MAX_ITERATIONS):
+            label = f" (step {iteration + 1})" if iteration > 0 else ""
+            # If we've already dispatched 5 unique tool calls, stop collecting data
+            # and force a text-only response regardless of iteration count
+            effective_tools = TOOLS if (iteration < MAX_ITERATIONS - 1 and total_calls < 5) else []
+            with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
+                msg = llm.chat_with_tools(working, effective_tools, system=system)
 
-        working.append(msg)
-        tool_calls = msg.get("tool_calls") or []
+            working.append(msg)
+            tool_calls = msg.get("tool_calls") or []
 
-        if not tool_calls:
-            # Text-only response — agent is done
-            response_text = (msg.get("content") or "").strip()
+            if not tool_calls:
+                # Text-only response — agent is done
+                response_text = (msg.get("content") or "").strip()
+                span.set_attribute("hal.iterations", iteration + 1)
+                span.set_attribute("hal.total_tool_calls", total_calls)
+                span.set_attribute("hal.response_len", len(response_text))
+                console.print(f"\n[bold cyan]hal>[/] {response_text}")
+                break
+
+            # Execute each tool call and feed results back
+            new_calls = 0
+            for tc in tool_calls:
+                call_id = tc.get("id", "")
+                fn = tc.get("function", {})
+                name = fn.get("name", "")
+                raw_args = fn.get("arguments", {})
+
+                # Some models return arguments as a JSON string instead of a dict
+                if isinstance(raw_args, str):
+                    try:
+                        raw_args = json.loads(raw_args)
+                    except json.JSONDecodeError:
+                        raw_args = {}
+
+                # Detect repeat calls — model stuck in a loop
+                call_key = (name, json.dumps(raw_args, sort_keys=True))
+                if call_key in seen_calls:
+                    working.append({"role": "tool", "content": "[Already called — use the result above.]", "tool_call_id": call_id})
+                    continue
+                seen_calls.add(call_key)
+
+                console.print(f"\n  [dim cyan]→ {name}({_fmt_args(raw_args)})[/]")
+                with get_tracer().start_as_current_span("hal.tool_call") as tool_span:
+                    tool_span.set_attribute("tool.name", name)
+                    tool_span.set_attribute("tool.iteration", iteration)
+                    tool_span.set_attribute("tool.args", json.dumps(raw_args, sort_keys=True)[:500])
+                    result = _dispatch(name, raw_args, executor, judge, kb, prom)
+                    tool_span.set_attribute("tool.result_len", len(result))
+
+                # Cap tool output to protect the context window
+                _MAX_TOOL_OUTPUT = 8000
+                if len(result) > _MAX_TOOL_OUTPUT:
+                    omitted = len(result) - _MAX_TOOL_OUTPUT
+                    result = result[:_MAX_TOOL_OUTPUT] + f"\n[…{omitted} chars omitted]"
+
+                preview = textwrap.shorten(result, width=140, placeholder="…")
+                console.print(f"  [dim]↳ {preview}[/]")
+
+                working.append({"role": "tool", "content": result, "tool_call_id": call_id})
+                new_calls += 1
+                total_calls += 1
+
+            # If every call this iteration was a duplicate, the model is looping.
+            # Inject a directive to stop collecting data and respond in plain text.
+            if new_calls == 0:
+                working.append({
+                    "role": "user",
+                    "content": (
+                        "You already have all the data you need. "
+                        "Please provide your final answer now as plain text, "
+                        "without calling any more tools."
+                    ),
+                })
+
+        else:
+            response_text = "Reached max iterations without a final answer."
+            span.set_attribute("hal.iterations", MAX_ITERATIONS)
+            span.set_attribute("hal.total_tool_calls", total_calls)
+            span.set_attribute("hal.max_iterations_reached", True)
             console.print(f"\n[bold cyan]hal>[/] {response_text}")
-            break
 
-        # Execute each tool call and feed results back
-        new_calls = 0
-        for tc in tool_calls:
-            call_id = tc.get("id", "")
-            fn = tc.get("function", {})
-            name = fn.get("name", "")
-            raw_args = fn.get("arguments", {})
+        # Persist clean user input + final response to session history
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": response_text})
+        mem.save_turn(session_id, "user", user_input)
+        mem.save_turn(session_id, "assistant", response_text)
 
-            # Some models return arguments as a JSON string instead of a dict
-            if isinstance(raw_args, str):
-                try:
-                    raw_args = json.loads(raw_args)
-                except json.JSONDecodeError:
-                    raw_args = {}
+        if len(history) > 40:
+            history[:] = history[-40:]
 
-            # Detect repeat calls — model stuck in a loop
-            call_key = (name, json.dumps(raw_args, sort_keys=True))
-            if call_key in seen_calls:
-                working.append({"role": "tool", "content": "[Already called — use the result above.]", "tool_call_id": call_id})
-                continue
-            seen_calls.add(call_key)
-
-            console.print(f"\n  [dim cyan]→ {name}({_fmt_args(raw_args)})[/]")
-            result = _dispatch(name, raw_args, executor, judge, kb, prom)
-
-            # Cap tool output to protect the context window
-            _MAX_TOOL_OUTPUT = 8000
-            if len(result) > _MAX_TOOL_OUTPUT:
-                omitted = len(result) - _MAX_TOOL_OUTPUT
-                result = result[:_MAX_TOOL_OUTPUT] + f"\n[…{omitted} chars omitted]"
-
-            preview = textwrap.shorten(result, width=140, placeholder="…")
-            console.print(f"  [dim]↳ {preview}[/]")
-
-            working.append({"role": "tool", "content": result, "tool_call_id": call_id})
-            new_calls += 1
-            total_calls += 1
-
-        # If every call this iteration was a duplicate, the model is looping.
-        # Inject a directive to stop collecting data and respond in plain text.
-        if new_calls == 0:
-            working.append({
-                "role": "user",
-                "content": (
-                    "You already have all the data you need. "
-                    "Please provide your final answer now as plain text, "
-                    "without calling any more tools."
-                ),
-            })
-
-    else:
-        response_text = "Reached max iterations without a final answer."
-        console.print(f"\n[bold cyan]hal>[/] {response_text}")
-
-    # Persist clean user input + final response to session history
-    history.append({"role": "user", "content": user_input})
-    history.append({"role": "assistant", "content": response_text})
-    mem.save_turn(session_id, "user", user_input)
-    mem.save_turn(session_id, "assistant", response_text)
-
-    if len(history) > 40:
-        history[:] = history[-40:]
-
-    return response_text
+        return response_text
 
 
 def _fmt_args(args: dict) -> str:

@@ -21,6 +21,7 @@ from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
+from hal.tracing import get_tracer, setup_tracing
 from hal.tunnel import SSHTunnel, port_open
 from hal.workers import list_dir, read_file, write_file
 
@@ -295,6 +296,9 @@ def main() -> None:
 
     config = cfg.load()
 
+    # Start tracing before any clients are built
+    setup_tracing()
+
     # Load readline history
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -402,21 +406,27 @@ def main() -> None:
                 intent, confidence = classifier.classify(user_input)
                 console.print(f"[dim]  intent: {intent} ({confidence:.2f})[/]")
 
-                if intent == "health":
-                    run_health(
-                        user_input, history, llm, prom,
-                        mem, session_id, SYSTEM_PROMPT, console,
-                    )
-                elif intent == "fact":
-                    run_fact(
-                        user_input, history, llm, kb,
-                        mem, session_id, SYSTEM_PROMPT, console,
-                    )
-                else:
-                    run_agent(
-                        user_input, history, llm, kb, prom,
-                        executor, judge, mem, session_id, SYSTEM_PROMPT, console,
-                    )
+                with get_tracer().start_as_current_span("hal.turn") as turn_span:
+                    turn_span.set_attribute("hal.session_id", session_id)
+                    turn_span.set_attribute("hal.query", user_input[:200])
+                    turn_span.set_attribute("hal.intent", intent)
+                    turn_span.set_attribute("hal.confidence", confidence)
+
+                    if intent == "health":
+                        run_health(
+                            user_input, history, llm, prom,
+                            mem, session_id, SYSTEM_PROMPT, console,
+                        )
+                    elif intent == "fact":
+                        run_fact(
+                            user_input, history, llm, kb,
+                            mem, session_id, SYSTEM_PROMPT, console,
+                        )
+                    else:
+                        run_agent(
+                            user_input, history, llm, kb, prom,
+                            executor, judge, mem, session_id, SYSTEM_PROMPT, console,
+                        )
 
     finally:
         for tunnel in tunnels:
