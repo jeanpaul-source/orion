@@ -135,18 +135,18 @@ class Judge:
     def __init__(
         self,
         audit_log: Path = AUDIT_LOG,
-        ollama: OllamaClient | None = None,
+        llm: VLLMClient | None = None,
     ):
         self.audit_log = audit_log
-        self.ollama = ollama
+        self.llm = llm
         self.audit_log.parent.mkdir(parents=True, exist_ok=True)
 
     def _llm_reason(self, action_type: str, detail: str, reason: str) -> str | None:
         """Ask the LLM for a one-sentence risk assessment. Returns None on failure."""
-        if not self.ollama:
+        if not self.llm:
             return None
         try:
-            return self.ollama.chat(
+            return self.llm.chat(
                 [{"role": "user", "content": (
                     f"Action type: {action_type}\n"
                     f"Detail: {detail[:300]}\n"
@@ -155,6 +155,7 @@ class Judge:
                 )}],
                 system=(
                     "You are a security evaluator for a homelab automation system. "
+                    "Respond with plain text only — do not call any tools or fetch external data. "
                     "Be brief and specific about any risks. No preamble."
                 ),
                 timeout=15,

@@ -315,7 +315,7 @@ def main() -> None:
     kb = KnowledgeBase(config.pgvector_dsn, embed)
     prom = PrometheusClient(config.prometheus_url)
     executor = SSHExecutor(config.lab_host, config.lab_user)
-    judge = Judge(ollama=llm)
+    judge = Judge(llm=llm)
     mem = MemoryStore()
 
     with console.status("[dim]building intent classifier...[/]", spinner="dots"):
