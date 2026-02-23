@@ -107,7 +107,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 - `qwen2.5-coder-14b-32k:latest` — 14B, 32k context variant
 - `nomic-embed-text:latest` — 768-dim embeddings, used by intent classifier + pgvector
 
-**Chat LLM:** HAL uses vLLM (OpenAI-compatible API at port 8000) as its primary chat backend. Ollama is used only for embeddings. Model: `Qwen/Qwen2.5-32B-Instruct-AWQ` (19GB AWQ-quantised).
+**Chat LLM:** HAL uses vLLM (OpenAI-compatible API at port 8000) as its primary chat backend. Ollama is used only for embeddings. Model: `Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` (19GB AWQ-quantised).
 
 **pgvector knowledge base (verified Feb 22, 2026):**
 - 2,293 document chunks, 768-dim HNSW embeddings (cosine)

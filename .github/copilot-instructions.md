@@ -17,7 +17,7 @@ Key data flow: `hal/main.py` → `IntentClassifier` → one of three handlers in
 ## LLM Backend Split (Critical)
 
 - **Chat (`VLLMClient`):** vLLM OpenAI-compatible API at `VLLM_URL` (default `http://localhost:8000`),
-  model `Qwen/Qwen2.5-32B-Instruct-AWQ`. Uses `/v1/chat/completions`.
+  model `Qwen/Qwen2.5-Coder-32B-Instruct-AWQ`. Uses `/v1/chat/completions`.
 - **Embeddings (`OllamaClient`):** Ollama at `OLLAMA_HOST`, model `nomic-embed-text:latest`.
   Ollama is **embeddings-only** — never used for chat.
 
