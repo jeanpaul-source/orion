@@ -1,4 +1,4 @@
-"""Ollama client — embedding and streaming chat."""
+"""LLM clients — OllamaClient (embeddings) and VLLMClient (chat via OpenAI-compatible API)."""
 import json
 from typing import Generator
 
@@ -72,3 +72,59 @@ class OllamaClient:
                 chunk = json.loads(line)
                 if not chunk.get("done"):
                     yield chunk["message"]["content"]
+
+
+class VLLMClient:
+    """Chat client for vLLM's OpenAI-compatible API. No embedding support — use OllamaClient for that."""
+
+    def __init__(self, base_url: str, model: str):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self._headers = {"Authorization": "Bearer not-needed"}
+
+    def ping(self) -> bool:
+        try:
+            r = requests.get(f"{self.base_url}/v1/models", timeout=3)
+            return r.status_code == 200
+        except requests.exceptions.RequestException:
+            return False
+
+    def _messages(self, messages: list[dict], system: str | None) -> list[dict]:
+        if system:
+            return [{"role": "system", "content": system}] + messages
+        return messages
+
+    def chat_with_tools(
+        self, messages: list[dict], tools: list[dict], system: str | None = None
+    ) -> dict:
+        """Non-streaming chat with tool schemas. Returns the full message dict."""
+        payload = {
+            "model": self.model,
+            "messages": self._messages(messages, system),
+            "tools": tools,
+        }
+        r = requests.post(
+            f"{self.base_url}/v1/chat/completions",
+            json=payload,
+            headers=self._headers,
+            timeout=120,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]
+
+    def chat(
+        self, messages: list[dict], system: str | None = None, timeout: int = 120
+    ) -> str:
+        """Non-streaming chat — returns full response string."""
+        payload = {
+            "model": self.model,
+            "messages": self._messages(messages, system),
+        }
+        r = requests.post(
+            f"{self.base_url}/v1/chat/completions",
+            json=payload,
+            headers=self._headers,
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
