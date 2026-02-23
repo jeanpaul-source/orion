@@ -389,10 +389,10 @@ def _dispatch(
     elif name == "search_kb":
         query = args.get("query", "")
         try:
-            chunks = kb.search(query, top_k=5)
+            chunks = kb.search(query, top_k=8)
             lines = []
             for c in chunks:
-                if c["score"] < 0.3:
+                if c["score"] < 0.45:
                     continue
                 lines.append(f"[{c['file']} | score={c['score']:.2f}]")
                 lines.append(c["content"].strip())

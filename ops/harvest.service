@@ -1,0 +1,11 @@
+[Unit]
+Description=Orion KB harvester — re-ingest lab state and static docs
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/orion
+ExecStart=%h/orion/.venv/bin/python -m harvest
+EnvironmentFile=%h/orion/.env
+StandardOutput=journal
+StandardError=journal

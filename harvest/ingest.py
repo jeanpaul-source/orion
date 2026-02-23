@@ -34,12 +34,31 @@ def _chunk(text: str) -> list[str]:
     return chunks or [text]
 
 
+STATIC_DOCS_ROOT = "/data/orion/orion-data/documents/raw"
+
+
 def clear_lab_docs(conn) -> int:
     """Delete all existing lab-infrastructure and lab-state rows before re-harvest."""
     with conn.cursor() as cur:
         cur.execute(
             "DELETE FROM documents WHERE category = ANY(%s)",
             (list(LAB_CATEGORIES),),
+        )
+        deleted = cur.rowcount
+    conn.commit()
+    return deleted
+
+
+def clear_static_docs(conn) -> int:
+    """Delete all rows whose file_path lives under the static docs root.
+
+    Ensures that files removed from disk don't leave orphan chunks in the KB.
+    Old-pipeline PDFs (under /docker/orion-data/...) are left untouched.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM documents WHERE file_path LIKE %s",
+            (STATIC_DOCS_ROOT + "/%",),
         )
         deleted = cur.rowcount
     conn.commit()
@@ -78,8 +97,10 @@ def ingest(docs: list[dict], dsn: str, llm: OllamaClient, dry_run: bool = False)
     stats = {"deleted": 0, "chunks": 0, "docs": 0, "errors": 0}
 
     if not dry_run:
-        stats["deleted"] = clear_lab_docs(conn)
-        print(f"  cleared {stats['deleted']} existing lab docs")
+        n_lab = clear_lab_docs(conn)
+        n_static = clear_static_docs(conn)
+        stats["deleted"] = n_lab + n_static
+        print(f"  cleared {n_lab} existing lab docs, {n_static} static doc chunks")
 
     with conn.cursor() as cur:
         for doc in docs:
