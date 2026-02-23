@@ -45,8 +45,9 @@ cd ~/orion && git pull        # alias: orion-update
 # Run HAL on server
 cd ~/orion && .venv/bin/python -m hal    # alias: hal
 
-# Re-harvest lab state into pgvector
-python -m harvest
+# Re-harvest lab state and static docs into pgvector
+python -m harvest --dry-run   # preview only
+python -m harvest             # live run — nightly timer also runs at 3am on server
 
 # Watchdog (user systemd on server)
 systemctl --user status watchdog.timer
@@ -103,4 +104,9 @@ Baseline (Feb 23 2026): `hal_identity=100%`, `no_raw_json=100%`, `intent_accurac
 | `hal/config.py` | All config; loaded from `.env` via `load()` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/watchdog.py` | Standalone monitor; deployed as user systemd timer on server |
+| `harvest/collect.py` | Collectors: live lab state + `collect_static_docs()` for `/data/orion/orion-data/documents/raw` |
+| `harvest/ingest.py` | Chunk, embed, upsert to pgvector; clears stale chunks before re-ingest |
+| `harvest/main.py` | Harvest entry point: `python -m harvest [--dry-run]` |
+| `ops/harvest.service` | Systemd service unit for nightly harvest |
+| `ops/harvest.timer` | Systemd timer — fires daily at 03:00 |
 | `SESSION_FINDINGS.md` | Ground-truth audit of what actually runs and known failure modes |
