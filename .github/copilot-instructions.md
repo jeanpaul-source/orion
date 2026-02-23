@@ -89,7 +89,7 @@ Baseline (Feb 23 2026): `hal_identity=100%`, `no_raw_json=100%`, `intent_accurac
   before writing any code. No silent bandaid patches.
 - **One change at a time.** Verify before moving on.
 - **No bandaids:** if adding a flag/cap/rule to work around misbehaviour, stop and fix the root cause.
-- Tests live in `tests/` and cover the intent classifier (21 tests). The agent loop has no tests.
+- Tests live in `tests/`: 21 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore (no Ollama needed) = 117 total. The agent loop has no tests.
 - Band-aids already in the codebase are documented in `SESSION_FINDINGS.md` (P1–P5) — do not add more.
 
 ## Key Files
