@@ -17,21 +17,46 @@ tool loop. The foundation is in place. The full vision is below.
 
 ## Table of Contents
 
-1. [Vision: The Completed System](#vision-the-completed-system)
-2. [Current State: How It Works Today](#current-state-how-it-works-today)
-3. [Architecture](#architecture)
-4. [Intent Routing](#intent-routing)
-5. [The Judge (Policy Gate)](#the-judge-policy-gate)
-6. [LLM Backend Split](#llm-backend-split)
-7. [Tools Available to the Agentic Loop](#tools-available-to-the-agentic-loop)
-8. [Data and Memory](#data-and-memory)
-9. [Prerequisites](#prerequisites)
-10. [Setup](#setup)
-11. [Running HAL](#running-hal)
-12. [Developer Workflow](#developer-workflow)
-13. [Watchdog](#watchdog)
-14. [Key Files](#key-files)
-15. [Known Issues and Open Work](#known-issues-and-open-work)
+- [HAL — Personal Autonomous Home AI](#hal--personal-autonomous-home-ai)
+  - [Table of Contents](#table-of-contents)
+  - [Vision: The Completed System](#vision-the-completed-system)
+    - [What HAL Becomes](#what-hal-becomes)
+    - [The Agent Hierarchy](#the-agent-hierarchy)
+    - [Full Home Scope](#full-home-scope)
+    - [Predictive and Self-Healing](#predictive-and-self-healing)
+    - [Self-Development](#self-development)
+    - [Interfaces](#interfaces)
+    - [Memory: The Elephant](#memory-the-elephant)
+    - [Progressive Trust](#progressive-trust)
+    - [Active Security](#active-security)
+  - [Current State: How It Works Today](#current-state-how-it-works-today)
+  - [Architecture](#architecture)
+  - [Intent Routing](#intent-routing)
+  - [The Judge (Policy Gate)](#the-judge-policy-gate)
+    - [Tiers](#tiers)
+    - [Tier Assignment (first match wins, applied in this order)](#tier-assignment-first-match-wins-applied-in-this-order)
+    - [Audit Log](#audit-log)
+  - [LLM Backend Split](#llm-backend-split)
+  - [Tools Available to the Agentic Loop](#tools-available-to-the-agentic-loop)
+  - [Data and Memory](#data-and-memory)
+    - [Knowledge Base (pgvector)](#knowledge-base-pgvector)
+    - [Session Memory (SQLite)](#session-memory-sqlite)
+    - [Audit Log](#audit-log-1)
+  - [Prerequisites](#prerequisites)
+  - [Setup](#setup)
+    - [Full `.env` Reference](#full-env-reference)
+  - [Running HAL](#running-hal)
+  - [Developer Workflow](#developer-workflow)
+    - [Tests](#tests)
+    - [Evaluation](#evaluation)
+    - [Harvest](#harvest)
+    - [Deploy (laptop → server)](#deploy-laptop--server)
+  - [Watchdog](#watchdog)
+  - [Key Files](#key-files)
+  - [Known Issues and Open Work](#known-issues-and-open-work)
+    - [Open](#open)
+    - [Resolved](#resolved)
+    - [Known Traps](#known-traps)
 
 ---
 
@@ -470,6 +495,10 @@ decisions.
 - pgvector Docker container running on port 5432
 - Prometheus Docker container running on port 9091 (not 9090 — that is Cockpit)
 - Grafana Docker container running on port 3001
+- `falco-modern-bpf.service` running (system systemd) — host behavioral IDS, eBPF probe
+- `osquery` installed — queried on demand via `sudo osqueryi`
+- ntopng + Redis running via Docker Compose at `~/ntopng/` — traffic monitor on port 3000
+- `nmap` installed — LAN inventory scanning, invoked on demand
 
 **If running HAL from a laptop (not the server directly):**
 - Set `USE_SSH_TUNNEL=true` in `.env`
@@ -506,6 +535,7 @@ cp .env.example .env
 | `USE_SSH_TUNNEL` | `false` | Set `true` when running from a laptop outside the server |
 | `NTFY_URL` | *(empty)* | Push alerts via ntfy.sh topic URL — leave empty to disable |
 | `VLLM_URL` | `http://localhost:8000` | vLLM OpenAI-compatible API — `localhost` on the server, tunneled on laptop |
+| `NTOPNG_URL` | `http://localhost:3000` | ntopng traffic monitor REST API — no auth required (login disabled, local only) |
 
 ---
 
@@ -549,6 +579,10 @@ python -m eval.evaluate --skip-llm-eval    # scores responses → eval/results/e
 ```
 
 **Baselines (Feb 23 2026):** `hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=95.8%`
+
+**Security stack installed (Feb 23 2026):** Falco (eBPF, modern-bpf probe), Osquery 5.21.0,
+ntopng Community (Docker Compose, `~/ntopng/`), Nmap 7.92. `hal/security.py` worker and
+Judge integration are the next step — see todo list.
 
 If a change causes any baseline to regress, do not merge.
 
@@ -611,6 +645,7 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/executor.py` | SSH command execution on the server — wraps paramiko or subprocess |
 | `hal/workers.py` | File operation tools: `read_file`, `write_file`, `patch_file`, `list_dir`, `git_*` |
+| `hal/security.py` | Security worker — wraps Falco, Osquery, ntopng, Nmap into four HAL tools |
 | `hal/prometheus.py` | PromQL query client — used by `run_health()` and the `get_metrics` tool |
 | `hal/knowledge.py` | pgvector KB search client — used by `run_fact()` and the `search_kb` tool |
 | `hal/facts.py` | `remember()` — saves a fact into session memory mid-conversation |
@@ -621,6 +656,7 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 | `eval/` | Evaluation harness: 24-query suite, response collector, scorer, baseline results |
 | `tests/` | 21 intent classifier tests with live embedding fixtures |
 | `ops/` | Systemd unit files (`vllm.service`, `watchdog.service`, `watchdog.timer`), `KEYS_AND_TOKENS.md` |
+| `~/ntopng/docker-compose.yml` | ntopng + Redis Compose stack on server (not in repo — lives on server only) |
 | `CLAUDE.md` | AI operating contract — required reading before any code change. Contains the rules that prevent drift. |
 | `SESSION_FINDINGS.md` | Ground-truth audit of what actually runs on the server vs. what is documented |
 
@@ -657,3 +693,12 @@ services. The default fallback in `config.py` previously pointed at 9090 (wrong)
 **Ollama GPU flag:** `OLLAMA_NUM_GPU=0` in the Ollama systemd override is load-bearing.
 It looks like a performance regression. It is not — it prevents Ollama from consuming
 ~800 MB VRAM that vLLM needs for the KV cache. Do not remove it.
+
+**Falco `pg_isready` noise:** Falco fires `Read sensitive file untrusted` every ~30s because
+the pgvector container's healthcheck script (`pg_isready`) reads `/etc/shadow`. This is
+not a real threat — it is a known false positive. The security worker filters it by default.
+Do not suppress this rule globally; filter it at query time by excluding `proc.name=pg_isready`.
+
+**OllamaClient model param removed (Feb 2026):** `OllamaClient.__init__` no longer takes a
+`model` argument — it was unused (Ollama is embeddings-only). The signature is now
+`(base_url, embed_model)`. Any code constructing `OllamaClient` with three args will break.
