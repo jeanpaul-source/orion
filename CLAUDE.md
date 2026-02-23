@@ -78,7 +78,7 @@ You → HAL (thin coordinator, LLM brain)
         └── Workers   (do things)
               ├── SSH executor   (run commands on the server)
               ├── Prometheus     (health queries)
-              └── Security       (network guard — planned)
+              └── Security       (Falco · Osquery · ntopng · Nmap)
 ```
 
 **Tiered action approval:**
@@ -114,7 +114,10 @@ You → HAL (thin coordinator, LLM brain)
 | node-exporter | — | 9100 | Docker | internal to monitoring network only |
 | blackbox-exporter | — | 9115 | Docker | internal to monitoring network only |
 | cockpit | 9090 | — | systemd | Server management UI — NOT Prometheus |
-| vLLM | 8000 | — | user systemd | `~/vllm-env/bin/vllm`; `VLLM_USE_FLASHINFER_SAMPLER=0` workaround for RTX 3090 Ti CUDA issue; `--enforce-eager --tool-call-parser hermes` |
+| vLLM | 8000 | — | user systemd | `~/vllm-env/bin/vllm`; `VLLM_USE_FLASHINFER_SAMPLER=0` workaround for RTX 3090 Ti CUDA issue; `--enforce-eager --tool-call-parser hermes`; model `Qwen/Qwen2.5-32B-Instruct-AWQ` |
+| ntopng | 3000 | 3000 | Docker | `~/ntopng/docker-compose.yml`; Redis on same stack; interface `enp130s0`; login disabled; Community API at `/lua/rest/v2/` |
+| Falco | — | — | system systemd | `falco-modern-bpf.service`; JSON events at `/var/log/falco/events.json`; group `falco-readers` (jp is member) |
+| Osquery | — | — | bare metal | 5.21.0; `/etc/sudoers.d/osquery-hal` scopes `jp` to `osqueryi` only (no password) |
 
 **NOT running (but planned):**
 
@@ -140,14 +143,14 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 - `qwen2.5-coder-14b-32k:latest` — 14B, 32k context variant
 - `nomic-embed-text:latest` — 768-dim embeddings, used by intent classifier + pgvector
 
-**Chat LLM:** HAL uses vLLM (OpenAI-compatible API at port 8000) as its primary chat backend. Ollama is used only for embeddings. Model: `Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` (19GB AWQ-quantised).
+**Chat LLM:** HAL uses vLLM (OpenAI-compatible API at port 8000) as its primary chat backend. Ollama is used only for embeddings. Model: `Qwen/Qwen2.5-32B-Instruct-AWQ` (19GB AWQ-quantised). The Coder variant (`Qwen2.5-Coder-32B-Instruct-AWQ`) is also on disk but is NOT used — it emits tool calls in `<tools>` tag format that `--tool-call-parser hermes` does not handle.
 
 **pgvector knowledge base (verified Feb 22, 2026):**
 
-- 2,293 document chunks, 768-dim HNSW embeddings (cosine)
-- Categories: ai-agents-and-multi-agent-systems (1,440), rag-and-knowledge-retrieval (799), lab-infrastructure (35), lab-state (14), ghs-genome (4), ghs-rejections (1)
-- Harvest HAS been run; `harvest_last_run` timestamp file not yet written → watchdog incorrectly reports harvest_lag
-- `ghs-genome` and `ghs-rejections` (5 rows) are foreign data — don't belong, low harm, should be cleaned
+- 2,288 document chunks, 768-dim HNSW embeddings (cosine)
+- Categories: ai-agents-and-multi-agent-systems (1,440), rag-and-knowledge-retrieval (799), lab-infrastructure (35), lab-state (14)
+- `ghs-genome` and `ghs-rejections` (5 rows) deleted Feb 23 2026
+- `harvest_last_run` timestamp written — watchdog harvest_lag alarm silenced
 - Table: `documents` — columns: content, embedding, category, file_name, file_path, metadata
 
 **NOT running:** Qdrant, AnythingLLM, n8n, Traefik, Authelia
@@ -176,7 +179,9 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/tracing.py` | OTel setup; `setup_tracing()` + `get_tracer()`; no-op fallback if collector absent |
 | `hal/tunnel.py` | SSH tunnel for laptop-side use (auto-tunnel when vLLM/Ollama not directly reachable) |
 | `hal/knowledge.py` | pgvector KB search |
-| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`) |
+| `hal/security.py` | Security workers: `get_security_events` (Falco), `get_host_connections` (Osquery), `get_traffic_summary` (ntopng), `scan_lan` (Nmap) — all Judge-gated, tiers 0/1 |
+| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`, `NTOPNG_URL`) |
+| `~/ntopng/docker-compose.yml` | ntopng + Redis compose; host network; interface `enp130s0`; not in this repo |
 | `harvest/` | Lab infrastructure harvester — re-indexes lab state into pgvector |
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
@@ -267,6 +272,26 @@ Laptop (edit code)
 - ops/ files updated to match user-service format (use `%h`, no `User=jp`)
 - ntfy not yet configured — alerts log to `~/.orion/watchdog.log` only
 
+**Done (as of Feb 23, 2026 — session 3):**
+
+- **KB foreign data deleted**: `DELETE FROM documents WHERE category IN ('ghs-genome', 'ghs-rejections')` — 5 rows removed
+- **OllamaClient model param removed**: `model: str` arg was unused (embeddings use `embed_model`; chat is VLLMClient). Removed from `__init__`, call site in `main.py`, and `tests/conftest.py`
+- **Security stack installed on the-lab**:
+  - Falco (eBPF modern-bpf): `falco-modern-bpf.service`, JSON events at `/var/log/falco/events.json`, `falco-readers` group, logrotate
+  - Osquery 5.21.0: `/etc/sudoers.d/osquery-hal` — scoped to `osqueryi` only
+  - ntopng + Redis: Docker Compose at `~/ntopng/`, port 3000, login disabled, interface `enp130s0`; Community API confirmed working
+  - Nmap 7.92: bare metal, XML output (`-oX -`)
+- **`hal/security.py`**: four workers — `get_security_events`, `get_host_connections`, `get_traffic_summary`, `scan_lan`; registered in `agent.py` TOOLS + `_dispatch`; tiers in `judge.py`; `ntopng_url` added to `config.py`
+- **Security intent examples**: 15 agentic examples added to `hal/intent.py` covering Falco/port/traffic/LAN queries
+- **System prompt updated**: Role 5 (GUARD) rewritten with four concrete tool names and trigger phrases; security stack listed in services section
+- **`VLLMClient.ping()` hardened**: now uses `/health` endpoint (only returns 200 when model is fully loaded) instead of `/v1/models` (returns 200 immediately on API server start — before weights are in VRAM)
+- **vLLM 404 guard**: `chat_with_tools` and `chat` catch HTTP 404 and raise `RuntimeError` with readable "still loading" message instead of traceback
+- **Model name fix**: server `.env` had `Qwen2.5-32B-Instruct-AWQ` but vLLM service was set to Coder variant; fixed `ops/vllm.service` and `.env` back to `Qwen/Qwen2.5-32B-Instruct-AWQ`; Instruct model uses Hermes tool-call format natively
+- **`_extract_tool_calls_from_content()`**: fallback parser in `llm.py` for `<tools>`/`<tool_call>` wrappers; active while Coder model was loaded, retained as defensive code
+- **End-to-end verified**: `get_security_events` fires as structured tool call, Falco events returned, HAL answers correctly
+
+**Known noise (Falco):** `systemd-userwork` accessing `/etc/shadow` — benign, not yet in noise filter. Add to `_FALCO_NOISE` in `hal/security.py`.
+
 **Done (as of Feb 23, 2026 — session 2):**
 
 - **Poison-turn filter**: `is_poison_response()` in `memory.py` + guard in `save_turn()` — raw tool-call JSON dumps from pre-vLLM era are no longer persisted to SQLite (RC3 mitigation)
@@ -278,5 +303,7 @@ Laptop (edit code)
 
 **Backlog:**
 
-- **Clean foreign KB data**: `ghs-genome` (4 rows) and `ghs-rejections` (1 row) don't belong. Delete with: `DELETE FROM documents WHERE category IN ('ghs-genome', 'ghs-rejections');`
-- **Security module**: network guard — planned, needs design conversation before any code
+- **Falco noise filter**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` (same pattern as existing `unix_chkpwd` entry)
+- **ntfy for watchdog**: `NTFY_URL` is in config but watchdog only logs to file; wire up the ntfy alert path
+- **Swap investigation**: 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
+- **Eval re-run**: baseline predates security tools and prompt rewrite; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline
