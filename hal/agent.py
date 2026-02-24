@@ -10,9 +10,8 @@ from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
 from hal.logging_utils import get_logger, set_context
-from hal.trust_metrics import get_action_stats as tm_get_action_stats
 from hal.memory import MemoryStore
-from hal.prometheus import Counter, Histogram, PrometheusClient
+from hal.prometheus import Counter, Histogram, PrometheusClient, flush_metrics
 from hal.security import (
     get_host_connections,
     get_security_events,
@@ -20,6 +19,7 @@ from hal.security import (
     scan_lan,
 )
 from hal.tracing import get_tracer
+from hal.trust_metrics import get_action_stats as tm_get_action_stats
 from hal.workers import (
     git_diff,
     git_status,
@@ -562,6 +562,7 @@ def run_health(
     dur = time.perf_counter() - t0
     REQ_LATENCY.observe(dur, intent="health")
     REQ_TOTAL.inc(intent="health", outcome=outcome)
+    flush_metrics()
     log.info("health turn", extra={"intent": "health", "confidence": 1.0})
     return response
 
@@ -635,6 +636,7 @@ def run_fact(
     dur = time.perf_counter() - t0
     REQ_LATENCY.observe(dur, intent="fact")
     REQ_TOTAL.inc(intent="fact", outcome=outcome)
+    flush_metrics()
     log.info("fact turn", extra={"intent": "fact"})
     return response
 
@@ -845,6 +847,7 @@ def run_agent(
         dur = time.perf_counter() - t0
         REQ_LATENCY.observe(dur, intent="agent")
         REQ_TOTAL.inc(intent="agent", outcome=outcome)
+        flush_metrics()
         log.info("agent turn", extra={"intent": "agent"})
         return response_text
 
@@ -868,6 +871,8 @@ def run_conversational(
     mem.save_turn(session_id, "assistant", response)
     if len(history) > 40:
         history[:] = history[-40:]
+    REQ_TOTAL.inc(intent="conversational", outcome="ok")
+    flush_metrics()
     return response
 
 

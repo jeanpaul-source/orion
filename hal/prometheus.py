@@ -60,14 +60,23 @@ class PrometheusClient:
         }
 
 
-# ---------------------------- Optional instruments ---------------------------- #
+# ----------------------------- Optional instruments ----------------------------- #
+import threading
+
+_lock = threading.Lock()
+_counters: dict[tuple, float] = {}  # (metric_name, frozenset(labels)) → cumulative total
+_gauges: dict[tuple, float] = {}    # (metric_name, frozenset(labels)) → last observed value
+
+
 @dataclass
 class Counter:
     name: str
     labels: tuple[str, ...] = ()
 
-    def inc(self, **label_values: str) -> None:  # no-op placeholder
-        _push_metric(self.name, 1, label_values)
+    def inc(self, **label_values: str) -> None:
+        key = (self.name, frozenset(label_values.items()))
+        with _lock:
+            _counters[key] = _counters.get(key, 0) + 1
 
 
 @dataclass
@@ -75,19 +84,35 @@ class Histogram:
     name: str
     labels: tuple[str, ...] = ()
 
-    def observe(self, value: float, **label_values: str) -> None:  # no-op placeholder
-        _push_metric(self.name, value, label_values)
+    def observe(self, value: float, **label_values: str) -> None:
+        key = (self.name, frozenset(label_values.items()))
+        with _lock:
+            _gauges[key] = value
 
 
-def _push_metric(metric: str, value: float, labels: dict[str, str]) -> None:
-    # Lightweight push to a pushgateway if configured; otherwise no-op.
+def flush_metrics() -> None:
+    """Push all accumulated metrics to Pushgateway in one request.
+
+    Each Counter value is the cumulative total since process start.
+    Each Histogram value is the most recently observed sample.
+    All metrics are batched into a single POST so they don't clobber each other.
+    No-op if PROM_PUSHGATEWAY is not set.
+    """
     url = os.getenv("PROM_PUSHGATEWAY")
     if not url:
         return
+    with _lock:
+        lines: list[str] = []
+        for (metric, labels_fs), value in _counters.items():
+            label_str = ",".join(f'{k}="{v}"' for k, v in sorted(dict(labels_fs).items()))
+            lines.append(f"{metric}{{{label_str}}} {value}" if label_str else f"{metric} {value}")
+        for (metric, labels_fs), value in _gauges.items():
+            label_str = ",".join(f'{k}="{v}"' for k, v in sorted(dict(labels_fs).items()))
+            lines.append(f"{metric}{{{label_str}}} {value}" if label_str else f"{metric} {value}")
+    if not lines:
+        return
+    body = "\n".join(lines) + "\n"
     try:
-        # Build a simple line for the text format
-        label_str = ",".join(f"{k}=\"{v}\"" for k, v in sorted(labels.items()))
-        line = f"{metric}{{{label_str}}} {value}\n" if label_str else f"{metric} {value}\n"
-        requests.post(f"{url.rstrip('/')}/metrics/job/hal", data=line, timeout=2)
+        requests.post(f"{url.rstrip('/')}/metrics/job/hal", data=body, timeout=2)
     except requests.exceptions.RequestException:
         pass
