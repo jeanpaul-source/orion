@@ -4,6 +4,7 @@ This module keeps runtime dependencies minimal and only uses HTTP queries.
 It also provides optional metric helpers (no-op when prom pushgateway is absent).
 """
 import os
+import socket
 import threading
 from dataclasses import dataclass
 
@@ -110,8 +111,13 @@ def flush_metrics() -> None:
             lines.append(f"{metric}{{{label_str}}} {value}" if label_str else f"{metric} {value}")
     if not lines:
         return
+    instance = os.getenv("HAL_INSTANCE", socket.gethostname())
     body = "\n".join(lines) + "\n"
     try:
-        requests.post(f"{url.rstrip('/')}/metrics/job/hal", data=body, timeout=2)
+        requests.post(
+            f"{url.rstrip('/')}/metrics/job/hal/instance/{instance}",
+            data=body,
+            timeout=2,
+        )
     except requests.exceptions.RequestException:
         pass
