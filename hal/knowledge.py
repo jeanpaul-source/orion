@@ -1,5 +1,10 @@
 """pgvector knowledge base — semantic search over homelab docs."""
-import numpy as np
+
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover
+    np = None
+
 import psycopg2
 from pgvector.psycopg2 import register_vector
 
@@ -19,6 +24,8 @@ class KnowledgeBase:
     def search(
         self, query: str, top_k: int = 5, category: str | None = None
     ) -> list[dict]:
+        if np is None:
+            raise RuntimeError("numpy is required for embeddings")
         embedding = np.array(self.llm.embed(query))
         conn = self._connect()
         try:

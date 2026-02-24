@@ -46,6 +46,23 @@ AGENTIC_QUERIES = [
     "diagnose why this service is failing",
 ]
 
+CONVERSATIONAL_QUERIES = [
+    "hi",
+    "hello",
+    "thanks",
+    "ok",
+    "cool",
+    "got it",
+    "sounds good",
+    "nice",
+    "alright",
+    "understood",
+    "noted",
+    "yep",
+    "sure",
+    "perfect",
+]
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -80,10 +97,21 @@ def test_agentic_queries(classifier, query):
     )
 
 
+@pytest.mark.parametrize("query", CONVERSATIONAL_QUERIES)
+def test_conversational_queries(classifier, query):
+    """Greetings and acknowledgements should route to the conversational handler."""
+    intent, confidence = classifier.classify(query)
+    assert intent == "conversational", (
+        f"'{query}' → '{intent}' (confidence {confidence:.2f}), expected 'conversational'. "
+        f"Add a matching example to EXAMPLES['conversational'] in hal/intent.py."
+    )
+
+
 def test_low_confidence_falls_back_to_agentic(classifier):
     """Queries with no clear intent match should fall through to agentic (safe default)."""
-    # "hello" is deliberately unlike any example sentence — should score below threshold
-    intent, confidence = classifier.classify("hello")
+    # A deeply novel technical phrase that matches no category example well.
+    # If this starts failing, the threshold may need raising.
+    intent, confidence = classifier.classify("recalibrate the flux capacitor")  
     assert intent == "agentic", (
         f"Low-confidence query routed to '{intent}' (confidence {confidence:.2f}). "
         f"Expected 'agentic' fallback for queries that don't match any category well."

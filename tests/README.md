@@ -20,14 +20,50 @@ Asserts that specific natural-language queries are classified into the right cat
 | `fact` | Questions about documented config / infrastructure | `run_fact()` — no tools |
 | `agentic` | Multi-step investigation or action requests | `run_agent()` — full tool loop |
 
+**Requires live Ollama** (real embeddings). Skipped automatically when Ollama is unreachable.
+
+---
+
+**`test_judge.py`** — The policy gate (`hal/judge.py`).
+
+Parametrized tests for `classify_command()` and `tier_for()` across ~60 commands covering
+tier 0 (read-only), tier 1 (service restart), tier 2 (config changes), and tier 3
+(destructive). No external services needed.
+
+---
+
+**`test_memory.py`** — The session store (`hal/memory.py`).
+
+Unit tests for `is_poison_response()`, `save_turn()` (poison guard), and `prune_old_turns()`.
+Uses an in-memory SQLite database — no external services needed.
+
+---
+
+**`test_agent_loop.py`** — The agentic tool loop (`hal/agent.py — run_agent`).
+
+Integration tests that mock all external I/O and verify the orchestration logic:
+
+| Test | What it verifies |
+| --- | --- |
+| `test_direct_text_response` | LLM finishes without any tool calls — loop exits in one step |
+| `test_single_tool_call_then_answer` | Tool called, result fed back, final answer produced; `tool_call_id` correctly propagated |
+| `test_duplicate_tool_call_injects_loop_breaker` | Repeated tool call is deduped; loop-breaker message injected into context |
+| `test_max_iterations_guard` | Exhausting `MAX_ITERATIONS` without a final answer returns the sentinel string |
+| `test_tool_output_is_truncated` | Tool output > 8000 chars is capped and annotated before being fed back |
+| `test_search_kb_returns_no_results_when_empty` | `_dispatch("search_kb")` returns human-readable string when KB has no hits |
+| `test_unknown_tool_returns_graceful_error` | Unrecognised tool name returns error string, does not raise |
+| `test_get_metrics_prometheus_unavailable` | `get_metrics` returns fallback error string when Prometheus is down |
+| `test_kb_context_injected_for_high_score_chunks` | Chunks with score ≥ 0.75 are prepended to the first user message |
+| `test_kb_context_not_injected_for_low_score_chunks` | Chunks with score < 0.75 are silently discarded |
+
+No external services needed — all LLM, KB, Prometheus, SSH, and Judge calls are mocked.
+
 ## What is NOT tested here (and why)
 
-- **LLM responses** — they're non-deterministic (slightly different every run), so you
-  can't assert an exact output. Testing them would produce false failures constantly.
-- **Server commands** — running `run_command` in tests could have real side effects on
-  the server. Out of scope until we have a safe sandbox.
-- **Full end-to-end HAL sessions** — too complex to set up reliably and too slow for
-  routine use. Manual testing covers this for now.
+- **LLM response quality** — non-deterministic outputs can't be asserted exactly. The eval
+  harness (`eval/`) covers this with scored baselines instead.
+- **Real SSH command side effects** — running `run_command` in tests could affect the server.
+  The agent loop tests mock the executor entirely.
 
 ## Prerequisites
 

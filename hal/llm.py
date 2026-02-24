@@ -2,13 +2,22 @@
 import json
 import re
 import uuid
+
 import requests
 
+from hal.logging_utils import get_logger
+from hal.prometheus import Counter, Histogram
 from hal.tracing import get_tracer
 
 # Qwen2.5-Coder with --tool-call-parser hermes outputs tool calls wrapped in
 # <tools> or <tool_call> tags instead of the OpenAI tool_calls field.
 # These patterns extract them so the agent loop works without parser changes.
+# Metrics (no-op unless PROM_PUSHGATEWAY is configured)
+LLM_REQ_TOTAL = Counter("hal_llm_requests_total", labels=("endpoint", "outcome"))
+LLM_REQ_LATENCY = Histogram("hal_llm_request_latency_seconds", labels=("endpoint",))
+
+log = get_logger(__name__)
+
 _TOOL_TAG_RE = re.compile(
     r"<(?:tool_call|tools)>\s*(?P<json>\{.*?\})\s*</(?:tool_call|tools)>",
     re.DOTALL,
@@ -95,6 +104,9 @@ class VLLMClient:
         self, messages: list[dict], tools: list[dict], system: str | None = None
     ) -> dict:
         """Non-streaming chat with tool schemas. Returns the full message dict."""
+        import time
+        t0 = time.perf_counter()
+        outcome = "ok"
         with get_tracer().start_as_current_span("hal.llm.chat_with_tools") as span:
             span.set_attribute("llm.model", self.model)
             span.set_attribute("llm.message_count", len(messages))
@@ -104,19 +116,27 @@ class VLLMClient:
                 "messages": self._messages(messages, system),
                 "tools": tools,
             }
-            r = requests.post(
-                f"{self.base_url}/v1/chat/completions",
-                json=payload,
-                headers=self._headers,
-                timeout=120,
-            )
-            if r.status_code == 404:
-                raise RuntimeError(
-                    f"vLLM returned 404 — model '{self.model}' is still loading. "
-                    "Wait ~30 s and try again."
+            try:
+                r = requests.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    json=payload,
+                    headers=self._headers,
+                    timeout=120,
                 )
-            r.raise_for_status()
-            result = r.json()["choices"][0]["message"]
+                if r.status_code == 404:
+                    raise RuntimeError(
+                        f"vLLM returned 404 — model '{self.model}' is still loading. "
+                        "Wait ~30 s and try again."
+                    )
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                outcome = "error"
+                LLM_REQ_TOTAL.inc(endpoint="chat_with_tools", outcome=outcome)
+                LLM_REQ_LATENCY.observe(time.perf_counter() - t0, endpoint="chat_with_tools")
+                log.error("vllm chat_with_tools failed: %s", e)
+                raise
+            result = data["choices"][0]["message"]
             # Fallback: Qwen2.5-Coder emits tool calls as <tools>/{json}</tools>
             # in content rather than in the tool_calls field when using the
             # hermes parser. Extract them so the agent loop sees proper calls.
@@ -131,12 +151,23 @@ class VLLMClient:
             if has_tool_calls:
                 names = [tc.get("function", {}).get("name", "") for tc in result["tool_calls"]]
                 span.set_attribute("llm.tool_calls", ",".join(names))
+            # Basic token accounting if server returns usage
+            usage = data.get("usage") if 'data' in locals() else None
+            if usage:
+                span.set_attribute("llm.prompt_tokens", usage.get("prompt_tokens", 0))
+                span.set_attribute("llm.completion_tokens", usage.get("completion_tokens", 0))
+            import time as _t
+            LLM_REQ_TOTAL.inc(endpoint="chat_with_tools", outcome=outcome)
+            LLM_REQ_LATENCY.observe(_t.perf_counter() - t0, endpoint="chat_with_tools")
             return result
 
     def chat(
         self, messages: list[dict], system: str | None = None, timeout: int = 120
     ) -> str:
         """Non-streaming chat — returns full response string."""
+        import time
+        t0 = time.perf_counter()
+        outcome = "ok"
         with get_tracer().start_as_current_span("hal.llm.chat") as span:
             span.set_attribute("llm.model", self.model)
             span.set_attribute("llm.message_count", len(messages))
@@ -144,18 +175,33 @@ class VLLMClient:
                 "model": self.model,
                 "messages": self._messages(messages, system),
             }
-            r = requests.post(
-                f"{self.base_url}/v1/chat/completions",
-                json=payload,
-                headers=self._headers,
-                timeout=timeout,
-            )
-            if r.status_code == 404:
-                raise RuntimeError(
-                    f"vLLM returned 404 — model '{self.model}' is still loading. "
-                    "Wait ~30 s and try again."
+            try:
+                r = requests.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    json=payload,
+                    headers=self._headers,
+                    timeout=timeout,
                 )
-            r.raise_for_status()
-            content = r.json()["choices"][0]["message"]["content"]
+                if r.status_code == 404:
+                    raise RuntimeError(
+                        f"vLLM returned 404 — model '{self.model}' is still loading. "
+                        "Wait ~30 s and try again."
+                    )
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                outcome = "error"
+                LLM_REQ_TOTAL.inc(endpoint="chat", outcome=outcome)
+                LLM_REQ_LATENCY.observe(time.perf_counter() - t0, endpoint="chat")
+                log.error("vllm chat failed: %s", e)
+                raise
+            content = data["choices"][0]["message"]["content"]
             span.set_attribute("llm.response_len", len(content))
+            usage = data.get("usage")
+            if usage:
+                span.set_attribute("llm.prompt_tokens", usage.get("prompt_tokens", 0))
+                span.set_attribute("llm.completion_tokens", usage.get("completion_tokens", 0))
+            import time as _t
+            LLM_REQ_TOTAL.inc(endpoint="chat", outcome=outcome)
+            LLM_REQ_LATENCY.observe(_t.perf_counter() - t0, endpoint="chat")
             return content

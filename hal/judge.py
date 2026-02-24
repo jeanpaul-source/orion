@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 
 if TYPE_CHECKING:
-    from hal.llm import OllamaClient
+    from hal.llm import VLLMClient
 
 AUDIT_LOG = Path.home() / ".orion" / "audit.log"
 

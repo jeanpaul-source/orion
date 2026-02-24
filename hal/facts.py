@@ -1,8 +1,9 @@
 """Write persistent facts into pgvector as category='memory'."""
+from datetime import datetime
+
 import numpy as np
 import psycopg2
 import psycopg2.extras
-from datetime import datetime
 from pgvector.psycopg2 import register_vector
 
 from hal.llm import OllamaClient

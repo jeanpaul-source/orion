@@ -35,6 +35,8 @@ the plan correctly, and wait.
 
 ## How I (Claude) Work With the Operator
 
+Observability aid: I will also emit structured logs with session_id and trace correlation for each approved change when running code paths, and I will update README and SESSION_FINDINGS as I go to prevent documentation drift. These logs are JSON by default and can be toggled with HAL_LOG_JSON.
+
 **The reason this section exists:** I drift on long projects. Each individual fix can seem
 logical in isolation, but over many sessions and context resets I lose the thread of what
 we're actually building and start optimising for "make the immediate problem go away" instead
@@ -158,6 +160,11 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 **Watch:** Swap usage was 7.3G/8G despite 49G RAM free (Feb 21 2026) — worth investigating
 
+**Observability (added Feb 24 2026):**
+- JSON logs with trace_id/span_id when tracing is on; session_id context per turn
+- Tracing via OTLP HTTP (default http://localhost:4318), no-op if deps/endpoint missing
+- Metrics via optional Pushgateway: hal_requests_total, hal_request_latency_seconds, hal_tool_calls_total
+
 ---
 
 ## This Repo
@@ -175,7 +182,8 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/memory.py` | SQLite session store (`~/.orion/memory.db`); `search_sessions()` full-text search |
 | `hal/facts.py` | `/remember` — embeds facts to pgvector as `category='memory'` |
 | `hal/watchdog.py` | Standalone monitoring watchdog (run via systemd timer) |
-| `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk/swap/load |
+| `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk/swap/load; optional Counter/Histogram helpers (push via PROM_PUSHGATEWAY) |
+| `hal/logging_utils.py` | Structured logging utilities (JSON), contextvars for session correlation |
 | `hal/llm.py` | `OllamaClient` (embeddings), `VLLMClient` (chat via OpenAI-compatible API) |
 | `hal/tracing.py` | OTel setup; `setup_tracing()` + `get_tracer()`; no-op fallback if collector absent |
 | `hal/tunnel.py` | SSH tunnel for laptop-side use (auto-tunnel when vLLM/Ollama not directly reachable) |
@@ -187,7 +195,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite: 21 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore (no Ollama needed) |
+| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore + 10 agent loop integration tests (no Ollama needed) |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
@@ -212,7 +220,7 @@ Laptop (edit code)
 
 **Rule:** Laptop pushes only. Server pulls only. Server never has push credentials.
 
-**Rule:** Run `pytest tests/` before every push. Unit tests (Judge, MemoryStore) run anywhere with no dependencies. Intent classifier tests require Ollama — if skipped on laptop, SSH to server and run there first.
+**Rule:** Run `pytest tests/` before every push. Agent loop and unit tests (Judge, MemoryStore) run anywhere with no dependencies. Intent classifier tests require Ollama — if skipped on laptop, SSH to server and run there first.
 
 **Server .env** uses `localhost` for all services (no tunnel needed).
 **Laptop .env** uses `192.168.5.10` + auto SSH tunnel for Ollama.
@@ -311,9 +319,17 @@ Laptop (edit code)
 - **KB search quality raised**: `search_kb` threshold raised `0.3 → 0.45`, `top_k 5 → 8` in `hal/agent.py` — with 17k+ chunks, 0.3 was too permissive and returned irrelevant results
 - **Nightly harvest timer deployed**: `ops/harvest.service` + `ops/harvest.timer` created and deployed to server (`~/.config/systemd/user/`); fires at 3:00am daily; `Persistent=true` so missed runs catch up on next boot
 
+**Done (as of Feb 23, 2026 — trust hardening):**
+
+- **NTFY_URL set on server**: `NTFY_URL=https://ntfy.sh/hal-lab-alerts-2158c448` appended to server `.env`; watchdog alerts will now be delivered. Subscribe to that topic in the ntfy app.
+- **RC3 confirmed resolved**: `prune_old_turns(days=30)` already called at startup + `TURN_WINDOW=40` caps context load; README updated to mark RC3 resolved.
+- **RC4/RC5 fix**: `conversational` example set expanded from 15 → 30 entries (added: `okay`, `yep`, `nope`, `sure`, `alright`, `perfect`, `roger that`, `understood`, `noted`, `good to know`, `thanks got it`, `that makes sense`, `awesome`, `fair enough`, `will do`).
+- **Intent test suite expanded**: added `CONVERSATIONAL_QUERIES` list (14 queries) + `test_conversational_queries` parametrized test; updated `test_low_confidence_falls_back_to_agentic` to use a genuinely ambiguous phrase instead of "hello" (which is now correctly classified as `conversational`); total intent tests 21 → 35.
+- **P4 confirmed resolved**: both `tool_call_id` paths in the loop already correct; `SESSION_FINDINGS.md` updated to mark P4 resolved.
+- **Agent loop integration tests**: 10 new tests in `tests/test_agent_loop.py` — all mocked, no external services; cover: direct text response, single tool call + `tool_call_id` propagation, dedup loop-breaker, max-iterations guard, output truncation, KB search no-results, unknown tool graceful error, Prometheus unavailable fallback, KB injection threshold (≥0.75 injected, <0.75 discarded). Test count: 117 → 141.
+
 **Backlog:**
 
 - **Falco noise filter**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` (same pattern as existing `unix_chkpwd` entry)
-- **ntfy for watchdog**: `NTFY_URL` is in config but watchdog only logs to file; wire up the ntfy alert path
 - **Swap investigation**: 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Eval re-run**: baseline predates security tools, prompt rewrite, and KB expansion; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline

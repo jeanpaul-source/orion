@@ -1,0 +1,29 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # azure-ai-evaluation is excluded — it's only needed for eval/ (run manually on server)
+        # intent tests (test_intent.py) are excluded — they require a live Ollama instance
+        run: pip install -r requirements.txt pytest ruff
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test (offline)
+        run: pytest tests/test_judge.py tests/test_memory.py tests/test_agent_loop.py -v

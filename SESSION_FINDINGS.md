@@ -1,6 +1,6 @@
 # SESSION_FINDINGS.md
 
-Started: 2026-02-22 | All steps complete as of Feb 23, 2026
+Started: 2026-02-22 | All steps complete as of Feb 24, 2026
 
 ---
 
@@ -207,6 +207,11 @@ Adjacent session (ddf4eafc, 4 minutes later): same query "hows the lab today?" �
 
 ### What is actually working
 
+Observability additions (Feb 24, 2026):
+- Structured JSON logging with session_id and trace correlation (optional)
+- OpenTelemetry spans for each turn and tool call (no-op if OTel not installed)
+- Optional Prometheus Pushgateway metrics: hal_requests_total, hal_request_latency_seconds, hal_tool_calls_total
+
 - Health routing for clear health queries: works (session ddf4eafc)
 - Fact routing for clear fact queries: works when intent is high-confidence
 - `run_command` / `read_file` / `list_dir` with Judge gating: no evidence of failures
@@ -411,13 +416,11 @@ These are listed here as reference for the diagnosis step. Not proposing to fix 
 - Why it exists: without this, the model can exhaust iterations without ever producing a final answer
 - Patch nature: guard rail — not wrong per se, but it exists because the model doesn't reliably self-terminate
 
-### P4 — Tool result format missing `tool_call_id`
+### P4 — Tool result format missing `tool_call_id` — ✅ RESOLVED
 
-- File: `hal/agent.py` line 409
-- What it does: appends `{"role": "tool", "content": result}` to the working history
-- OpenAI/Ollama spec: tool results should include `tool_call_id` to correlate with the originating call
-- Impact: Qwen via Ollama appears to handle this by position, not ID. But it diverges from spec and may cause subtle multi-call ordering issues if the model makes parallel tool calls.
-- Note: this hasn't been observed to cause failures in practice (21/21 tests pass), but tests only cover the intent classifier, not the agent loop
+- File: `hal/agent.py`
+- What it did: appended `{"role": "tool", "content": result}` without `tool_call_id`
+- Fix: both tool result appends (dedup path and normal dispatch path) now include `"tool_call_id": call_id`, matching the OpenAI spec for correlated tool responses.
 
 ### P5 — Judge `_llm_reason()` system prompt (pending, documented in backlog)
 

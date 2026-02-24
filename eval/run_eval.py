@@ -25,12 +25,12 @@ from rich.console import Console
 # ── HAL imports ─────────────────────────────────────────────────────────────
 import hal.config as cfg
 from hal.agent import run_agent, run_fact, run_health
-from hal.main import SYSTEM_PROMPT
 from hal.executor import SSHExecutor
 from hal.intent import IntentClassifier
 from hal.judge import Judge, tier_for
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
+from hal.main import SYSTEM_PROMPT
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tracing import setup_tracing

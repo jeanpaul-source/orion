@@ -4,22 +4,39 @@ import textwrap
 
 from rich.console import Console
 
+from hal.agents import CriticAgent, PlannerAgent
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
+from hal.logging_utils import get_logger, set_context
 from hal.memory import MemoryStore
-from hal.prometheus import PrometheusClient
-from hal.tracing import get_tracer
-from hal.workers import list_dir, read_file, write_file, patch_file, git_status, git_diff
+from hal.prometheus import Counter, Histogram, PrometheusClient
 from hal.security import (
-    get_security_events,
     get_host_connections,
+    get_security_events,
     get_traffic_summary,
     scan_lan,
 )
+from hal.tracing import get_tracer
+from hal.workers import (
+    git_diff,
+    git_status,
+    list_dir,
+    patch_file,
+    read_file,
+    write_file,
+)
 
 MAX_ITERATIONS = 8
+
+# Metrics (no-op unless PROM_PUSHGATEWAY is configured)
+REQ_TOTAL = Counter("hal_requests_total", labels=("intent", "outcome"))
+REQ_LATENCY = Histogram("hal_request_latency_seconds", labels=("intent",))
+TOOL_CALLS_TOTAL = Counter("hal_tool_calls_total", labels=("tool", "outcome"))
+
+# Logger
+log = get_logger(__name__)
 
 TOOLS = [
     {
@@ -466,9 +483,13 @@ def run_health(
     console: Console,
 ) -> str:
     """Health handler: fetch live metrics, answer in one LLM call with no tools."""
+    import time
+    t0 = time.perf_counter()
+    outcome = "ok"
     with get_tracer().start_as_current_span("hal.run_health") as span:
         span.set_attribute("hal.session_id", session_id)
         span.set_attribute("hal.query", user_input[:200])
+        set_context(session_id=session_id)
         try:
             with console.status("[dim]fetching metrics...[/]", spinner="dots"):
                 h = prom.health()
@@ -478,6 +499,7 @@ def run_health(
             span.set_attribute("hal.metrics_available", True)
         except Exception as e:
             metrics_str = f"Metrics unavailable: {e}"
+            outcome = "metrics_error"
             span.set_attribute("hal.metrics_available", False)
 
         messages = list(history) + [{
@@ -485,8 +507,12 @@ def run_health(
             "content": f"Current lab metrics:\n{metrics_str}\n\n{user_input}",
         }]
 
-        with console.status("[dim]thinking...[/]", spinner="dots"):
-            response = llm.chat(messages, system=system)
+        try:
+            with console.status("[dim]thinking...[/]", spinner="dots"):
+                response = llm.chat(messages, system=system)
+        except Exception as e:
+            outcome = "llm_error"
+            response = f"Error calling model: {e}"
 
         response = response.strip()
         span.set_attribute("hal.response_len", len(response))
@@ -500,7 +526,11 @@ def run_health(
         if len(history) > 40:
             history[:] = history[-40:]
 
-        return response
+    dur = time.perf_counter() - t0
+    REQ_LATENCY.observe(dur, intent="health")
+    REQ_TOTAL.inc(intent="health", outcome=outcome)
+    log.info("health turn", extra={"intent": "health", "confidence": 1.0})
+    return response
 
 
 def run_fact(
@@ -518,9 +548,13 @@ def run_fact(
     If the KB has nothing relevant, the LLM answers from the system prompt alone
     (which contains key lab facts). If it still doesn't know, it says so.
     """
+    import time
+    t0 = time.perf_counter()
+    outcome = "ok"
     with get_tracer().start_as_current_span("hal.run_fact") as span:
         span.set_attribute("hal.session_id", session_id)
         span.set_attribute("hal.query", user_input[:200])
+        set_context(session_id=session_id)
         try:
             with console.status("[dim]searching knowledge base...[/]", spinner="dots"):
                 chunks = kb.search(user_input, top_k=3)
@@ -531,6 +565,7 @@ def run_fact(
                 span.set_attribute("hal.kb.top_score", relevant[0]["score"])
         except Exception:
             relevant = []
+            outcome = "kb_error"
             span.set_attribute("hal.kb.chunks_returned", 0)
             span.set_attribute("hal.kb.relevant_chunks", 0)
 
@@ -545,8 +580,12 @@ def run_fact(
 
         messages = list(history) + [{"role": "user", "content": augmented}]
 
-        with console.status("[dim]thinking...[/]", spinner="dots"):
-            response = llm.chat(messages, system=system)
+        try:
+            with console.status("[dim]thinking...[/]", spinner="dots"):
+                response = llm.chat(messages, system=system)
+        except Exception as e:
+            outcome = "llm_error"
+            response = f"Error calling model: {e}"
 
         response = response.strip()
         span.set_attribute("hal.response_len", len(response))
@@ -560,7 +599,11 @@ def run_fact(
         if len(history) > 40:
             history[:] = history[-40:]
 
-        return response
+    dur = time.perf_counter() - t0
+    REQ_LATENCY.observe(dur, intent="fact")
+    REQ_TOTAL.inc(intent="fact", outcome=outcome)
+    log.info("fact turn", extra={"intent": "fact"})
+    return response
 
 
 def run_agent(
@@ -576,18 +619,62 @@ def run_agent(
     system: str,
     console: Console,
     ntopng_url: str = "http://localhost:3000",
+    planner: PlannerAgent | None = None,
+    critic: CriticAgent | None = None,
 ) -> str:
     """Agentic loop: LLM calls tools autonomously until it produces a final answer.
 
     Returns the final text response.
     """
+    import time
+    t0 = time.perf_counter()
+    outcome = "ok"
     with get_tracer().start_as_current_span("hal.run_agent") as span:
         span.set_attribute("hal.session_id", session_id)
         span.set_attribute("hal.query", user_input[:200])
+        set_context(session_id=session_id)
+
+        # Sub-agents: Planner and Critic — plan and review before acting.
+        if planner is None:
+            planner = PlannerAgent(llm)
+        if critic is None:
+            critic = CriticAgent(llm)
+
+        planner_plan = ""
+        critic_review = ""
+
+        try:
+            planner_plan = planner.run(
+                user_input=user_input,
+                history=None,
+                session_id=session_id,
+            )
+            span.set_attribute("hal.planner_included", bool(planner_plan))
+        except Exception as e:
+            log.error("planner failed: %s", e, extra={"subagent": "Planner"})
+            span.set_attribute("hal.planner_error", True)
+
+        if planner_plan:
+            try:
+                critic_review = critic.run(
+                    user_input=user_input,
+                    plan=planner_plan,
+                    history=None,
+                    session_id=session_id,
+                )
+                span.set_attribute("hal.critic_included", bool(critic_review))
+            except Exception as e:
+                log.error("critic failed: %s", e, extra={"subagent": "Critic"})
+                span.set_attribute("hal.critic_error", True)
+        else:
+            span.set_attribute("hal.critic_skipped", True)
+
         # Seed the first message with KB context (fast, cheap, often helpful)
         # Threshold 0.75: only inject context that is a strong semantic match.
         # At 0.6 casual queries pulled in loosely-related docs (e.g. Prometheus
         # config for a greeting) which the LLM answered instead of the question.
+        sections: list[str] = []
+        kb_seeded_chunks = 0
         try:
             chunks = kb.search(user_input, top_k=3)
             context_lines = []
@@ -597,13 +684,20 @@ def run_agent(
                     context_lines.append(c["content"].strip())
             if context_lines:
                 context_str = "\n".join(context_lines)
-                augmented = f"{context_str}\n\n{user_input}"
-            else:
-                augmented = user_input
-            span.set_attribute("hal.kb.seeded_chunks", len(context_lines) // 2)
+                sections.append("KB context:\n" + context_str)
+                kb_seeded_chunks = len(context_lines) // 2
+            span.set_attribute("hal.kb.seeded_chunks", kb_seeded_chunks)
         except Exception:
-            augmented = user_input
             span.set_attribute("hal.kb.seeded_chunks", 0)
+
+        if planner_plan:
+            sections.append("Planner's plan:\n" + planner_plan)
+
+        if critic_review:
+            sections.append("Critic's review:\n" + critic_review)
+
+        sections.append("User query:\n" + user_input)
+        augmented = "\n\n".join(sections)
 
         # Working history — don't mutate the session history until we have a final answer
         working = list(history) + [{"role": "user", "content": augmented}]
@@ -659,7 +753,12 @@ def run_agent(
                     tool_span.set_attribute("tool.name", name)
                     tool_span.set_attribute("tool.iteration", iteration)
                     tool_span.set_attribute("tool.args", json.dumps(raw_args, sort_keys=True)[:500])
-                    result = _dispatch(name, raw_args, executor, judge, kb, prom, ntopng_url)
+                    try:
+                        result = _dispatch(name, raw_args, executor, judge, kb, prom, ntopng_url)
+                        TOOL_CALLS_TOTAL.inc(tool=name, outcome="ok")
+                    except Exception as e:
+                        result = f"Tool {name} failed: {e}"
+                        TOOL_CALLS_TOTAL.inc(tool=name, outcome="error")
                     tool_span.set_attribute("tool.result_len", len(result))
 
                 # Cap tool output to protect the context window
@@ -689,6 +788,7 @@ def run_agent(
 
         else:
             response_text = "Reached max iterations without a final answer."
+            outcome = "max_iterations"
             span.set_attribute("hal.iterations", MAX_ITERATIONS)
             span.set_attribute("hal.total_tool_calls", total_calls)
             span.set_attribute("hal.max_iterations_reached", True)
@@ -703,6 +803,10 @@ def run_agent(
         if len(history) > 40:
             history[:] = history[-40:]
 
+        dur = time.perf_counter() - t0
+        REQ_LATENCY.observe(dur, intent="agent")
+        REQ_TOTAL.inc(intent="agent", outcome=outcome)
+        log.info("agent turn", extra={"intent": "agent"})
         return response_text
 
 

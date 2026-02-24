@@ -5,13 +5,11 @@ file in a tmp directory so the path/schema logic is also exercised.
 
 Run with: pytest tests/test_memory.py -v
 """
-import time
 from datetime import datetime, timedelta
 
 import pytest
 
 from hal.memory import MemoryStore, is_poison_response
-
 
 # ---------------------------------------------------------------------------
 # is_poison_response — detection logic

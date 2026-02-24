@@ -12,13 +12,14 @@ from rich.panel import Panel
 from rich.text import Text
 
 import hal.config as cfg
-from hal.agent import run_agent, run_health, run_fact, run_conversational
-from hal.intent import IntentClassifier
+from hal.agent import run_agent, run_conversational, run_fact, run_health
 from hal.executor import SSHExecutor
 from hal.facts import remember
+from hal.intent import IntentClassifier
 from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
+from hal.logging_utils import set_context, setup_logging
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tracing import get_tracer, setup_tracing
@@ -236,7 +237,7 @@ def cmd_write(path: str, executor: SSHExecutor, judge: Judge) -> None:
     if ok:
         console.print(f"[green]wrote {len(content)} bytes to {path}[/]")
     else:
-        console.print(f"[red]write failed or cancelled[/]")
+        console.print("[red]write failed or cancelled[/]")
 
 
 def cmd_audit(n: int = 20) -> None:
@@ -326,7 +327,8 @@ def main() -> None:
 
     config = cfg.load()
 
-    # Start tracing before any clients are built
+    # Observability init: logs then tracing
+    setup_logging()
     setup_tracing()
 
     # Load readline history (skip in non-interactive --print mode)
@@ -460,6 +462,8 @@ def main() -> None:
                 intent, confidence = classifier.classify(user_input)
                 console.print(f"[dim]  intent: {intent} ({confidence:.2f})[/]")
 
+                # Set logging context for this turn
+                set_context(session_id=session_id)
                 with get_tracer().start_as_current_span("hal.turn") as turn_span:
                     turn_span.set_attribute("hal.session_id", session_id)
                     turn_span.set_attribute("hal.query", user_input[:200])

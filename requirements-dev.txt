@@ -2,4 +2,8 @@
 # Install with: .venv/bin/pip install -r requirements-dev.txt
 
 pytest>=8.0
+ruff>=0.4.0
+
+# Eval harness only — heavy install, not needed for unit tests or CI.
+# Install separately when running: python -m eval.run_eval && python -m eval.evaluate
 azure-ai-evaluation>=0.4.0

@@ -10,7 +10,6 @@ import pytest
 
 from hal.judge import classify_command, tier_for
 
-
 # ---------------------------------------------------------------------------
 # classify_command — safe read-only commands → tier 0
 # ---------------------------------------------------------------------------

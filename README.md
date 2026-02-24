@@ -538,6 +538,10 @@ cp .env.example .env
 | `NTFY_URL` | *(empty)* | Push alerts via ntfy.sh topic URL — leave empty to disable |
 | `VLLM_URL` | `http://localhost:8000` | vLLM OpenAI-compatible API — `localhost` on the server, tunneled on laptop |
 | `NTOPNG_URL` | `http://localhost:3000` | ntopng traffic monitor REST API — no auth required (login disabled, local only) |
+| `OTLP_ENDPOINT` | `http://localhost:4318` | OpenTelemetry OTLP HTTP endpoint for traces (export only if reachable) |
+| `HAL_LOG_LEVEL` | `INFO` | Root log level (DEBUG, INFO, WARNING, ERROR) |
+| `HAL_LOG_JSON` | `1` | When `1`/true, logs are JSON; set `0` to use plain text formatter |
+| `PROM_PUSHGATEWAY` | *(empty)* | When set (e.g., `http://the-lab:9091`), emit metrics via Pushgateway |
 
 ---
 
@@ -559,6 +563,41 @@ The system prompt establishes HAL's identity — it is not Qwen, not Claude. It 
 
 ---
 
+## Observability
+
+HAL includes optional, zero-downtime observability that you can enable via environment variables. Defaults are safe no-ops unless configured.
+
+- Structured logs (JSON by default):
+  - Enable/disable JSON: HAL_LOG_JSON=1 (default) or 0
+  - Log level: HAL_LOG_LEVEL=DEBUG|INFO|WARNING|ERROR (default INFO)
+  - Logs include trace_id/span_id when tracing is active and session_id context
+- Tracing (OpenTelemetry):
+  - OTLP_ENDPOINT=http://localhost:4318 (default) — OTLP HTTP traces are exported here
+  - If opentelemetry packages are not installed or the endpoint is unreachable, tracing is a no-op
+- Metrics (Prometheus Pushgateway):
+  - PROM_PUSHGATEWAY=http://the-lab:9091 — when set, HAL emits lightweight counters/histograms via Pushgateway text format
+  - If not set, metrics calls are no-ops
+
+Emitted metric names (labels in braces):
+- hal_requests_total{intent, outcome}
+- hal_request_latency_seconds{intent}
+- hal_tool_calls_total{tool, outcome}
+
+Where instrumentation lives:
+- Logging: hal/logging_utils.py (used by hal/main.py and hal/agent.py)
+- Tracing: hal/tracing.py (setup_tracing + get_tracer); spans wrap each turn and tool call
+- Metrics: hal/prometheus.py (Counter, Histogram helpers; push-only, optional)
+
+Example (enable JSON logs + tracing + Pushgateway):
+
+```bash
+export HAL_LOG_JSON=1
+export HAL_LOG_LEVEL=INFO
+export OTLP_ENDPOINT=http://localhost:4318
+export PROM_PUSHGATEWAY=http://192.168.5.10:9091
+python -m hal
+```
+
 ## Developer Workflow
 
 ### Tests
@@ -568,7 +607,7 @@ The system prompt establishes HAL's identity — it is not Qwen, not Claude. It 
 OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 ```
 
-117 tests total: 21 intent classifier tests (require Ollama — live embeddings) and 96 unit tests for Judge and MemoryStore (no Ollama needed, run anywhere).
+141 tests total: 35 intent classifier tests (require Ollama — live embeddings), 96 unit tests for Judge and MemoryStore (no Ollama needed), and 10 agent loop integration tests (no Ollama needed).
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
 
 ### Evaluation
@@ -657,15 +696,16 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 | `hal/executor.py` | SSH command execution on the server — wraps paramiko or subprocess |
 | `hal/workers.py` | File operation tools: `read_file`, `write_file`, `patch_file`, `list_dir`, `git_*` |
 | `hal/security.py` | Security worker — wraps Falco, Osquery, ntopng, Nmap into four HAL tools |
-| `hal/prometheus.py` | PromQL query client — used by `run_health()` and the `get_metrics` tool |
+| `hal/prometheus.py` | PromQL query client; optional Counter/Histogram helpers (push via PROM_PUSHGATEWAY) — used by `run_health()` and the `get_metrics` tool |
 | `hal/knowledge.py` | pgvector KB search client — used by `run_fact()` and the `search_kb` tool |
 | `hal/facts.py` | `remember()` — saves a fact into session memory mid-conversation |
 | `hal/tunnel.py` | SSH tunnel — forwards lab ports when `USE_SSH_TUNNEL=true` |
 | `hal/watchdog.py` | Standalone monitor — runs independently as a systemd service |
+| `hal/logging_utils.py` | Structured logging (JSON optional), context propagation via contextvars |
 | `hal/tracing.py` | OpenTelemetry tracing setup |
 | `harvest/` | Full harvest pipeline: scrape sources, chunk, embed, upsert to pgvector |
 | `eval/` | Evaluation harness: 24-query suite, response collector, scorer, baseline results |
-| `tests/` | 117 tests: 21 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore (no Ollama needed) |
+| `tests/` | 141 tests: 35 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore + 10 agent loop integration tests (no Ollama needed) |
 | `ops/` | Systemd unit files (`vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`), `KEYS_AND_TOKENS.md` |
 | `~/ntopng/docker-compose.yml` | ntopng + Redis Compose stack on server (not in repo — lives on server only) |
 | `CLAUDE.md` | AI operating contract — required reading before any code change. Contains the rules that prevent drift. |
@@ -677,11 +717,7 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 
 ### Open
 
-| ID | Description | Workaround |
-|---|---|---|
-| **RC3** | Broken or low-quality turns accumulate in SQLite with no pruning. Long sessions compound context noise and can hit the 8192 token limit. | `hal --new` to start a fresh session |
-| **RC4** | Casual short inputs (greetings, acknowledgements) near the intent threshold occasionally fall through to `agentic`, which seeds irrelevant KB context into the response. | None — misroutes are rare and self-contained |
-| **RC5** | Same root as RC4 — any short ambiguous input near the 0.65 threshold is at risk of misroute. The `conversational` category reduces this but doesn't eliminate it at the boundary. | Same as RC4 |
+*None — all known regressions are resolved.*
 
 ### Resolved
 
@@ -689,6 +725,9 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 |---|---|---|
 | **RC1** | Ollama + `qwen2.5-coder:32b` emitted tool calls as JSON text inside `content` instead of structured tool call fields. The agentic loop couldn't parse them and the session broke. | Switched to vLLM + `Qwen2.5-32B-Instruct-AWQ` with `--tool-call-parser hermes`. Eval: `no_raw_json=100%` |
 | **RC2** | The model would override its identity mid-session and refer to itself as Qwen or acknowledge being "just an AI assistant." | Stronger identity lock in the system prompt + instruct model (vLLM). Eval: `hal_identity=100%` |
+| **RC3** | Broken or low-quality turns accumulate in SQLite with no pruning. Long sessions compound context noise and can hit the 8192 token limit. | `MemoryStore.prune_old_turns(days=30)` called at every startup (`main.py`); `TURN_WINDOW=40` caps context loading per session |
+| **RC4** | Casual short inputs (greetings, acknowledgements) near the intent threshold occasionally fall through to `agentic`, which seeds irrelevant KB context into the response. | `conversational` category expanded to 30 examples covering acknowledgements, affirmations, and short social phrases; 14 parametrized classifier tests added |
+| **RC5** | Same root as RC4 — any short ambiguous input near the 0.65 threshold is at risk of misroute. | Same as RC4 |
 
 ### Known Traps
 
