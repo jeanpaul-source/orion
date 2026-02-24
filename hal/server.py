@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """HAL HTTP server — wraps the agent for AI Toolkit Agent Inspector.
 
-Run directly:    python hal/server.py [--host 127.0.0.1] [--port 8087]
-Run via agentdev: agentdev run hal/server.py --verbose --port 8087
+Run directly:    python hal/server.py [--host 127.0.0.1] [--port 8088]
+Debug via VS Code: use the "Debug HAL HTTP Server" launch configuration.
 
 Tier 1+ judge actions (write/restart/etc.) are auto-denied in HTTP mode
 because there is no TTY for interactive approval prompts.  Use the CLI
@@ -38,7 +38,7 @@ from hal.executor import SSHExecutor
 from hal.intent import IntentClassifier
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
-from hal.llm import OllamaClient, VLLMClient
+from hal.llm import VLLMClient
 from hal.logging_utils import setup_logging
 from hal.main import SYSTEM_PROMPT, setup_clients
 from hal.memory import MemoryStore
