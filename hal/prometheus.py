@@ -6,6 +6,7 @@ It also provides optional metric helpers (no-op when prom pushgateway is absent)
 import os
 import socket
 import threading
+import time
 from dataclasses import dataclass
 
 import requests
@@ -121,3 +122,22 @@ def flush_metrics() -> None:
         )
     except requests.exceptions.RequestException:
         pass
+
+
+def start_metrics_heartbeat(interval_seconds: int = 30) -> None:
+    """Spawn a daemon thread that calls flush_metrics() every interval_seconds.
+
+    Starts only if PROM_PUSHGATEWAY is configured. The thread is a daemon so
+    it exits automatically when the process exits — no cleanup required.
+    Call once at process startup (main.py and server.py).
+    """
+    if not os.getenv("PROM_PUSHGATEWAY"):
+        return
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval_seconds)
+            flush_metrics()
+
+    t = threading.Thread(target=_loop, daemon=True, name="metrics-heartbeat")
+    t.start()

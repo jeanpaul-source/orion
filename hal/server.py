@@ -44,7 +44,7 @@ from hal.llm import VLLMClient
 from hal.logging_utils import setup_logging
 from hal.main import SYSTEM_PROMPT, setup_clients
 from hal.memory import MemoryStore
-from hal.prometheus import PrometheusClient
+from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import setup_tracing
 
 
@@ -97,6 +97,7 @@ async def lifespan(app: FastAPI):  # noqa: RUF029
     config = cfg.load()
     setup_logging()
     setup_tracing()
+    start_metrics_heartbeat()
 
     try:
         llm, embed, tunnels = setup_clients(config)

@@ -21,7 +21,7 @@ from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
 from hal.logging_utils import set_context, setup_logging
 from hal.memory import MemoryStore
-from hal.prometheus import PrometheusClient
+from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import get_tracer, setup_tracing
 from hal.tunnel import SSHTunnel, port_open
 from hal.workers import list_dir, read_file, write_file
@@ -330,6 +330,7 @@ def main() -> None:
     # Observability init: logs then tracing
     setup_logging()
     setup_tracing()
+    start_metrics_heartbeat()
 
     # Load readline history (skip in non-interactive --print mode)
     if not args.query:
