@@ -4,6 +4,7 @@ This module keeps runtime dependencies minimal and only uses HTTP queries.
 It also provides optional metric helpers (no-op when prom pushgateway is absent).
 """
 import os
+import threading
 from dataclasses import dataclass
 
 import requests
@@ -61,8 +62,6 @@ class PrometheusClient:
 
 
 # ----------------------------- Optional instruments ----------------------------- #
-import threading
-
 _lock = threading.Lock()
 _counters: dict[tuple, float] = {}  # (metric_name, frozenset(labels)) → cumulative total
 _gauges: dict[tuple, float] = {}    # (metric_name, frozenset(labels)) → last observed value

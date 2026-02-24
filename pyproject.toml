@@ -5,3 +5,9 @@ target-version = "py312"
 # Defaults: E4, E7, E9 (pycodestyle errors), F (pyflakes).
 # Extend with I (isort) so import order is consistent.
 select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# server.py manipulates sys.path before importing hal.* (required when run
+# directly as a script).  E402 = module-level import not at top of file;
+# I001 = isort treats the sys.path block as separating two import groups.
+"hal/server.py" = ["E402", "I001"]
