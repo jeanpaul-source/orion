@@ -160,10 +160,11 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 **Watch:** Swap usage was 7.3G/8G despite 49G RAM free (Feb 21 2026) — worth investigating
 
-**Observability (added Feb 24 2026):**
+**Observability (as of Feb 24, 2026):**
 - JSON logs with trace_id/span_id when tracing is on; session_id context per turn
 - Tracing via OTLP HTTP (default http://localhost:4318), no-op if deps/endpoint missing
-- Metrics via optional Pushgateway: hal_requests_total, hal_request_latency_seconds, hal_tool_calls_total
+- Metrics via Pushgateway at `http://localhost:9092` (deployed); `hal_requests_total`, `hal_request_latency_seconds`, `hal_tool_calls_total`
+- Grafana dashboard provisioned at `/opt/homelab-infrastructure/monitoring-stack/grafana/provisioning/dashboards/hal.json`
 
 ---
 
@@ -183,6 +184,9 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/facts.py` | `/remember` — embeds facts to pgvector as `category='memory'` |
 | `hal/watchdog.py` | Standalone monitoring watchdog (run via systemd timer) |
 | `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk/swap/load; optional Counter/Histogram helpers (push via PROM_PUSHGATEWAY) |
+| `hal/server.py` | FastAPI HTTP server — `/health` liveness probe, `/POST chat` endpoint; `ServerJudge` auto-denies tier 1+ (no TTY) |
+| `hal/agents.py` | `PlannerAgent` + `CriticAgent` sub-agents — tool-less LLM wrappers with structured output prompts |
+| `hal/trust_metrics.py` | Parses `~/.orion/audit.log` into `AuditEvent` objects; `get_action_stats()` exposed as a HAL tool |
 | `hal/logging_utils.py` | Structured logging utilities (JSON), contextvars for session correlation |
 | `hal/llm.py` | `OllamaClient` (embeddings), `VLLMClient` (chat via OpenAI-compatible API) |
 | `hal/tracing.py` | OTel setup; `setup_tracing()` + `get_tracer()`; no-op fallback if collector absent |
@@ -195,7 +199,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore + 10 agent loop integration tests (no Ollama needed) |
+| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 112 offline tests (Judge, MemoryStore, agent loop, trust_metrics, agents) = 147 total |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
@@ -328,8 +332,19 @@ Laptop (edit code)
 - **P4 confirmed resolved**: both `tool_call_id` paths in the loop already correct; `SESSION_FINDINGS.md` updated to mark P4 resolved.
 - **Agent loop integration tests**: 10 new tests in `tests/test_agent_loop.py` — all mocked, no external services; cover: direct text response, single tool call + `tool_call_id` propagation, dedup loop-breaker, max-iterations guard, output truncation, KB search no-results, unknown tool graceful error, Prometheus unavailable fallback, KB injection threshold (≥0.75 injected, <0.75 discarded). Test count: 117 → 141.
 
+**Done (as of Feb 24, 2026):**
+
+- **Agent Inspector cleanup**: removed `HalAgent` class and `agentdev` dead code from `hal/server.py` (~80 lines); removed `debugpy`, `agent-dev-cli`, `agent-framework-core` from `requirements-dev.txt`; replaced Agent Inspector VS Code tasks with plain `Run HAL HTTP Server` and `Debug HAL HTTP Server` tasks; deleted stray `=0.115` file
+- **New files from previous session committed**: `hal/server.py` (FastAPI HTTP server, `/chat` + `/health`), `hal/agents.py` (`PlannerAgent` / `CriticAgent` sub-agents), `hal/trust_metrics.py` (audit log stats + `get_action_stats` tool), `hal/logging_utils.py`, `tests/test_agent_loop.py`, `tests/test_agents.py`, `tests/test_trust_metrics.py`, `pyproject.toml` (ruff config), `.github/workflows/test.yml`, `.vscode/` config
+- **Prometheus Pushgateway deployed** on server at port 9092 (`prom/pushgateway:v1.10.0`); added to monitoring-stack `docker-compose.yml`; scrape job added to `prometheus.yml` with `honor_labels: true`; `--web.enable-lifecycle` added to Prometheus so config can be reloaded without restart
+- **Metrics accumulator fix** in `hal/prometheus.py`: replaced per-call `_push_metric()` (clobbered Pushgateway on every call) with in-memory `_counters`/`_gauges` accumulators + thread-safe `flush_metrics()` that batches all metrics in a single POST at turn end; `Counter.inc()` now truly accumulates (was always-1); `run_conversational` now tracked
+- **HAL Grafana dashboard** provisioned at `/opt/homelab-infrastructure/monitoring-stack/grafana/provisioning/dashboards/hal.json` — 6 panels: requests/sec, latency, tool calls/sec, totals stat, requests by intent bar
+- **`PROM_PUSHGATEWAY`** added to laptop and server `.env` (ports 9092)
+- **Ruff linter baseline**: fixed import ordering and unused import issues in `hal/trust_metrics.py`, `tests/test_trust_metrics.py`; added `per-file-ignores` for `hal/server.py` in `pyproject.toml` (intentional sys.path manipulation)
+
 **Backlog:**
 
 - **Falco noise filter**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` (same pattern as existing `unix_chkpwd` entry)
 - **Swap investigation**: 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Eval re-run**: baseline predates security tools, prompt rewrite, and KB expansion; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline
+- **Tempo / OTel traces**: `hal/tracing.py` is wired and emitting spans; deploy Grafana Tempo container to receive them (separate item, pending investigation)

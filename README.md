@@ -574,7 +574,7 @@ cp .env.example .env
 | `OTLP_ENDPOINT` | `http://localhost:4318` | OpenTelemetry OTLP HTTP endpoint for traces (export only if reachable) |
 | `HAL_LOG_LEVEL` | `INFO` | Root log level (DEBUG, INFO, WARNING, ERROR) |
 | `HAL_LOG_JSON` | `1` | When `1`/true, logs are JSON; set `0` to use plain text formatter |
-| `PROM_PUSHGATEWAY` | *(empty)* | When set (e.g., `http://the-lab:9091`), emit metrics via Pushgateway |
+| `PROM_PUSHGATEWAY` | *(empty)* | When set, emit metrics via Pushgateway. Server: `http://localhost:9092`. Laptop: `http://192.168.5.10:9092`. `flush_metrics()` batches all metrics per turn in a single POST. |
 
 ---
 
@@ -608,7 +608,9 @@ HAL includes optional, zero-downtime observability that you can enable via envir
   - OTLP_ENDPOINT=http://localhost:4318 (default) — OTLP HTTP traces are exported here
   - If opentelemetry packages are not installed or the endpoint is unreachable, tracing is a no-op
 - Metrics (Prometheus Pushgateway):
-  - PROM_PUSHGATEWAY=http://the-lab:9091 — when set, HAL emits lightweight counters/histograms via Pushgateway text format
+  - Set `PROM_PUSHGATEWAY=http://192.168.5.10:9092` (laptop) or `http://localhost:9092` (server)
+  - Pushgateway is deployed on the server at port 9092 (`prom/pushgateway:v1.10.0`); Prometheus scrapes it with `honor_labels: true`
+  - `flush_metrics()` is called at the end of each turn and batches all counters + histograms into a single Pushgateway POST — one POST per turn, not per metric call
   - If not set, metrics calls are no-ops
 
 Emitted metric names (labels in braces):
@@ -627,7 +629,7 @@ Example (enable JSON logs + tracing + Pushgateway):
 export HAL_LOG_JSON=1
 export HAL_LOG_LEVEL=INFO
 export OTLP_ENDPOINT=http://localhost:4318
-export PROM_PUSHGATEWAY=http://192.168.5.10:9091
+export PROM_PUSHGATEWAY=http://192.168.5.10:9092
 python -m hal
 ```
 
@@ -640,7 +642,7 @@ python -m hal
 OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 ```
 
-141 tests total: 35 intent classifier tests (require Ollama — live embeddings), 96 unit tests for Judge and MemoryStore (no Ollama needed), and 10 agent loop integration tests (no Ollama needed).
+147 tests total: 35 intent classifier tests (require Ollama — live embeddings), 112 offline tests covering Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent, and trust_metrics (no Ollama needed).
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
 
 ### Evaluation
@@ -724,12 +726,15 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 | `hal/intent.py` | Embedding classifier — tune `THRESHOLD` and `EXAMPLES` here, nothing else |
 | `hal/judge.py` | Policy gate — full tier logic, audit log writer, `approve()` called by all workers |
 | `hal/llm.py` | `VLLMClient` (chat + tools) and `OllamaClient` (embeddings only) |
+| `hal/server.py` | FastAPI HTTP server — `/chat` + `/health` endpoints, `ServerJudge` auto-denies Tier 1+ |
+| `hal/agents.py` | `PlannerAgent` + `CriticAgent` — tool-less LLM sub-agents with structured output prompts |
+| `hal/trust_metrics.py` | Parses `~/.orion/audit.log`; exposes `get_action_stats()` as a HAL tool |
 | `hal/config.py` | All configuration — loaded from `.env` via `load()`, dataclass `Config` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/executor.py` | SSH command execution on the server — wraps paramiko or subprocess |
 | `hal/workers.py` | File operation tools: `read_file`, `write_file`, `patch_file`, `list_dir`, `git_*` |
 | `hal/security.py` | Security worker — wraps Falco, Osquery, ntopng, Nmap into four HAL tools |
-| `hal/prometheus.py` | PromQL query client; optional Counter/Histogram helpers (push via PROM_PUSHGATEWAY) — used by `run_health()` and the `get_metrics` tool |
+| `hal/prometheus.py` | PromQL query client; `Counter`/`Histogram` metric instruments + `flush_metrics()` batch push to Pushgateway |
 | `hal/knowledge.py` | pgvector KB search client — used by `run_fact()` and the `search_kb` tool |
 | `hal/facts.py` | `remember()` — saves a fact into session memory mid-conversation |
 | `hal/tunnel.py` | SSH tunnel — forwards lab ports when `USE_SSH_TUNNEL=true` |
@@ -738,7 +743,7 @@ State file: `~/.orion/watchdog_state.json` — tracks cooldowns to avoid alert s
 | `hal/tracing.py` | OpenTelemetry tracing setup |
 | `harvest/` | Full harvest pipeline: scrape sources, chunk, embed, upsert to pgvector |
 | `eval/` | Evaluation harness: 24-query suite, response collector, scorer, baseline results |
-| `tests/` | 141 tests: 35 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore + 10 agent loop integration tests (no Ollama needed) |
+| `tests/` | 147 tests: 35 intent classifier tests (require Ollama) + 112 offline tests (Judge, MemoryStore, agent loop, agents, trust_metrics) |
 | `ops/` | Systemd unit files (`vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`), `KEYS_AND_TOKENS.md` |
 | `~/ntopng/docker-compose.yml` | ntopng + Redis Compose stack on server (not in repo — lives on server only) |
 | `CLAUDE.md` | AI operating contract — required reading before any code change. Contains the rules that prevent drift. |

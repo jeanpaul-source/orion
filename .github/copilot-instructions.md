@@ -3,15 +3,16 @@
 ## Architecture
 
 HAL is a thin coordinator. Every query passes through `hal/intent.py` (embedding classifier,
-threshold 0.65) **before** the LLM sees it. Three routes:
+threshold 0.65) **before** the LLM sees it. Four routes:
 
 ```text
-health  → run_health()  — Prometheus query only, no tool loop
-fact    → run_fact()    — pgvector KB search only, no tool loop
-agentic → run_agent()   — full VLLMClient tool loop, Judge-gated
+conversational → run_conversational() — direct LLM reply, no tools, no KB injection
+health         → run_health()         — Prometheus query only, no tool loop
+fact           → run_fact()           — pgvector KB search only, no tool loop
+agentic        → run_agent()          — full VLLMClient tool loop, Judge-gated
 ```
 
-Key data flow: `hal/main.py` → `IntentClassifier` → one of three handlers in `hal/agent.py`
+Key data flow: `hal/main.py` → `IntentClassifier` → one of four handlers in `hal/agent.py`
 → `VLLMClient` (chat) + `OllamaClient` (embeddings only) → `Judge` gates every tool call.
 
 ## LLM Backend Split (Critical)
@@ -71,8 +72,8 @@ All tool calls pass through `hal/judge.py`. Tiers:
 
 - **RC1 — resolved:** Ollama + `qwen2.5-coder:32b` emitted tool calls as JSON text in `content`. Fixed by switching to vLLM + `Qwen2.5-32B-Instruct-AWQ`. Eval baseline: `no_raw_json=100%`.
 - **RC2 — resolved:** Model identity override. Fixed by vLLM instruct model + stronger system prompt. Eval baseline: `hal_identity=100%`.
-- **RC3 — open:** Broken turns accumulate in SQLite and compound future sessions. No pruning. Use `hal --new` to start fresh.
-- **RC4/5 — open:** Casual input (greetings) falls to `agentic`, seeds irrelevant KB context. A `conversational` intent category would fix this cleanly.
+- **RC3 — resolved:** `prune_old_turns(days=30)` prunes on every startup; `TURN_WINDOW=40` caps context load. Use `hal --new` to start fresh if a session becomes corrupt.
+- **RC4/5 — resolved:** `conversational` intent class added with 30 example phrases; casual input (greetings, affirmations) routes to `run_conversational()` — no tool loop, no KB seeding.
 - **SQLite init race:** If HAL crashes between opening `~/.orion/memory.db` and completing `_init()`, the file is left as an empty schema-0 database. Next start fails with `sqlite3.OperationalError: disk I/O error`. Fix: `rm ~/.orion/memory.db` — HAL recreates it on next launch.
 
 ## Evaluation
@@ -83,6 +84,7 @@ python -m eval.run_eval                              # 24 queries → eval/respo
 python -m eval.evaluate --skip-llm-eval              # score → eval/results/eval_out.json
 ```
 Baseline (Feb 23 2026): `hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=95.8%`.
+Re-run on server after any change that could affect response quality.
 
 ## Conventions
 
@@ -90,17 +92,21 @@ Baseline (Feb 23 2026): `hal_identity=100%`, `no_raw_json=100%`, `intent_accurac
   before writing any code. No silent bandaid patches.
 - **One change at a time.** Verify before moving on.
 - **No bandaids:** if adding a flag/cap/rule to work around misbehaviour, stop and fix the root cause.
-- Tests live in `tests/`: 21 intent classifier tests (require Ollama) + 96 unit tests for Judge and MemoryStore (no Ollama needed) = 117 total. The agent loop has no tests.
+- Tests live in `tests/`: 35 intent classifier tests (require Ollama) + 112 offline tests (Judge, MemoryStore, agent loop, agents, trust_metrics) = 147 total.
 - Band-aids already in the codebase are documented in `SESSION_FINDINGS.md` (P1–P5) — do not add more.
 
 ## Key Files
 
 | File | Role |
 |---|---|
-| `hal/agent.py` | Three handlers + agentic tool loop (`MAX_ITERATIONS=8`) |
+| `hal/agent.py` | Four handlers + agentic tool loop (`MAX_ITERATIONS=8`) |
 | `hal/intent.py` | Embedding classifier; adjust `THRESHOLD = 0.65` here |
 | `hal/judge.py` | Policy gate; tier table + `_llm_reason()` risk eval |
 | `hal/llm.py` | `VLLMClient` (chat) and `OllamaClient` (embed) |
+| `hal/server.py` | FastAPI HTTP server; `/chat` + `/health` endpoints; `ServerJudge` auto-denies Tier 1+ |
+| `hal/agents.py` | `PlannerAgent` + `CriticAgent` sub-agents (tool-less LLM wrappers) |
+| `hal/trust_metrics.py` | Parses `~/.orion/audit.log`; `get_action_stats()` tool |
+| `hal/prometheus.py` | Metric instruments (Counter, Histogram) + `flush_metrics()` batch push to Pushgateway |
 | `hal/config.py` | All config; loaded from `.env` via `load()` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/watchdog.py` | Standalone monitor; deployed as user systemd timer on server |

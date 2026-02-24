@@ -441,3 +441,75 @@ The fix is one of:
 
 1. Run `python -m harvest` on the server (clears the root cause)
 2. Add `NTFY_URL` to server `.env` (enables ntfy delivery — separate issue)
+
+---
+
+## Session: Feb 24, 2026 — Agent Inspector Cleanup + Observability Stack
+
+### Background
+
+Claude Code (previous agent) spent multiple turns trying to integrate VS Code Agent Inspector
+into HAL. Agent Inspector is built for the Microsoft Azure AI agent framework and is
+fundamentally incompatible with HAL's architecture (VLLMClient + custom Judge + no Azure SDK).
+The work resulted in 5 real commits to `main` that mixed genuinely valuable new code
+(`hal/server.py`, `hal/agents.py`, `hal/trust_metrics.py`) with dead scaffolding
+(`HalAgent` class, `agentdev` try/except, Agent Inspector VS Code tasks, `debugpy`/`agent-dev-cli`/
+`agent-framework-core` deps, stray `=0.115` requirements file).
+
+### What was removed (Agent Inspector dead code)
+
+- `HalAgent` class (~80 lines) from `hal/server.py`
+- `agentdev` try/except import block + `ServerAgentApp` mount from `hal/server.py`
+- `debugpy`, `agent-dev-cli --pre`, `agent-framework-core==1.0.0b260107` from `requirements-dev.txt`
+- Agent Inspector VS Code tasks from `.vscode/tasks.json` (replaced with plain run/debug tasks)
+- Stray `=0.115` file at workspace root
+- `AGENTDEV_PORT` env var reference from `hal/server.py` (port now hardcoded to 8087)
+
+### What was kept from the same 5 commits
+
+- `hal/server.py` (FastAPI HTTP server, `/chat` + `/health` endpoints) — useful independently
+- `hal/agents.py` (`PlannerAgent` + `CriticAgent` LLM sub-agents) — used by `run_agent()`
+- `hal/trust_metrics.py` (audit log parser + `get_action_stats` tool)
+- `hal/logging_utils.py`, `tests/test_agent_loop.py`, `tests/test_agents.py`, `tests/test_trust_metrics.py`
+- `pyproject.toml` (ruff config), `.github/workflows/test.yml`, `.vscode/` config
+
+### Prometheus Pushgateway deployment
+
+Deployed `prom/pushgateway:v1.10.0` to monitoring-stack on port 9092. Added scrape job to
+`prometheus.yml` with `honor_labels: true`. Added `--web.enable-lifecycle` to Prometheus so
+future config reloads can be done without a container restart. Added `PROM_PUSHGATEWAY` to
+both `.env` files.
+
+**Bug found: `_push_metric()` clobbers Pushgateway on every call.**
+Pushgateway's text format PUT semantics replace *all* metrics for a job on each POST. The old
+`_push_metric()` helper was called once per metric label, so each call wiped the previous
+metrics. Fix: replaced with in-memory `_counters`/`_gauges` dict accumulators + thread-safe
+`flush_metrics()` that batches all metrics into one POST at turn end. `Counter.inc()` now
+truly accumulates across a session (was always writing "1"). `run_conversational()` was also
+completely untracked — added `REQ_TOTAL.inc(intent="conversational", outcome="ok")` +
+`flush_metrics()` there.
+
+### Grafana HAL dashboard
+
+Provisioned `hal.json` to `/opt/homelab-infrastructure/monitoring-stack/grafana/provisioning/dashboards/`.
+6 panels: requests/sec (time series), latency P50 (time series), tool calls/sec (time series),
+total requests stat, total tool calls stat, requests by intent (bargauge). UID: `hal-overview`,
+30s refresh. Dashboard auto-loaded by Grafana on restart (provisioning directory).
+
+### Ruff pre-commit enforcement
+
+The ruff pre-commit hook blocked pushes 3 times this session:
+1. `hal/agent.py` I001 — `tm_get_action_stats` import was out of alphabetical order
+2. `hal/prometheus.py` E402 — `import threading` was placed after module-level code mid-file
+3. `hal/trust_metrics.py` I001 + F401 — stdlib imports below third-party; `List`/`Tuple` unused;
+   `tests/test_trust_metrics.py` had unused `os` import
+
+All fixed. Added `per-file-ignores` for `hal/server.py` in `pyproject.toml` (E402, I001 —
+sys.path manipulation before imports is intentional there).
+
+### State after session
+
+- orion: committed to `jeanpaul-source/orion` (latest: `7e4f13c`)
+- monitoring-stack: committed to homelab-infrastructure repo (`fccf601`)
+- Server pulled latest orion code; Pushgateway container running; Grafana dashboard live
+- 112 offline tests passing; 35 intent tests require Ollama (total 147)
