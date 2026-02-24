@@ -2,34 +2,13 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Kill HAL ports",
-      "type": "shell",
-      "command": "fuser -k 5679/tcp 8088/tcp 2>/dev/null; sleep 0.5; echo 'ports clear'",
-      "presentation": { "reveal": "never" },
-      "problemMatcher": []
-    },
-    {
-      "label": "Validate prerequisites",
-      "type": "aitk",
-      "command": "debug-check-prerequisites",
-      "args": {
-        "portOccupancy": [5679, 8088]
-      },
-      "dependsOn": ["Kill HAL ports"]
-    },
-    {
       "label": "Run HAL HTTP Server",
       "type": "shell",
-      "command": "/home/jp/orion/.venv/bin/python -m debugpy --listen 127.0.0.1:5679 hal/server.py --port 8088",
+      "command": "${workspaceFolder}/.venv/bin/python hal/server.py --port 8087",
       "isBackground": true,
       "options": {
-        "cwd": "${workspaceFolder}",
-        "env": {
-          "AGENTDEV_ENABLED": "1",
-          "AGENTDEV_PORT": "8088"
-        }
+        "cwd": "${workspaceFolder}"
       },
-      "dependsOn": ["Validate prerequisites"],
       "problemMatcher": {
         "pattern": [
           {
@@ -47,13 +26,28 @@
       }
     },
     {
-      "label": "Open Agent Inspector",
+      "label": "Debug HAL HTTP Server",
       "type": "shell",
-      "command": "echo '${input:openAgentInspector}'",
-      "presentation": {
-        "reveal": "never"
+      "command": "${workspaceFolder}/.venv/bin/python -m debugpy --listen 127.0.0.1:5679 --wait-for-client hal/server.py --port 8087",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
-      "dependsOn": ["Run HAL HTTP Server"]
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": "^.*$",
+            "file": 0,
+            "location": 1,
+            "message": 2
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "Application startup complete"
+        }
+      }
     },
     {
       "label": "Terminate All Tasks",
@@ -63,12 +57,6 @@
     }
   ],
   "inputs": [
-    {
-      "id": "openAgentInspector",
-      "type": "command",
-      "command": "ai-mlstudio.openTestTool",
-      "args": { "triggeredFrom": "tasks", "port": 8088 }
-    },
     {
       "id": "terminate",
       "type": "command",
