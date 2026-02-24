@@ -19,12 +19,12 @@ are skipped (robust to future tweaks).
 """
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple
-import os
-import re
+from typing import Dict, Iterable, Iterator, Optional
 
 # ---------------------------------------------------------------------------
 # Data structures

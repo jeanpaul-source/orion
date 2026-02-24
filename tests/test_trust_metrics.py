@@ -4,13 +4,10 @@ These tests are self-contained and do not touch the real ~/.orion/audit.log.
 """
 from __future__ import annotations
 
-import os
+import json
 from pathlib import Path
 
-import json
-
-from hal.trust_metrics import load_audit_log, aggregate_stats, get_action_stats
-
+from hal.trust_metrics import aggregate_stats, get_action_stats, load_audit_log
 
 _SAMPLE_LOG = """
 2026-02-24T10:00:00 | tier=0 | auto     | search_kb     | prometheus port | quick lookup
@@ -97,6 +94,7 @@ def test_dispatch_integration_via_agent_tool(tmp_path, monkeypatch):
 
     # Minimal dispatcher path using hal.agent._dispatch
     from unittest.mock import MagicMock
+
     from hal.agent import _dispatch
 
     kb = MagicMock()
