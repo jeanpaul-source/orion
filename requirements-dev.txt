@@ -7,3 +7,8 @@ ruff>=0.4.0
 # Eval harness only — heavy install, not needed for unit tests or CI.
 # Install separately when running: python -m eval.run_eval && python -m eval.evaluate
 azure-ai-evaluation>=0.4.0
+
+# AI Toolkit Agent Inspector debugging
+debugpy
+agent-dev-cli --pre
+agent-framework-core==1.0.0b260107

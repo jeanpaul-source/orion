@@ -10,6 +10,7 @@ from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
 from hal.logging_utils import get_logger, set_context
+from hal.trust_metrics import get_action_stats as tm_get_action_stats
 from hal.memory import MemoryStore
 from hal.prometheus import Counter, Histogram, PrometheusClient
 from hal.security import (
@@ -73,6 +74,28 @@ TOOLS = [
                 "type": "object",
                 "properties": {},
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_action_stats",
+            "description": (
+                "Return aggregated success/denial stats from HAL's audit log. "
+                "Use this to check how often HAL has successfully performed a specific action "
+                "before proposing to do it again. Accepts a substring or regex; matches tool name, "
+                "command detail, or normalized action class (e.g., 'docker restart')."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action_pattern": {
+                        "type": "string",
+                        "description": "Substring or regex to match against action type, command, or action class",
+                    }
+                },
+                "required": ["action_pattern"],
             },
         },
     },
@@ -443,6 +466,16 @@ def _dispatch(
         except Exception as e:
             return f"Metrics unavailable: {e}"
 
+    elif name == "get_action_stats":
+        pattern = args.get("action_pattern", "")
+        if not pattern:
+            return "Error: action_pattern is required."
+        try:
+            data = tm_get_action_stats(pattern)
+            return json.dumps(data, indent=2)
+        except Exception as e:
+            return f"get_action_stats failed: {e}"
+
     elif name == "get_security_events":
         n = int(args.get("n", 50))
         reason = args.get("reason", "")
@@ -689,6 +722,12 @@ def run_agent(
             span.set_attribute("hal.kb.seeded_chunks", kb_seeded_chunks)
         except Exception:
             span.set_attribute("hal.kb.seeded_chunks", 0)
+
+        # Defensive: ensure sub-agent outputs are strings before appending
+        if not isinstance(planner_plan, str):
+            planner_plan = ""
+        if not isinstance(critic_review, str):
+            critic_review = ""
 
         if planner_plan:
             sections.append("Planner's plan:\n" + planner_plan)

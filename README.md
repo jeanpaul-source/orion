@@ -42,6 +42,7 @@ tool loop. The foundation is in place. The full vision is below.
     - [Knowledge Base (pgvector)](#knowledge-base-pgvector)
     - [Session Memory (SQLite)](#session-memory-sqlite)
     - [Audit Log](#audit-log-1)
+    - [Trust Metrics (read-only, v1)](#trust-metrics-read-only-v1)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
     - [Full `.env` Reference](#full-env-reference)
@@ -255,6 +256,7 @@ HAL today is a single-machine coordinator running on or connecting to `the-lab`
 - A deterministic intent classifier that routes ~80% of queries without calling the LLM
 - A pgvector knowledge base with ~19,900 indexed chunks across 18 categories of lab documentation, configs, and domain knowledge
 - A full agentic tool loop gated by a tiered policy Judge
+- A simple trust metrics layer that parses the audit log into basic action stats and exposes a read-only `get_action_stats` tool (no policy changes yet)
 - A standalone watchdog running as a user systemd timer
 - An eval harness with 24 queries and scored baselines
 
@@ -427,6 +429,7 @@ call goes through the Judge before execution.
 | `patch_file` | 2 | Replace a string in a file — reads, validates, shows unified diff, then writes |
 | `git_status` | 0 | `git status` on a repo on the server |
 | `git_diff` | 0 | `git diff` on a repo on the server |
+| `get_action_stats` | 0 | Aggregated success/denial stats from HAL's audit log. Filter by substring or regex over tool name, command detail, or normalized action class (e.g., `docker restart`). Use before proposing repeated or risky actions to surface track record. |
 
 **Tool selection guidance (baked into the system prompt):**
 - Prefer `search_kb` over `run_command` when the answer may already be documented
@@ -482,6 +485,36 @@ Every Judge decision — approved and denied — is appended to `~/.orion/audit.
 timestamp, action type, tier, command or detail, and outcome. This file grows indefinitely
 and should be reviewed periodically. It is also the evidence base for progressive trust
 decisions.
+
+### Trust Metrics (read-only, v1)
+
+HAL parses `~/.orion/audit.log` into simple aggregates for advisory use only — it does not change Judge behavior.
+
+Where it lives:
+- Module: `hal/trust_metrics.py`
+- Tool: `get_action_stats` (tier 0)
+
+What’s parsed per log line:
+- Timestamp (ISO8601 seconds), tier, status (`auto`/`approved`/`denied`), action_type, detail, optional reason
+
+Aggregations:
+- By tool name (e.g., `run_command`, `write_file`, `search_kb`)
+- By action class for shell commands (heuristics): `docker <verb>`, `systemctl <verb>`, `ufw allow|deny`, `rm -rf`, `dd if=`, `mkfs`, or fallback to the first token
+
+Per key stats: `total`, `approved`, `denied`, `errors` (0 for now), `last_timestamp`
+
+Public API:
+- `load_audit_log(path)`
+- `aggregate_stats(events)`
+- `get_action_stats(pattern, path=None)` → includes `confidence = approved/total`; pattern can be substring or regex over `action_type`, `detail`, or `action_class`
+
+LLM tool usage:
+- `get_action_stats` with `action_pattern`
+- Examples: `"docker restart"`, `r"(docker|systemctl)\s+restart"`
+
+Guidance:
+- Use before proposing to repeat an action class or a risky command to surface HAL’s prior success/denial split.
+- Context only. No automatic approvals/demotions yet.
 
 ---
 

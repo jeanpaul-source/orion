@@ -72,6 +72,7 @@ _ACTION_TIERS: dict[str, int] = {
     "search_kb":              0,
     "get_metrics":            0,
     "remember_fact":          0,
+    "get_action_stats":       0,
     # Security workers — reads are tier 0, active LAN scan is tier 1
     "get_security_events":    0,
     "get_host_connections":   0,
