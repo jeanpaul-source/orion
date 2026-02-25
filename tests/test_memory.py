@@ -179,3 +179,25 @@ def test_prune_mixed(mem):
     assert deleted == 1
     assert not mem.session_exists(old_sid)
     assert mem.session_exists(new_sid)
+
+
+# ---------------------------------------------------------------------------
+# MemoryStore — create_session() (caller-chosen ID)
+# ---------------------------------------------------------------------------
+
+def test_create_session_with_custom_id(mem):
+    """create_session() should accept an arbitrary string ID."""
+    sid = mem.create_session("tg-999")
+    assert sid == "tg-999"
+    assert mem.session_exists("tg-999")
+
+
+def test_create_session_supports_turns(mem):
+    """Turns can be saved and loaded against a caller-chosen session."""
+    sid = mem.create_session("tg-42")
+    mem.save_turn(sid, "user", "hello")
+    mem.save_turn(sid, "assistant", "hi there")
+    turns = mem.load_turns(sid)
+    assert len(turns) == 2
+    assert turns[0]["content"] == "hello"
+    assert turns[1]["content"] == "hi there"

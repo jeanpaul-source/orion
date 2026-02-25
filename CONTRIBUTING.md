@@ -64,8 +64,8 @@ OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 147 tests total:
 - **35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
   reachable. Run these on the server if you can't reach Ollama from the laptop.
-- **112 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
-  trust_metrics. Run anywhere with no external services.
+- **129 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
+  trust_metrics, Telegram bot. Run anywhere with no external services.
 
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
 
@@ -224,6 +224,7 @@ journalctl --user -u vllm -f
 
 systemctl --user status watchdog.timer
 systemctl --user status harvest.timer
+systemctl --user status telegram.service
 ```
 
 ---

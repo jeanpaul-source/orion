@@ -68,6 +68,15 @@ class MemoryStore:
         self.conn.commit()
         return sid
 
+    def create_session(self, sid: str) -> str:
+        """Create a session with a caller-chosen ID (e.g. ``tg-12345``)."""
+        self.conn.execute(
+            "INSERT INTO sessions (id, started_at) VALUES (?, ?)",
+            (sid, datetime.now().isoformat()),
+        )
+        self.conn.commit()
+        return sid
+
     def last_session_id(self) -> str | None:
         row = self.conn.execute(
             "SELECT id FROM sessions ORDER BY started_at DESC LIMIT 1"

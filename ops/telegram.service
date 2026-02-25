@@ -1,0 +1,17 @@
+[Unit]
+Description=Orion Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/orion
+ExecStart=%h/orion/.venv/bin/python hal/telegram.py
+EnvironmentFile=%h/orion/.env
+Restart=on-failure
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

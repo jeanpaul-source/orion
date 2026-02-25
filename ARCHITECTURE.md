@@ -7,7 +7,7 @@ This document describes Orion's components, data flow, and the design decisions 
 ## Component map
 
 ```
-You  (terminal REPL today; Telegram, Web UI, Voice — planned)
+You  (terminal REPL, HTTP server, Telegram bot)
  └─ hal/main.py  [session manager, Rich console, readline history]
       └─ IntentClassifier  [embedding similarity, threshold 0.65, one embed call per query]
             │
@@ -29,6 +29,15 @@ Supporting components:
   MemoryStore   — SQLite session turns at ~/.orion/memory.db; loaded into context on start
   PrometheusClient — PromQL queries for live metrics + Pushgateway metric push
   SSHTunnel     — port-forwards lab services when running from a laptop (USE_SSH_TUNNEL=true)
+
+HTTP layer (hal/server.py):
+  FastAPI server — /chat (POST) + /health (GET); ServerJudge auto-denies tier 1+
+  Used by: Telegram bot, future Web UI, external integrations
+
+Telegram interface (hal/telegram.py):
+  Thin async wrapper — POSTs to /chat endpoint over localhost
+  Auth: single ALLOWED_USER_ID; session: tg-{chat_id}; UX: thinking→edit
+  Polling only (no webhook — no public HTTPS on the homelab)
 ```
 
 ---

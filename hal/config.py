@@ -17,6 +17,8 @@ class Config:
     ntfy_url: str  # e.g. https://ntfy.sh/your-topic — empty string disables alerts
     vllm_url: str  # vLLM OpenAI-compatible API endpoint
     ntopng_url: str  # ntopng community REST base, e.g. http://localhost:3000
+    telegram_bot_token: str  # from @BotFather — empty string disables bot
+    telegram_allowed_user_id: int  # Telegram numeric user ID; 0 = reject all
 
 
 def load() -> Config:
@@ -36,4 +38,6 @@ def load() -> Config:
         ntfy_url=os.getenv("NTFY_URL", ""),
         vllm_url=os.getenv("VLLM_URL", "http://localhost:8000"),
         ntopng_url=os.getenv("NTOPNG_URL", "http://localhost:3000"),
+        telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        telegram_allowed_user_id=int(os.getenv("TELEGRAM_ALLOWED_USER_ID", "0")),
     )

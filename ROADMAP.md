@@ -54,6 +54,21 @@ What's built, what's next, and where this is going.
 - Ruff linter enforced via pre-commit hook
 - Test count: 147 (35 intent + 112 offline)
 
+### Feb 24, 2026 — Telegram bot
+- Telegram bot interface (`hal/telegram.py`) — thin async wrapper that POSTs to `/chat` HTTP endpoint
+- Auth: single `TELEGRAM_ALLOWED_USER_ID` check; silently ignores unauthorized senders
+- Session model: `tg-{chat_id}` deterministic session IDs; `/new` command resets with timestamp suffix
+- UX: sends "thinking…" placeholder, edits with final response; output sanitised (secrets redacted, 4096 char limit)
+- Polling mode (no webhook — no public HTTPS on the homelab)
+- Inherits `ServerJudge` tier-0-only behaviour via the HTTP server — no new Judge subclass
+- `MemoryStore.create_session(sid)` — accepts caller-chosen session IDs (used by Telegram, available to any HTTP client)
+- `hal/server.py` session resolution updated — honours caller-provided `session_id` on first use
+- `ops/telegram.service` — user systemd unit (`Type=simple`, `Restart=on-failure`, `RestartSec=15`)
+- `python-telegram-bot>=21.0` added to `requirements.txt`
+- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_ID` added to `hal/config.py` and `.env.example`
+- 17 offline tests in `tests/test_telegram.py` (sanitize, sessions, auth, commands, HTTP mocking)
+- Test count: 164 (35 intent + 129 offline)
+
 ---
 
 ## Backlog (immediate)
@@ -63,6 +78,7 @@ What's built, what's next, and where this is going.
 - **Swap investigation:** 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Grafana Tempo:** `hal/tracing.py` emits OTel spans but no receiver is deployed — deploy Tempo container in monitoring stack
 - **Integration tests:** Zero coverage on SSH executor, pgvector search, HTTP server, security tools — these all require live services but should have smoke tests
+- **Web UI:** Lightweight browser interface using the same `/chat` HTTP endpoint
 
 ---
 

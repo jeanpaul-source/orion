@@ -72,6 +72,8 @@ uses the server IP and `USE_SSH_TUNNEL=true`.
 | `HAL_LOG_JSON` | `1` | `1` = JSON logs, `0` = plain text |
 | `HAL_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `OTLP_ENDPOINT` | `http://localhost:4318` | OTel OTLP HTTP — no-op if unreachable |
+| `TELEGRAM_BOT_TOKEN` | *(empty)* | From @BotFather — leave empty to disable bot |
+| `TELEGRAM_ALLOWED_USER_ID` | `0` | Numeric Telegram user ID — get from @userinfobot |
 
 ---
 
@@ -153,6 +155,30 @@ systemctl --user list-timers harvest.timer
 python -m harvest              # manual run
 python -m harvest --dry-run   # preview only
 ```
+
+### Telegram bot (`ops/telegram.service`)
+
+Long-running polling bot. Connects to the Telegram API and forwards messages to the
+HTTP server at `localhost:8087`. Requires `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_ALLOWED_USER_ID` in `.env`.
+
+```bash
+# Deploy
+cp ops/telegram.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now telegram.service
+
+# Manage
+systemctl --user status telegram.service
+systemctl --user restart telegram.service
+journalctl --user -u telegram -f
+```
+
+The bot is independently restartable — it does not affect the REPL or HTTP server.
+If the HTTP server is down, the bot replies with "HAL server is offline."
+
+`Type=simple` with `Restart=on-failure` and `RestartSec=15` — auto-recovers from
+crashes without restart-looping.
 
 ### Enable linger (required for user systemd to survive logout)
 

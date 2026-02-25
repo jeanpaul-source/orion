@@ -193,18 +193,19 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/tunnel.py` | SSH tunnel for laptop-side use (auto-tunnel when vLLM/Ollama not directly reachable) |
 | `hal/knowledge.py` | pgvector KB search |
 | `hal/security.py` | Security workers: `get_security_events` (Falco), `get_host_connections` (Osquery), `get_traffic_summary` (ntopng), `scan_lan` (Nmap) — all Judge-gated, tiers 0/1 |
-| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`, `NTOPNG_URL`) |
+| `hal/telegram.py` | Telegram bot — polls Telegram API, POSTs to `/chat` HTTP endpoint; auth by `TELEGRAM_ALLOWED_USER_ID`; sessions as `tg-{chat_id}` |
+| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`, `NTOPNG_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`) |
 | `~/ntopng/docker-compose.yml` | ntopng + Redis compose; host network; interface `enp130s0`; not in this repo |
 | `harvest/` | Lab infrastructure harvester — re-indexes lab state into pgvector |
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 112 offline tests (Judge, MemoryStore, agent loop, trust_metrics, agents) = 147 total |
+| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 129 offline tests (Judge, MemoryStore, agent loop, trust_metrics, agents, Telegram) = 164 total |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
 | `.env.example` | Config template |
-| `ops/` | Systemd units: `vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`; `KEYS_AND_TOKENS.md` |
+| `ops/` | Systemd units: `vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`, `telegram.service`; `KEYS_AND_TOKENS.md` |
 
 ---
 
@@ -341,6 +342,20 @@ Laptop (edit code)
 - **HAL Grafana dashboard** provisioned at `/opt/homelab-infrastructure/monitoring-stack/grafana/provisioning/dashboards/hal.json` — 6 panels: requests/sec, latency, tool calls/sec, totals stat, requests by intent bar
 - **`PROM_PUSHGATEWAY`** added to laptop and server `.env` (ports 9092)
 - **Ruff linter baseline**: fixed import ordering and unused import issues in `hal/trust_metrics.py`, `tests/test_trust_metrics.py`; added `per-file-ignores` for `hal/server.py` in `pyproject.toml` (intentional sys.path manipulation)
+
+**Done (as of Feb 24, 2026 — Telegram bot):**
+
+- **Telegram bot interface** (`hal/telegram.py`): thin async wrapper that POSTs to `/chat` HTTP endpoint; uses `python-telegram-bot` v22 (polling, no webhook)
+- **Auth**: single `TELEGRAM_ALLOWED_USER_ID` check; silently ignores unauthorized senders
+- **Session model**: `tg-{chat_id}` deterministic session IDs; `/new` command resets with timestamp suffix; in-memory dict, falls back to original session on restart
+- **UX**: sends "thinking…" placeholder, edits message with final response; output sanitised (secrets paths redacted, 4096 char Telegram limit enforced)
+- **`MemoryStore.create_session(sid)`**: new method — accepts caller-chosen session IDs (used by Telegram, available to any `/chat` client)
+- **`hal/server.py` session resolution**: updated to honour caller-provided `session_id` — creates session on first use instead of generating random ID
+- **`ops/telegram.service`**: user systemd unit (`Type=simple`, `Restart=on-failure`, `RestartSec=15`)
+- **Config**: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_ID` added to `hal/config.py` and `.env.example`
+- **Dependency**: `python-telegram-bot>=21.0` added to `requirements.txt`
+- **Tests**: 17 offline tests in `tests/test_telegram.py` (sanitize, sessions, auth, commands, HTTP mocking)
+- **Test count**: 164 (35 intent + 129 offline)
 
 **Backlog:**
 

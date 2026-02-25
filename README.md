@@ -37,7 +37,7 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 
 ## Current state (Feb 2026)
 
-147 tests (35 require Ollama, 112 offline). Eval baselines: `hal_identity=100%`,
+147 tests (35 require Ollama, 129 offline). Eval baselines: `hal_identity=100%`,
 `no_raw_json=100%`, `intent_accuracy=95.8%`.
 
 | Component | Status |
@@ -50,8 +50,9 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 | Security tools (Falco, Osquery, ntopng, Nmap) | Working |
 | Observability (structured logs, OTel, Pushgateway, Grafana) | Working |
 | HTTP server (`/chat`, `/health`) | Working |
+| Telegram bot (polling, single-user auth) | Working |
 | Autonomous remediation | Not yet built |
-| Telegram / Web UI / Voice interfaces | Not yet built |
+| Telegram / Web UI / Voice interfaces | Telegram working; Web UI, Voice not yet built |
 | Trust evolution (earned/revoked tiers) | Not yet built |
 
 ---
@@ -119,9 +120,10 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/prometheus.py` | PromQL client + Pushgateway metrics |
 | `hal/knowledge.py` | pgvector KB search client |
 | `hal/server.py` | FastAPI HTTP server — `/chat` + `/health` |
+| `hal/telegram.py` | Telegram bot — polls API, POSTs to `/chat`, single-user auth |
 | `hal/trust_metrics.py` | Audit log parser + `get_action_stats` tool |
 | `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
 | `eval/` | Evaluation harness — 24 queries, scorer, baselines |
-| `tests/` | 147 tests (35 intent classifier + 112 offline) |
-| `ops/` | Systemd unit files for vllm, watchdog, harvest |
+| `tests/` | 147 tests (35 intent classifier + 129 offline) |
+| `ops/` | Systemd unit files for vllm, watchdog, harvest, telegram |

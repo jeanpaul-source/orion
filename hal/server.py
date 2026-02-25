@@ -179,9 +179,14 @@ async def chat(req: ChatRequest) -> ChatResponse:
         # open and close a fresh store here rather than reusing one from _state.
         mem = MemoryStore()
         try:
-            session_id = req.session_id or mem.last_session_id() or mem.new_session()
-            if not mem.session_exists(session_id):
-                session_id = mem.new_session()
+            if req.session_id:
+                # Caller provided an explicit session ID — honour it.
+                # Create the session on first use (e.g. Telegram bot's tg-<chat_id>).
+                session_id = req.session_id
+                if not mem.session_exists(session_id):
+                    mem.create_session(session_id)
+            else:
+                session_id = mem.last_session_id() or mem.new_session()
             history = mem.load_turns(session_id)
 
             if intent == "conversational":
