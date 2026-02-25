@@ -23,6 +23,11 @@ infra/.env*
 # Node
 **/node_modules/
 
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
 # Editors & OS
 .DS_Store
 *.swp
