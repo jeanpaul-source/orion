@@ -119,6 +119,12 @@ EXAMPLES: dict[str, list[str]] = {
         "any unusual network activity?",
         "show me the busiest network flows",
         "is anything making suspicious outbound connections?",
+        # Web search queries
+        "what's the latest version of prometheus?",
+        "search for vllm cuda compatibility issues",
+        "are there known CVEs for ollama?",
+        "what kernel version fixes the XFS corruption bug?",
+        "look up the latest falco release notes",
     ],
 }
 

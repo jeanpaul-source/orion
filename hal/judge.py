@@ -205,6 +205,8 @@ _ACTION_TIERS: dict[str, int] = {
     "get_host_connections": 0,
     "get_traffic_summary": 0,
     "scan_lan": 1,
+    # Web access — read-only search via external API
+    "web_search": 0,
 }
 
 # ---------------------------------------------------------------------------

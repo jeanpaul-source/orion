@@ -497,6 +497,7 @@ def main() -> None:
                     SYSTEM_PROMPT,
                     console,
                     ntopng_url=config.ntopng_url,
+                    tavily_api_key=config.tavily_api_key,
                 )
         finally:
             for tunnel in tunnels:
@@ -620,6 +621,7 @@ def main() -> None:
                             SYSTEM_PROMPT,
                             console,
                             ntopng_url=config.ntopng_url,
+                            tavily_api_key=config.tavily_api_key,
                         )
 
     finally:

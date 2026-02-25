@@ -21,6 +21,7 @@ from hal.security import (
 )
 from hal.tracing import get_tracer
 from hal.trust_metrics import get_action_stats as tm_get_action_stats
+from hal.web import web_search as _web_search
 from hal.workers import (
     git_diff,
     git_status,
@@ -40,7 +41,7 @@ TOOL_CALLS_TOTAL = Counter("hal_tool_calls_total", labels=("tool", "outcome"))
 # Logger
 log = get_logger(__name__)
 
-TOOLS = [
+_BASE_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
@@ -384,6 +385,52 @@ TOOLS = [
     },
 ]
 
+# Conditional tools — only included when their API key is configured.
+# Keeping these out of _BASE_TOOLS means the LLM never sees a tool it can't use.
+_WEB_SEARCH_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": (
+            "Search the public web for current information using Tavily. "
+            "Use this for questions about latest software versions, CVEs, "
+            "release notes, or topics not covered by the homelab knowledge base. "
+            "Try search_kb first — only use web_search when the answer requires "
+            "up-to-date external information. "
+            "NEVER include internal IP addresses, hostnames, or file paths in "
+            "the search query."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (public, generic — no internal IPs or hostnames)",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "One sentence explaining why you need a web search",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
+def get_tools(*, tavily_api_key: str = "") -> list[dict]:
+    """Build the active tools list based on available configuration.
+
+    Tools whose API keys are missing are excluded entirely — the LLM never
+    sees them, preventing hallucinated calls to unavailable tools.
+    Extend this function when adding new conditional tools (fetch_url,
+    GitHub, etc.).
+    """
+    tools = list(_BASE_TOOLS)
+    if tavily_api_key:
+        tools.append(_WEB_SEARCH_TOOL)
+    return tools
+
 
 def _dispatch(
     name: str,
@@ -393,6 +440,7 @@ def _dispatch(
     kb: KnowledgeBase,
     prom: PrometheusClient,
     ntopng_url: str = "http://localhost:3000",
+    tavily_api_key: str = "",
 ) -> str:
     """Route a tool call to the right worker. Returns a result string."""
     if name == "run_command":
@@ -509,6 +557,27 @@ def _dispatch(
             return "Error: subnet is required."
         hosts = scan_lan(subnet, executor, judge, reason=reason)
         return json.dumps(hosts, indent=2)
+
+    elif name == "web_search":
+        query = args.get("query", "")
+        reason = args.get("reason", "")
+        if not judge.approve("web_search", query, reason=reason):
+            return "Web search denied by policy."
+        if not tavily_api_key:
+            return "web_search is disabled — TAVILY_API_KEY is not configured."
+        try:
+            results = _web_search(query, api_key=tavily_api_key)
+            lines = []
+            for r in results:
+                lines.append(f"**{r['title']}**")
+                lines.append(r["url"])
+                lines.append(r["content"][:500])
+                lines.append("")
+            return "\n".join(lines) if lines else "No results found."
+        except ValueError as e:
+            return f"Web search blocked: {e}"
+        except Exception as e:
+            return f"Web search failed: {e}"
 
     else:
         return f"Unknown tool: {name}"
@@ -665,6 +734,7 @@ def run_agent(
     system: str,
     console: Console,
     ntopng_url: str = "http://localhost:3000",
+    tavily_api_key: str = "",
     planner: PlannerAgent | None = None,
     critic: CriticAgent | None = None,
 ) -> str:
@@ -755,6 +825,10 @@ def run_agent(
         # Working history — don't mutate the session history until we have a final answer
         working = list(history) + [{"role": "user", "content": augmented}]
 
+        # Build the active tool set once — only includes tools whose API
+        # keys / config are present.  The LLM never sees disabled tools.
+        available_tools = get_tools(tavily_api_key=tavily_api_key)
+
         response_text = ""
         seen_calls: set[tuple] = set()  # (name, args_json) — detect repeat tool calls
         total_calls = 0  # total unique tool calls dispatched this turn
@@ -764,7 +838,9 @@ def run_agent(
             # If we've already dispatched 5 unique tool calls, stop collecting data
             # and force a text-only response regardless of iteration count
             effective_tools = (
-                TOOLS if (iteration < MAX_ITERATIONS - 1 and total_calls < 5) else []
+                available_tools
+                if (iteration < MAX_ITERATIONS - 1 and total_calls < 5)
+                else []
             )
             with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
                 msg = llm.chat_with_tools(working, effective_tools, system=system)
@@ -820,7 +896,14 @@ def run_agent(
                     )
                     try:
                         result = _dispatch(
-                            name, raw_args, executor, judge, kb, prom, ntopng_url
+                            name,
+                            raw_args,
+                            executor,
+                            judge,
+                            kb,
+                            prom,
+                            ntopng_url,
+                            tavily_api_key,
                         )
                         TOOL_CALLS_TOTAL.inc(tool=name, outcome="ok")
                     except Exception as e:

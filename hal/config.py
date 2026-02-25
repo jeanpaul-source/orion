@@ -19,6 +19,7 @@ class Config:
     ntopng_url: str  # ntopng community REST base, e.g. http://localhost:3000
     telegram_bot_token: str  # from @BotFather — empty string disables bot
     telegram_allowed_user_id: int  # Telegram numeric user ID; 0 = reject all
+    tavily_api_key: str  # Tavily web search — empty string disables web_search tool
 
 
 def load() -> Config:
@@ -40,4 +41,5 @@ def load() -> Config:
         ntopng_url=os.getenv("NTOPNG_URL", "http://localhost:3000"),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_allowed_user_id=int(os.getenv("TELEGRAM_ALLOWED_USER_ID", "0")),
+        tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
     )
