@@ -3,6 +3,7 @@
 
 pytest>=8.0
 ruff>=0.4.0
+mypy>=1.10
 
 # Eval harness only — heavy install, not needed for unit tests or CI.
 # Install separately when running: python -m eval.run_eval && python -m eval.evaluate
