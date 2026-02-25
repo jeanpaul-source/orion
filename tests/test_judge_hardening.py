@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -391,3 +391,326 @@ class TestSelfEditGovernance:
 
     def test_list_dir_normal_is_tier_0(self):
         assert tier_for("list_dir", "/opt/homelab-infrastructure") == 0
+
+
+# =========================================================================
+# G. TTY approval logic — interactive input handling
+# =========================================================================
+
+
+class TestTTYApprovalLogic:
+    """Tests for Judge._request_approval() interactive input handling.
+
+    Sources cited from judge.py:
+      - Tier 3 check:   answer = input(...).strip()        →  answer == "YES I CONFIRM"  (exact, case-sensitive)
+      - Tier 1/2 check: answer = input(...).strip().lower() →  answer == "y"
+      - Tier 3 failure: except (KeyboardInterrupt, EOFError): answer = ""  → deny
+      - Tier 1/2 fail:  except (KeyboardInterrupt, EOFError): answer = "n" → deny
+      - _llm_reason() swallows all exceptions and returns None; never affects approval.
+    """
+
+    def _make_judge(self, tmp_path: Path) -> tuple[Judge, Path]:
+        log = tmp_path / "audit.log"
+        j = Judge(audit_log=log, llm=None)
+        return j, log
+
+    def _read_entries(self, log_path: Path) -> list[dict]:
+        if not log_path.exists():
+            return []
+        lines = log_path.read_text().strip().splitlines()
+        return [json.loads(line) for line in lines if line.strip()]
+
+    # ------------------------------------------------------------------
+    # Tier 3 — exact phrase confirmation
+    # ------------------------------------------------------------------
+
+    def test_tier3_correct_phrase_approves(self, tmp_path: Path) -> None:
+        """Exact 'YES I CONFIRM' → approved.
+        judge.py: `return answer == "YES I CONFIRM"` where answer = input(...).strip()
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="YES I CONFIRM"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is True
+
+    def test_tier3_lowercase_phrase_denies(self, tmp_path: Path) -> None:
+        """'yes i confirm' (lowercase) → denied; comparison is case-sensitive.
+        judge.py: no .lower() is applied before 'answer == "YES I CONFIRM"'.
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="yes i confirm"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is False
+
+    def test_tier3_phrase_with_surrounding_whitespace_approves(
+        self, tmp_path: Path
+    ) -> None:
+        """'  YES I CONFIRM  ' → approved; .strip() is called so surrounding whitespace is tolerated.
+        judge.py: `answer = input(...).strip()` strips before comparison.
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="  YES I CONFIRM  "),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is True
+
+    def test_tier3_phrase_with_trailing_punctuation_denies(
+        self, tmp_path: Path
+    ) -> None:
+        """'YES I CONFIRM.' (trailing period) → denied; exact match required."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="YES I CONFIRM."),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is False
+
+    def test_tier3_empty_input_denies(self, tmp_path: Path) -> None:
+        """Empty input (operator hits Enter accidentally) → denied."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value=""),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is False
+
+    def test_tier3_just_yes_denies(self, tmp_path: Path) -> None:
+        """'yes' alone (common mis-answer) → denied; only the exact phrase is accepted."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="yes"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is False
+
+    # ------------------------------------------------------------------
+    # Tier 1/2 — y/N normalization (.strip() + .lower())
+    # ------------------------------------------------------------------
+
+    def test_tier1_lowercase_y_approves(self, tmp_path: Path) -> None:
+        """'y' → approved (tier 1).
+        judge.py: `answer = input(...).strip().lower()  →  answer == "y"`
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="y"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is True
+
+    def test_tier1_uppercase_Y_approves(self, tmp_path: Path) -> None:
+        """'Y' → approved; .lower() normalises uppercase before comparison."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="Y"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is True
+
+    def test_tier1_y_with_whitespace_approves(self, tmp_path: Path) -> None:
+        """'  Y  ' (surrounding spaces) → approved; .strip().lower() handles both."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="  Y  "),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is True
+
+    def test_tier1_yes_word_denies(self, tmp_path: Path) -> None:
+        """'yes' (full word) → denied; only single character 'y' is accepted.
+        judge.py: `return answer == "y"` — 'yes' != 'y'.
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="yes"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is False
+
+    def test_tier1_n_denies(self, tmp_path: Path) -> None:
+        """'n' (explicit rejection) → denied."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="n"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is False
+
+    def test_tier1_empty_input_denies(self, tmp_path: Path) -> None:
+        """Empty input (Enter) → denied; 'N' is the default in the '[y/N]' prompt."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value=""),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is False
+
+    def test_tier2_uses_same_yn_logic(self, tmp_path: Path) -> None:
+        """Tier 2 uses the same y/N path as tier 1 (both < 3 branch)."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="y"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("write_file", "/tmp/test.conf", 2, "")
+        assert result is True
+
+    # ------------------------------------------------------------------
+    # Input failure modes — safe denial on KeyboardInterrupt / EOFError
+    # ------------------------------------------------------------------
+
+    def test_tier3_keyboard_interrupt_denies(self, tmp_path: Path) -> None:
+        """Ctrl+C on tier 3 → safe denial.
+        judge.py: except (KeyboardInterrupt, EOFError): answer = ""  →  "" != "YES I CONFIRM".
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", side_effect=KeyboardInterrupt),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is False
+
+    def test_tier3_eof_error_denies(self, tmp_path: Path) -> None:
+        """EOFError (non-interactive stdin) on tier 3 → safe denial.
+        judge.py: except (KeyboardInterrupt, EOFError): answer = ""
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", side_effect=EOFError),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is False
+
+    def test_tier1_keyboard_interrupt_denies(self, tmp_path: Path) -> None:
+        """Ctrl+C on tier 1 → safe denial.
+        judge.py: except (KeyboardInterrupt, EOFError): answer = "n"  →  "n" != "y".
+        """
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", side_effect=KeyboardInterrupt),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is False
+
+    def test_tier2_eof_error_denies(self, tmp_path: Path) -> None:
+        """EOFError on tier 2 → safe denial (same except branch as tier 1)."""
+        j, _ = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", side_effect=EOFError),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("write_file", "/tmp/test.conf", 2, "")
+        assert result is False
+
+    # ------------------------------------------------------------------
+    # LLM advisory failure — must not block the approval prompt
+    # ------------------------------------------------------------------
+
+    def test_llm_failure_does_not_block_tier1_approval(self, tmp_path: Path) -> None:
+        """If _llm_reason() raises internally it returns None; tier 1 approval still works.
+        judge.py: _llm_reason() wraps its body in `try/except Exception: return None`.
+        The result is only used for display; it cannot veto.
+        """
+        mock_llm = MagicMock()
+        mock_llm.chat.side_effect = RuntimeError("LLM offline")
+        log = tmp_path / "audit.log"
+        j = Judge(audit_log=log, llm=mock_llm)
+        with (
+            patch("builtins.input", return_value="y"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "docker restart grafana", 1, "")
+        assert result is True
+
+    def test_llm_failure_does_not_block_tier3_denial(self, tmp_path: Path) -> None:
+        """LLM failure on tier 3: approval prompt still rejects wrong phrase."""
+        mock_llm = MagicMock()
+        mock_llm.chat.side_effect = RuntimeError("LLM offline")
+        log = tmp_path / "audit.log"
+        j = Judge(audit_log=log, llm=mock_llm)
+        with (
+            patch("builtins.input", return_value="n"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j._request_approval("run_command", "rm -rf /tmp/test", 3, "")
+        assert result is False
+
+    # ------------------------------------------------------------------
+    # Audit correctness — approve() must log exactly one entry with
+    # the right status when interactive input is involved
+    # ------------------------------------------------------------------
+
+    def test_interactive_approval_logs_approved(self, tmp_path: Path) -> None:
+        """approve() with interactive 'y' at tier 1 → one 'approved' audit entry."""
+        j, log = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="y"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j.approve("run_command", "docker restart grafana", tier=1)
+        assert result is True
+        entries = self._read_entries(log)
+        assert len(entries) == 1
+        assert entries[0]["status"] == "approved"
+        assert entries[0]["tier"] == 1
+
+    def test_interactive_denial_logs_denied(self, tmp_path: Path) -> None:
+        """approve() with interactive 'n' at tier 1 → one 'denied' audit entry."""
+        j, log = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="n"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j.approve("run_command", "docker restart grafana", tier=1)
+        assert result is False
+        entries = self._read_entries(log)
+        assert len(entries) == 1
+        assert entries[0]["status"] == "denied"
+        assert entries[0]["tier"] == 1
+
+    def test_tier3_confirmation_logs_approved(self, tmp_path: Path) -> None:
+        """approve() tier 3 with 'YES I CONFIRM' → one 'approved' audit entry."""
+        j, log = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", return_value="YES I CONFIRM"),
+            patch("hal.judge.console.print"),
+        ):
+            result = j.approve("run_command", "rm -rf /tmp/test", tier=3)
+        assert result is True
+        entries = self._read_entries(log)
+        assert len(entries) == 1
+        assert entries[0]["status"] == "approved"
+        assert entries[0]["tier"] == 3
+
+    def test_keyboard_interrupt_at_tier2_logs_denied(self, tmp_path: Path) -> None:
+        """approve() with KeyboardInterrupt at tier 2 → one 'denied' audit entry."""
+        j, log = self._make_judge(tmp_path)
+        with (
+            patch("builtins.input", side_effect=KeyboardInterrupt),
+            patch("hal.judge.console.print"),
+        ):
+            result = j.approve("run_command", "docker restart grafana", tier=2)
+        assert result is False
+        entries = self._read_entries(log)
+        assert len(entries) == 1
+        assert entries[0]["status"] == "denied"
