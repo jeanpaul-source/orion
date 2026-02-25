@@ -97,7 +97,17 @@ What's built, what's next, and where this is going.
 - `TAVILY_API_KEY` in config + `.env.example`; `tavily-python>=0.5` in requirements
 - 26 new tests in `tests/test_web.py` (sanitisation, mocked Tavily, tool registry)
 - Test count: 389 (35 intent + 354 offline)
-- Next: Step 2 (`fetch_url` with SSRF protection), then Step 3 (eval expansion)
+
+### Feb 25, 2026 — URL fetching with SSRF protection (internet access Step 2)
+- `hal/web.py` — `fetch_url(url)` extracts article text from public URLs via `requests` + `trafilatura`
+- `_validate_url()` SSRF protection: blocks non-HTTP(S) schemes, private/reserved IPs (literal + DNS-resolved), `.local`/`.internal`/`.localhost`/`.onion` TLDs, redirect-to-private
+- DNS rebinding defence: `socket.getaddrinfo()` pre-resolves hostname; all returned IPs checked via `_is_private_ip()`
+- Resource limits: 10s timeout, 1 MB response cap, 15 000 char output truncation
+- `fetch_url` tier 1 in Judge (outbound HTTP to arbitrary URL, needs approval)
+- Always in tool list (no API key); 3 agentic intent examples
+- 34 new tests: IP classification, URL validation/SSRF, fetch+extract, tool registry
+- Test count: 423 (35 intent + 388 offline)
+- Next: Step 3 (eval expansion for web access)
 
 ---
 

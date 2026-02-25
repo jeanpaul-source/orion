@@ -207,6 +207,8 @@ _ACTION_TIERS: dict[str, int] = {
     "scan_lan": 1,
     # Web access — read-only search via external API
     "web_search": 0,
+    # Web access — outbound HTTP request to arbitrary URL (needs approval)
+    "fetch_url": 1,
 }
 
 # ---------------------------------------------------------------------------

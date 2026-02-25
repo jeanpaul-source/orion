@@ -21,6 +21,7 @@ from hal.security import (
 )
 from hal.tracing import get_tracer
 from hal.trust_metrics import get_action_stats as tm_get_action_stats
+from hal.web import fetch_url as _fetch_url
 from hal.web import web_search as _web_search
 from hal.workers import (
     git_diff,
@@ -418,15 +419,44 @@ _WEB_SEARCH_TOOL: dict = {
 }
 
 
+_FETCH_URL_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "fetch_url",
+        "description": (
+            "Fetch a public web page and extract its article text. "
+            "Use this after web_search to read full page content, or when the "
+            "user provides a specific URL to read. "
+            "SSRF-protected: internal IPs and private hostnames are blocked. "
+            "Output is capped at 15 000 characters."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Public HTTP(S) URL to fetch",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "One sentence explaining why you need to fetch this URL",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+}
+
+
 def get_tools(*, tavily_api_key: str = "") -> list[dict]:
     """Build the active tools list based on available configuration.
 
     Tools whose API keys are missing are excluded entirely — the LLM never
     sees them, preventing hallucinated calls to unavailable tools.
-    Extend this function when adding new conditional tools (fetch_url,
-    GitHub, etc.).
+    fetch_url is always available (no API key needed).
     """
     tools = list(_BASE_TOOLS)
+    tools.append(_FETCH_URL_TOOL)
     if tavily_api_key:
         tools.append(_WEB_SEARCH_TOOL)
     return tools
@@ -578,6 +608,21 @@ def _dispatch(
             return f"Web search blocked: {e}"
         except Exception as e:
             return f"Web search failed: {e}"
+
+    elif name == "fetch_url":
+        url = args.get("url", "")
+        reason = args.get("reason", "")
+        if not judge.approve("fetch_url", url, reason=reason):
+            return "URL fetch denied by policy."
+        try:
+            text = _fetch_url(url)
+            return text
+        except ValueError as e:
+            return f"URL blocked (SSRF protection): {e}"
+        except RuntimeError as e:
+            return f"Fetch failed: {e}"
+        except Exception as e:
+            return f"Fetch failed: {e}"
 
     else:
         return f"Unknown tool: {name}"

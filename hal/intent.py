@@ -125,6 +125,10 @@ EXAMPLES: dict[str, list[str]] = {
         "are there known CVEs for ollama?",
         "what kernel version fixes the XFS corruption bug?",
         "look up the latest falco release notes",
+        # URL fetching queries
+        "read the release notes at https://github.com/vllm-project/vllm/releases",
+        "what does this page say? https://docs.falco.org/rules",
+        "fetch https://prometheus.io/blog and summarise",
     ],
 }
 

@@ -433,6 +433,18 @@ Laptop (edit code)
 - **26 new tests** in `tests/test_web.py`: 15 sanitisation, 6 Tavily mock (via `sys.modules` injection), 5 tool registry
 - **Test count**: 389 (35 intent + 354 offline)
 
+**Done (as of Feb 25, 2026 — fetch_url / SSRF protection):**
+
+- **`fetch_url` tool** (Step 2 of internet access plan): `hal/web.py` — `fetch_url(url)` fetches public URL, extracts article text via trafilatura, returns clean text capped at 15 000 chars
+- **SSRF protection**: `_validate_url()` blocks: non-HTTP(S) schemes (`file://`, `ftp://`, `gopher://`), RFC1918 / loopback / link-local / reserved IPs (literal and DNS-resolved), `.local` / `.internal` / `.localhost` / `.onion` TLDs, redirect-to-private (re-validates final URL after redirects)
+- **DNS rebinding defence**: `socket.getaddrinfo()` resolves hostname *before* HTTP request; every returned address checked against `_is_private_ip()` — prevents attacker DNS from redirecting to internal IPs mid-flight
+- **Resource limits**: 10s timeout, 1 MB response size cap (streamed), 15 000 char output cap with truncation marker
+- **Judge tier 1**: outbound HTTP to arbitrary URL requires approval; audit-logged
+- **Tool registry updated**: `fetch_url` always present in `get_tools()` (no API key needed); `web_search` still conditional on `TAVILY_API_KEY`
+- **3 agentic intent examples** added for URL-fetching queries
+- **34 new tests** in `tests/test_web.py`: 9 `_is_private_ip`, 15 `_validate_url` (schemes, hostnames, IPs, DNS rebinding, DNS failure), 7 `fetch_url` (happy path, truncation, trafilatura fallback, SSRF blocked, redirect-to-private, HTTP error, size cap), 2 `get_tools` (fetch_url always present), 1 tool registry immutability
+- **Test count**: 423 (35 intent + 388 offline)
+
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
