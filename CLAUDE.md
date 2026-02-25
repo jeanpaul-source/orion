@@ -416,6 +416,7 @@ Laptop (edit code)
 - **Container health check** (Item 3): `_check_containers()` in watchdog checks `docker ps --filter status=exited --filter status=dead`; `CRITICAL_CONTAINERS` set: prometheus, grafana, pgvector-kb, ntopng, pushgateway; fires urgent ntfy on any critical container down
 - **Recovery RESOLVED notifications** (Item 4): when a metric drops below threshold or a boolean check recovers, sends low-priority ntfy with ✅ tag (title "Orion RESOLVED — the-lab"); `_send_ntfy_simple()` gains optional `title` and `tags` parameters
 - **Falco proactive alerting** (Item 5): `_check_falco()` in watchdog reads `/var/log/falco/events.json` (tail 200), filters noise via `_WATCHDOG_FALCO_NOISE` (replicated from `hal/security.py` to avoid heavy deps), tracks `falco_last_seen` timestamp in state to avoid re-alerting; alerts on Emergency/Alert/Critical/Error/Warning priority events; `systemd-userwork` added to noise filter
+- **System prompt rewritten** with full operational awareness: all automated/scheduled tasks (watchdog thresholds, harvest timer, gpu-metrics timer, server + telegram services); diagnostic guidance for "is everything okay?", "why did I get an alert?", "what changed?"; KB tier model; complete service inventory; troubleshooting order; `get_metrics` tool description updated to list all 9 actual metrics
 - **Test count**: 363 (35 intent + 328 offline)
 
 **Backlog:**

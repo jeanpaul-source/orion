@@ -70,6 +70,8 @@ What's built, what's next, and where this is going.
 - Recovery RESOLVED notifications: low-priority ntfy with ✅ tag when metrics/checks recover
 - Falco proactive alerting: `_check_falco()` tails Falco JSON log, filters noise, alerts on high-priority security events
 - `_send_ntfy_simple()` gains optional `title` and `tags` parameters
+- System prompt rewritten with full operational awareness: automated tasks, watchdog thresholds, diagnostic guidance, KB tier model, complete service inventory, troubleshooting order
+- `get_metrics` tool description updated to reflect all 9 metrics (was missing GPU, multi-disk)
 - Test count: 363 (35 intent + 328 offline)
 
 ### Feb 24, 2026 — Telegram bot
