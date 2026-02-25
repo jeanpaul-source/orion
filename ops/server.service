@@ -1,15 +1,15 @@
 [Unit]
-Description=Orion Telegram bot
+Description=Orion HAL HTTP server
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=%h/orion
-ExecStart=%h/orion/.venv/bin/python -m hal.telegram
+ExecStart=%h/orion/.venv/bin/python -m hal.server
 EnvironmentFile=%h/orion/.env
 Restart=on-failure
-RestartSec=15
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
