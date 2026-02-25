@@ -31,9 +31,10 @@ git clone https://github.com/jeanpaul-source/orion
 cd orion
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-dev.txt   # pytest, azure-ai-evaluation
+pip install -r requirements-dev.txt   # pytest, ruff, mypy, pre-commit, pytest-cov
 cp .env.example .env
 # Fill in PGVECTOR_DSN password
+.venv/bin/pre-commit install          # wire lint+format hooks into git
 ```
 
 Laptop `.env` should have:
@@ -54,6 +55,13 @@ HAL_INSTANCE=laptop
 **Run before every push. No exceptions.**
 
 ```bash
+make test           # offline tests only (no Ollama needed) — 151 tests
+make test-full      # full suite including intent classifier (requires Ollama)
+```
+
+Or directly:
+
+```bash
 # Full suite (requires Ollama to be reachable — intent tests use live embeddings)
 OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 
@@ -61,11 +69,11 @@ OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 .venv/bin/pytest tests/ --ignore=tests/test_intent.py -v
 ```
 
-147 tests total:
+186 tests total:
 - **35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
   reachable. Run these on the server if you can't reach Ollama from the laptop.
-- **129 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
-  trust_metrics, Telegram bot. Run anywhere with no external services.
+- **151 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
+  trust_metrics, Telegram bot, parsers, harvest. Run anywhere with no external services.
 
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
 
@@ -73,22 +81,35 @@ If any test regresses, do not push. Fix it first.
 
 ---
 
-## Linting
+## Linting and formatting
 
-Ruff is enforced via pre-commit. The pre-commit hook blocks pushes on lint failures.
+Ruff (lint + format) is enforced via pre-commit hooks and CI. Hooks fire on every `git commit`.
 
 ```bash
-# Run manually
-.venv/bin/ruff check hal/ tests/ harvest/ eval/
-
-# Auto-fix (safe changes only)
-.venv/bin/ruff check --fix hal/ tests/ harvest/ eval/
+make lint       # ruff check — catch errors and import issues
+make format     # ruff format — apply formatting
+make typecheck  # mypy — type check hal/ (warn-only; 10 errors in baseline)
+make coverage   # pytest-cov — show coverage report for hal/ (baseline: 34%)
 ```
 
-Three common failure patterns:
+Or directly:
+
+```bash
+.venv/bin/ruff check hal/ tests/ harvest/ eval/          # lint
+.venv/bin/ruff check --fix hal/ tests/ harvest/ eval/    # lint + auto-fix
+.venv/bin/ruff format hal/ tests/ harvest/ eval/         # format
+.venv/bin/mypy hal/                                      # type check
+```
+
+Three common lint failure patterns:
 - **I001** — stdlib imports not in alphabetical order
 - **E402** — import placed after module-level code (usually intentional `sys.path` manipulation — add to `per-file-ignores` in `pyproject.toml`)
 - **F401** — unused import (delete it)
+
+Commit readiness checklist:
+- `make lint` passes
+- `make format` produces no diffs
+- `make test` passes (all 151 offline tests)
 
 ---
 
@@ -146,8 +167,9 @@ fix stuff                             ← which stuff?
 ### Commit granularity
 
 **One logical change per commit.** A commit is ready when:
-- `pytest tests/ --ignore=tests/test_intent.py` passes
-- `ruff check hal/ tests/ harvest/ eval/` passes
+- `make test` passes (151 offline tests)
+- `make lint` passes
+- `make format` produces no diffs
 - One thing changed with a clear description
 
 Not one session. Not one keypress. One *thing*.

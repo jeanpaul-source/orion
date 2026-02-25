@@ -54,6 +54,14 @@ What's built, what's next, and where this is going.
 - Ruff linter enforced via pre-commit hook
 - Test count: 147 (35 intent + 112 offline)
 
+### Feb 25, 2026 — Dev tooling
+- `Makefile` — 6 targets: `lint`, `format`, `test`, `test-full`, `coverage`, `typecheck`
+- `ruff format` enforced in CI and pre-commit hooks; applied to all 35 non-conformant files
+- `mypy` added (warn-only, `continue-on-error` in CI) — baseline is 10 errors in 7 files
+- `pre-commit` hooks: `ruff check --fix` + `ruff format` fire on every `git commit`
+- `pytest-cov` — `make coverage` target; baseline 34% (2000 statements); memory.py 92%, trust_metrics.py 87%
+- Test count: 186 (35 intent + 151 offline)
+
 ### Feb 24, 2026 — Telegram bot
 - Telegram bot interface (`hal/telegram.py`) — thin async wrapper that POSTs to `/chat` HTTP endpoint
 - Auth: single `TELEGRAM_ALLOWED_USER_ID` check; silently ignores unauthorized senders
