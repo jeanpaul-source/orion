@@ -54,7 +54,7 @@ User types query
       → response rendered
 
   fact path:
-      → KnowledgeBase.search(query, threshold=0.45, top_k=8)
+      → KnowledgeBase.search(query, threshold=0.5, top_k=3)
       → VLLMClient.chat(kb_chunks + query)
       → response rendered
 
