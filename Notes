@@ -1,37 +1,58 @@
-#this is a notes file for the user
-#for keeping track of differnt ideas that come up during the development process but that don't necessarily fit into the codebase yet
-#these notes can be used to brainstorm new features, document design decisions, or keep track of any other relevant information that may be useful for the development of the project
+# Development Notes
 
-#bandit - for security analysis of the codebase to identify potential vulnerabilities and ensure secure coding practices
-#add as: make security-scan (don't add to pre-commit until existing findings are triaged)
+These notes track architecture and workflow decisions for Orion.
 
-#1. Implement Multi-Root Workspaces - For complex agentic systems—which often involve a backend API, a frontend, and the agent logic itself—use Multi-root Workspaces. This allows you to:
-#-Isolate Components: Keep your agent's core logic, Model Context Protocol (MCP) servers, and documentation in separate folders within one window.
-#-Customize per Folder: Apply specific linters, interpreters, or settings for your agent logic (e.g., Python for LangChain) without affecting your UI code.
-#-Scoped Search: Use the ./folder_name syntax in global search to focus an agent's context on specific parts of your homelab setup
-#2.Configure Agent-Specific Context - To make your agents more effective, define their behavior and boundaries within the workspace:
-#-Custom Agent Files: Create .agent.md files in the .github/agents (standard) or .claude/agents (Claude format) folder. These files define the agent's name, instructions, and available tools, providing a clear context for the agent's operation.
-#MCP Server Integration - Set up MCP servers to serve specific folders as context for your agents. For example, you could have one MCP server serving the ./knowledge folder for a knowledge agent and another serving ./state for a state management agent. This allows each agent to access only the relevant information it needs to function effectively.
-#Project Instructions: Use /init in chat to generate a starter configuration that helps agents understand the project structure and their role within it. This can include instructions on how to use the MCP servers, where to find documentation, and how to interact with other components of the system.
-#3. Use Background and Parallel Agents - For building and testing, leverage different agent modes:
-#Background Agents: Use these for long-running tasks like implementing a large feature plan. They use Git worktrees to isolate file changes from your main workspace, preventing conflicts and allowing you to work on multiple features simultaneously.
-#Parallel Agents: Use these for testing different approaches to a problem. They can run in separate workspaces, allowing you to compare results without interference. This is especially useful for experimenting with different algorithms
-#4. Leverage Agent Tools and Extensions - To enhance your agents' capabilities, integrate tools and extensions:
-#-VS Code Extensions: Use extensions like GitLens for better Git integration, Python for code editing, and REST Client for testing APIs. These tools can help your agents interact with the codebase more effectively and provide better feedback.
+## 1. Implement Multi-Root Workspaces
 
+- Isolate components by keeping each major area in its own folder.
+- Customize settings per folder for language, lint, and test behavior.
+- Use scoped search (for example `./folder`) to reduce noise.
 
-#set up fire wall agent
+## 2. Configure Agent-Specific Context
 
-#this agent will be responsible for monitoring the user's network traffic and blocking any malicious traffic
-#it will also be responsible for alerting the user of any potential threats and providing recommendations for improving their network security
-#the fire wall agent will be set up to run in the background and will be configured to automatically update its threat database to ensure that it is always up to date with the latest threats
+- Create dedicated agent context files for each role.
+- Set up MCP servers per context directory so each agent sees only relevant
+  data.
+- Use `/init` to generate project instructions and startup guidance.
 
-#1. file system agent - developed to catalog and organize old and new files, making it easier for the user to find and access their documents
+## 3. Use Background and Parallel Agents
 
-#2. email agent - designed to manage the user's email inbox, filter out spam, and prioritize important messages, ensuring that the user stays on top of their communications
+For building and testing, use different agent modes:
 
-#3. calendar agent - to help manage the different applications and calendars the user uses, providing a unified view of their schedule and sending reminders for important events
+- Background agents for long-running implementation work.
+- Parallel agents for trying multiple approaches at the same time.
 
-#4. task agent - to help the user manage their tasks and to-do lists, providing reminders and prioritization to ensure important tasks are completed on time
+## 4. Leverage Agent Tools and Extensions
 
-#5. security agent - to monitor the user's system for any potential security threats, providing alerts and recommendations for improving the user's overall security posture and propose solutions to any security issues that arise
+To improve agent output quality, use supporting tools:
+
+- VS Code extensions such as GitLens, Python, and REST Client.
+
+## Set up Firewall Agent
+
+This agent monitors network traffic and blocks malicious activity.
+It should also alert on potential threats and recommend hardening steps.
+Run it in the background and keep threat data updated automatically.
+
+## Planned Agents
+
+### 1. File system agent
+
+Developed to catalog and organize old and new files so users can find
+documents quickly.
+
+### 2. Email agent
+
+Designed to manage inboxes, filter spam, and prioritize important messages.
+
+### 3. Calendar agent
+
+Provides a unified schedule view across calendar systems and sends reminders.
+
+### 4. Task agent
+
+Helps manage tasks and to-do lists with prioritization and reminders.
+
+### 5. Security agent
+
+Monitors for threats and recommends remediation actions.
