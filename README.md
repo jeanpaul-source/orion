@@ -575,6 +575,7 @@ cp .env.example .env
 | `HAL_LOG_LEVEL` | `INFO` | Root log level (DEBUG, INFO, WARNING, ERROR) |
 | `HAL_LOG_JSON` | `1` | When `1`/true, logs are JSON; set `0` to use plain text formatter |
 | `PROM_PUSHGATEWAY` | *(empty)* | When set, emit metrics via Pushgateway. Server: `http://localhost:9092`. Laptop: `http://192.168.5.10:9092`. `flush_metrics()` batches all metrics per turn in a single POST. |
+| `HAL_INSTANCE` | *(hostname)* | Instance label for Pushgateway grouping — isolates laptop vs server metrics. Set to `laptop` on laptop, `the-lab` on server. Defaults to `socket.gethostname()` if not set. |
 
 ---
 
@@ -610,8 +611,10 @@ HAL includes optional, zero-downtime observability that you can enable via envir
 - Metrics (Prometheus Pushgateway):
   - Set `PROM_PUSHGATEWAY=http://192.168.5.10:9092` (laptop) or `http://localhost:9092` (server)
   - Pushgateway is deployed on the server at port 9092 (`prom/pushgateway:v1.10.0`); Prometheus scrapes it with `honor_labels: true`
-  - `flush_metrics()` is called at the end of each turn and batches all counters + histograms into a single Pushgateway POST — one POST per turn, not per metric call
-  - If not set, metrics calls are no-ops
+  - `HAL_INSTANCE` partitions metrics by host — laptop pushes to `/metrics/job/hal/instance/laptop`, server to `/metrics/job/hal/instance/the-lab`; no clobbering between instances
+  - A background daemon thread (`start_metrics_heartbeat()`) pushes every 30 seconds regardless of query activity — Grafana reflects live HAL presence, not just query pulses
+  - If `PROM_PUSHGATEWAY` is not set, all metric calls and the heartbeat are no-ops
+- Grafana dashboard (`uid: hal-overview`): **Instance** dropdown filters all panels to a single host or shows both merged (default: All)
 
 Emitted metric names (labels in braces):
 - hal_requests_total{intent, outcome}
