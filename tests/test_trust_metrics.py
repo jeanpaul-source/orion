@@ -2,6 +2,7 @@
 
 These tests are self-contained and do not touch the real ~/.orion/audit.log.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,8 +32,13 @@ def test_load_audit_log_parses_events(tmp_path):
     events = list(load_audit_log(p))
     assert len(events) == 7
     # Check one auto and one approved/denied
-    assert any(ev.status == "auto" and ev.action_type.strip() == "search_kb" for ev in events)
-    assert any(ev.status == "approved" and ev.action_type.strip() == "run_command" for ev in events)
+    assert any(
+        ev.status == "auto" and ev.action_type.strip() == "search_kb" for ev in events
+    )
+    assert any(
+        ev.status == "approved" and ev.action_type.strip() == "run_command"
+        for ev in events
+    )
     assert any(ev.status == "denied" and ev.tier == 3 for ev in events)
     # Action class extraction
     classes = {ev.action_class for ev in events if ev.action_class}
@@ -102,7 +108,14 @@ def test_dispatch_integration_via_agent_tool(tmp_path, monkeypatch):
     executor = MagicMock()
     judge = MagicMock()
 
-    out = _dispatch("get_action_stats", {"action_pattern": "docker restart"}, executor, judge, kb, prom)
+    out = _dispatch(
+        "get_action_stats",
+        {"action_pattern": "docker restart"},
+        executor,
+        judge,
+        kb,
+        prom,
+    )
     data = json.loads(out)
     assert data["total"] == 1
     assert data["approved"] == 1

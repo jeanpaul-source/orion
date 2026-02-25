@@ -11,6 +11,7 @@ VLLMClient under the hood with specialized system prompts to:
 They are intentionally minimal in v1 — pure LLM wrappers with clear
 roles and structured-but-freeform text outputs.
 """
+
 from __future__ import annotations
 
 from typing import Protocol
@@ -173,8 +174,11 @@ class CriticAgent:
 
         # Build a single user message that includes both query and plan.
         critique_prompt = (
-            "Operator query:\n" + user_input.strip() + "\n\n" +
-            "Planner's plan:\n" + plan.strip()
+            "Operator query:\n"
+            + user_input.strip()
+            + "\n\n"
+            + "Planner's plan:\n"
+            + plan.strip()
         )
 
         messages: list[dict] = []

@@ -3,6 +3,7 @@
 This module keeps runtime dependencies minimal and only uses HTTP queries.
 It also provides optional metric helpers (no-op when prom pushgateway is absent).
 """
+
 import os
 import socket
 import threading
@@ -65,8 +66,12 @@ class PrometheusClient:
 
 # ----------------------------- Optional instruments ----------------------------- #
 _lock = threading.Lock()
-_counters: dict[tuple, float] = {}  # (metric_name, frozenset(labels)) → cumulative total
-_gauges: dict[tuple, float] = {}    # (metric_name, frozenset(labels)) → last observed value
+_counters: dict[
+    tuple, float
+] = {}  # (metric_name, frozenset(labels)) → cumulative total
+_gauges: dict[
+    tuple, float
+] = {}  # (metric_name, frozenset(labels)) → last observed value
 
 
 @dataclass
@@ -105,11 +110,19 @@ def flush_metrics() -> None:
     with _lock:
         lines: list[str] = []
         for (metric, labels_fs), value in _counters.items():
-            label_str = ",".join(f'{k}="{v}"' for k, v in sorted(dict(labels_fs).items()))
-            lines.append(f"{metric}{{{label_str}}} {value}" if label_str else f"{metric} {value}")
+            label_str = ",".join(
+                f'{k}="{v}"' for k, v in sorted(dict(labels_fs).items())
+            )
+            lines.append(
+                f"{metric}{{{label_str}}} {value}" if label_str else f"{metric} {value}"
+            )
         for (metric, labels_fs), value in _gauges.items():
-            label_str = ",".join(f'{k}="{v}"' for k, v in sorted(dict(labels_fs).items()))
-            lines.append(f"{metric}{{{label_str}}} {value}" if label_str else f"{metric} {value}")
+            label_str = ",".join(
+                f'{k}="{v}"' for k, v in sorted(dict(labels_fs).items())
+            )
+            lines.append(
+                f"{metric}{{{label_str}}} {value}" if label_str else f"{metric} {value}"
+            )
     if not lines:
         return
     instance = os.getenv("HAL_INSTANCE", socket.gethostname())

@@ -7,6 +7,7 @@ To add a test for a misrouted query you observed:
   1. Add the query string to the appropriate list below.
   2. Run pytest — if it fails, add a matching example sentence to hal/intent.py.
 """
+
 import pytest
 
 # All tests in this module require a live Ollama instance for embeddings.
@@ -67,6 +68,7 @@ CONVERSATIONAL_QUERIES = [
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("query", HEALTH_QUERIES)
 def test_health_queries(classifier, query):
     """Health questions should route to the health handler (no tool loop)."""
@@ -111,7 +113,7 @@ def test_low_confidence_falls_back_to_agentic(classifier):
     """Queries with no clear intent match should fall through to agentic (safe default)."""
     # A deeply novel technical phrase that matches no category example well.
     # If this starts failing, the threshold may need raising.
-    intent, confidence = classifier.classify("recalibrate the flux capacitor")  
+    intent, confidence = classifier.classify("recalibrate the flux capacitor")
     assert intent == "agentic", (
         f"Low-confidence query routed to '{intent}' (confidence {confidence:.2f}). "
         f"Expected 'agentic' fallback for queries that don't match any category well."

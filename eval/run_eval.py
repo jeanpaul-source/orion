@@ -13,6 +13,7 @@ Safety:
     - Executor stub returns a placeholder string if a command somehow reaches it
     - A fresh throwaway session is created so eval turns don't appear in real memory
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,6 +44,7 @@ console = Console(stderr=True)  # progress to stderr so stdout stays clean
 
 # ── Safety shims ─────────────────────────────────────────────────────────────
 
+
 class _MockExecutor(SSHExecutor):
     """Never runs anything — returns a stub result for every command."""
 
@@ -70,11 +72,19 @@ class _EvalJudge(Judge):
         if tier is None:
             tier = tier_for(action_type, detail)
         approved = tier == 0
-        self._log(action_type, detail, tier, approved=approved, auto=True, reason=f"eval:{reason}")
+        self._log(
+            action_type,
+            detail,
+            tier,
+            approved=approved,
+            auto=True,
+            reason=f"eval:{reason}",
+        )
         return approved
 
 
 # ── Runner ────────────────────────────────────────────────────────────────────
+
 
 def _load_queries(path: Path) -> list[dict]:
     queries = []
@@ -115,8 +125,17 @@ def _run_query(
         response = run_fact(query, history, llm, kb, mem, session_id, system, quiet)
     else:
         response = run_agent(
-            query, history, llm, kb, prom, executor, judge,
-            mem, session_id, system, quiet,
+            query,
+            history,
+            llm,
+            kb,
+            prom,
+            executor,
+            judge,
+            mem,
+            session_id,
+            system,
+            quiet,
         )
 
     return response, intent, confidence
@@ -127,7 +146,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--queries", type=Path, default=DEFAULT_QUERIES)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument(
-        "--fail-fast", action="store_true",
+        "--fail-fast",
+        action="store_true",
         help="Stop on first error instead of continuing",
     )
     args = parser.parse_args(argv)
@@ -147,7 +167,9 @@ def main(argv: list[str] | None = None) -> None:
     # Build clients
     llm = VLLMClient(config.vllm_url, config.chat_model)
     if not llm.ping():
-        console.print(f"[red]vLLM not responding at {config.vllm_url}. Is it running?[/]")
+        console.print(
+            f"[red]vLLM not responding at {config.vllm_url}. Is it running?[/]"
+        )
         sys.exit(1)
 
     embed = OllamaClient(config.ollama_host, "", config.embed_model)
@@ -163,9 +185,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Fresh throwaway session — won't interfere with real sessions
     session_id = mem.new_session()
-    mem.conn.execute(
-        "UPDATE sessions SET label=? WHERE id=?", ("eval-run", session_id)
-    )
+    mem.conn.execute("UPDATE sessions SET label=? WHERE id=?", ("eval-run", session_id))
     mem.conn.commit()
 
     console.print("[dim]Building intent classifier...[/]")
@@ -185,8 +205,17 @@ def main(argv: list[str] | None = None) -> None:
             )
             try:
                 response, intent, confidence = _run_query(
-                    query, classifier, llm, embed, kb, prom,
-                    executor, judge, mem, session_id, SYSTEM,
+                    query,
+                    classifier,
+                    llm,
+                    embed,
+                    kb,
+                    prom,
+                    executor,
+                    judge,
+                    mem,
+                    session_id,
+                    SYSTEM,
                 )
                 row = {
                     "query": query,
@@ -202,7 +231,7 @@ def main(argv: list[str] | None = None) -> None:
                 results.append(row)
                 console.print(
                     f"  intent={intent} ({confidence:.2f})  "
-                    f"response={len(response)}c  preview: {response[:60].replace(chr(10),' ')!r}"
+                    f"response={len(response)}c  preview: {response[:60].replace(chr(10), ' ')!r}"
                 )
             except Exception as exc:
                 errors += 1

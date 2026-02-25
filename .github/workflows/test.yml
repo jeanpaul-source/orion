@@ -25,5 +25,8 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      - name: Format check
+        run: ruff format --check .
+
       - name: Test (offline)
         run: pytest tests/test_judge.py tests/test_memory.py tests/test_agent_loop.py -v

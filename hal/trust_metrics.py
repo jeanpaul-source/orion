@@ -17,6 +17,7 @@ Where:
 We parse len(parts) in {4,5} when splitting on " | ". Lines that do not match
 are skipped (robust to future tweaks).
 """
+
 from __future__ import annotations
 
 import os
@@ -29,6 +30,7 @@ from typing import Dict, Iterable, Iterator, Optional
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class AuditEvent:
@@ -64,7 +66,9 @@ class CounterStats:
             "approved": self.approved,
             "denied": self.denied,
             "errors": self.errors,
-            "last_timestamp": self.last_timestamp.isoformat(timespec="seconds") if self.last_timestamp else None,
+            "last_timestamp": self.last_timestamp.isoformat(timespec="seconds")
+            if self.last_timestamp
+            else None,
         }
 
 
@@ -202,7 +206,10 @@ def load_audit_log(path: Path | str | None = None) -> Iterator[AuditEvent]:
 # Aggregation
 # ---------------------------------------------------------------------------
 
-def aggregate_stats(events: Iterable[AuditEvent]) -> Dict[str, Dict[str, Dict[str, object]]]:
+
+def aggregate_stats(
+    events: Iterable[AuditEvent],
+) -> Dict[str, Dict[str, Dict[str, object]]]:
     """Aggregate events into by_tool and by_action_class counters.
 
     Returns a dict with two maps: by_tool and by_action_class, each mapping key → stats dict.
@@ -229,6 +236,7 @@ def aggregate_stats(events: Iterable[AuditEvent]) -> Dict[str, Dict[str, Dict[st
 # ---------------------------------------------------------------------------
 # Public API: get_action_stats
 # ---------------------------------------------------------------------------
+
 
 def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, object]:
     """Return aggregated stats for events matching a pattern.

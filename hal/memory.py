@@ -1,4 +1,5 @@
 """SQLite-backed session and conversation history store."""
+
 import logging
 import sqlite3
 import uuid
@@ -85,7 +86,9 @@ class MemoryStore:
 
     def save_turn(self, session_id: str, role: str, content: str) -> None:
         if role == "assistant" and is_poison_response(content):
-            log.warning("save_turn: dropping poison assistant turn (raw tool-call JSON)")
+            log.warning(
+                "save_turn: dropping poison assistant turn (raw tool-call JSON)"
+            )
             return
         self.conn.execute(
             "INSERT INTO turns (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
@@ -163,7 +166,9 @@ class MemoryStore:
         )
         self.conn.commit()
         if deleted:
-            log.info("prune_old_turns: removed %d turns older than %d days", deleted, days)
+            log.info(
+                "prune_old_turns: removed %d turns older than %d days", deleted, days
+            )
         return deleted
 
     def close(self) -> None:

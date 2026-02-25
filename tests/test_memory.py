@@ -5,6 +5,7 @@ file in a tmp directory so the path/schema logic is also exercised.
 
 Run with: pytest tests/test_memory.py -v
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -27,8 +28,8 @@ CLEAN_STRINGS = [
     "The CPU is at 40% usage.",
     "Prometheus is running on port 9091.",
     "",
-    '{"error": "something went wrong"}',         # JSON but not a tool call
-    '{"status": "ok", "code": 200}',              # JSON but not a tool call
+    '{"error": "something went wrong"}',  # JSON but not a tool call
+    '{"status": "ok", "code": 200}',  # JSON but not a tool call
     "Sure, I can help with that.",
     "I don't know the answer to that question.",
     # Partial matches should not trigger
@@ -51,6 +52,7 @@ def test_poison_detection_false(text):
 # ---------------------------------------------------------------------------
 # MemoryStore — save_turn() poison guard
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def mem(tmp_path, monkeypatch):
@@ -94,7 +96,9 @@ def test_save_turn_mixed_session(mem):
     """In a real exchange, user turns are kept and poison assistant turns are dropped."""
     sid = mem.new_session()
     mem.save_turn(sid, "user", "check the lab")
-    mem.save_turn(sid, "assistant", '{"name": "get_metrics", "arguments": {}}')  # poison
+    mem.save_turn(
+        sid, "assistant", '{"name": "get_metrics", "arguments": {}}'
+    )  # poison
     mem.save_turn(sid, "user", "what is the CPU usage?")
     mem.save_turn(sid, "assistant", "CPU is at 35%.")  # clean
 
@@ -110,6 +114,7 @@ def test_save_turn_mixed_session(mem):
 # ---------------------------------------------------------------------------
 # MemoryStore — prune_old_turns()
 # ---------------------------------------------------------------------------
+
 
 def test_prune_removes_old_turns(mem):
     """Turns older than the cutoff must be deleted."""
@@ -184,6 +189,7 @@ def test_prune_mixed(mem):
 # ---------------------------------------------------------------------------
 # MemoryStore — create_session() (caller-chosen ID)
 # ---------------------------------------------------------------------------
+
 
 def test_create_session_with_custom_id(mem):
     """create_session() should accept an arbitrary string ID."""

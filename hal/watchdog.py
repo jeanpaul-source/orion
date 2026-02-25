@@ -7,6 +7,7 @@ state file so it doesn't spam the same alert repeatedly.
 Usage:
     python -m hal.watchdog
 """
+
 import json
 import subprocess
 import sys
@@ -26,11 +27,11 @@ HARVEST_LAG_HOURS = 2
 
 # metric_key: (threshold, label, urgency)
 THRESHOLDS: dict[str, tuple[float, str, str]] = {
-    "cpu_pct":      (85.0,  "CPU usage",       "default"),
-    "mem_pct":      (90.0,  "Memory usage",    "high"),
-    "disk_root_pct":(85.0,  "Disk / usage",    "high"),
-    "swap_pct":     (80.0,  "Swap usage",      "urgent"),
-    "load1":        (16.0,  "Load average",    "default"),  # 16 on a 20-core machine
+    "cpu_pct": (85.0, "CPU usage", "default"),
+    "mem_pct": (90.0, "Memory usage", "high"),
+    "disk_root_pct": (85.0, "Disk / usage", "high"),
+    "swap_pct": (80.0, "Swap usage", "urgent"),
+    "load1": (16.0, "Load average", "default"),  # 16 on a 20-core machine
 }
 
 
@@ -96,7 +97,9 @@ def _check_ntp() -> str | None:
     try:
         out = subprocess.run(
             ["timedatectl", "show", "--property=NTPSynchronized"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout.strip()
         if out == "NTPSynchronized=no":
             return "NTP not synchronized — clock may drift"
@@ -119,7 +122,9 @@ def _check_harvest() -> str | None:
     return None
 
 
-def _send_ntfy_simple(ntfy_url: str, messages: list[str], urgency: str = "high") -> bool:
+def _send_ntfy_simple(
+    ntfy_url: str, messages: list[str], urgency: str = "high"
+) -> bool:
     """Send a free-form ntfy notification for non-metric alerts. Returns True on success."""
     if not ntfy_url:
         return False
@@ -151,7 +156,9 @@ def run() -> None:
         sys.exit(0)  # not an alert-worthy failure, just unavailable
 
     state = _load_state()
-    alerts: list[tuple[str, float, float, str]] = []  # (label, value, threshold, urgency)
+    alerts: list[
+        tuple[str, float, float, str]
+    ] = []  # (label, value, threshold, urgency)
     fired: list[str] = []
 
     for key, (threshold, label, urgency) in THRESHOLDS.items():
@@ -174,7 +181,9 @@ def run() -> None:
         if ok:
             _log(f"ntfy sent: {', '.join(fired)}")
         else:
-            _log(f"ntfy FAILED (url={'set' if config.ntfy_url else 'not set'}): {', '.join(fired)}")
+            _log(
+                f"ntfy FAILED (url={'set' if config.ntfy_url else 'not set'}): {', '.join(fired)}"
+            )
         # Update state with alert timestamps
         now = datetime.now().isoformat(timespec="seconds")
         for key in fired:
@@ -203,7 +212,9 @@ def run() -> None:
         if ok:
             _log(f"ntfy sent: {', '.join(simple_fired)}")
         else:
-            _log(f"ntfy FAILED (url={'set' if config.ntfy_url else 'not set'}): {', '.join(simple_fired)}")
+            _log(
+                f"ntfy FAILED (url={'set' if config.ntfy_url else 'not set'}): {', '.join(simple_fired)}"
+            )
         now = datetime.now().isoformat(timespec="seconds")
         for key in simple_fired:
             state[key] = now

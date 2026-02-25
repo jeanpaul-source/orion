@@ -7,6 +7,7 @@ probe — prompts the user before running).
 Worker signature mirrors hal/workers.py:
     func(..., executor: SSHExecutor, judge: Judge, reason: str = "") -> result
 """
+
 from __future__ import annotations
 
 import json
@@ -29,7 +30,8 @@ _FALCO_NOISE: list = [
     ),
     # systemd-tmpfile reads /etc/shadow on boot — not interesting
     lambda e: (
-        e.get("output_fields", {}).get("proc.name") in ("systemd-tmpfile", "unix_chkpwd")
+        e.get("output_fields", {}).get("proc.name")
+        in ("systemd-tmpfile", "unix_chkpwd")
         and "/etc/shadow" in e.get("output_fields", {}).get("fd.name", "")
     ),
 ]
@@ -43,6 +45,7 @@ def _is_noise(event: dict) -> bool:
 # 1. Falco security events
 # ---------------------------------------------------------------------------
 
+
 def get_security_events(
     executor: SSHExecutor,
     judge: Judge,
@@ -54,7 +57,9 @@ def get_security_events(
     Each returned dict has: time, rule, priority, proc_name, fd_name, output.
     Returns an empty list on any failure.
     """
-    if not judge.approve("get_security_events", f"tail -n {n} /var/log/falco/events.json", reason=reason):
+    if not judge.approve(
+        "get_security_events", f"tail -n {n} /var/log/falco/events.json", reason=reason
+    ):
         return []
 
     result = executor.run(f"tail -n {shlex.quote(str(n))} /var/log/falco/events.json")
@@ -74,14 +79,16 @@ def get_security_events(
         if _is_noise(event):
             continue
         fields = event.get("output_fields", {})
-        events.append({
-            "time":      event.get("time", ""),
-            "rule":      event.get("rule", ""),
-            "priority":  event.get("priority", ""),
-            "proc_name": fields.get("proc.name", ""),
-            "fd_name":   fields.get("fd.name", ""),
-            "output":    event.get("output", ""),
-        })
+        events.append(
+            {
+                "time": event.get("time", ""),
+                "rule": event.get("rule", ""),
+                "priority": event.get("priority", ""),
+                "proc_name": fields.get("proc.name", ""),
+                "fd_name": fields.get("fd.name", ""),
+                "output": event.get("output", ""),
+            }
+        )
 
     return events
 
@@ -122,29 +129,34 @@ def get_host_connections(
             "arp":           [ {address, mac, interface, permanent}, ... ],
         }
     """
-    if not judge.approve("get_host_connections", "osqueryi: listening_ports, process_open_sockets, arp_cache", reason=reason):
+    if not judge.approve(
+        "get_host_connections",
+        "osqueryi: listening_ports, process_open_sockets, arp_cache",
+        reason=reason,
+    ):
         return {}
 
     def _run_query(sql: str) -> list[dict] | str:
         cmd = f"sudo osqueryi --json {shlex.quote(sql)}"
         r = executor.run(cmd)
         if r["returncode"] != 0:
-            return f"query failed: {r.get('stderr','').strip()}"
+            return f"query failed: {r.get('stderr', '').strip()}"
         try:
             return json.loads(r["stdout"])
         except json.JSONDecodeError as exc:
             return f"json parse error: {exc}"
 
     return {
-        "listening":   _run_query(_LISTENING_SQL),
+        "listening": _run_query(_LISTENING_SQL),
         "connections": _run_query(_ESTABLISHED_SQL),
-        "arp":         _run_query(_ARP_SQL),
+        "arp": _run_query(_ARP_SQL),
     }
 
 
 # ---------------------------------------------------------------------------
 # 3. ntopng traffic summary
 # ---------------------------------------------------------------------------
+
 
 def get_traffic_summary(
     executor: SSHExecutor,
@@ -161,16 +173,20 @@ def get_traffic_summary(
             "top_flows":  [ {src_ip, src_port, dst_ip, dst_port, bytes, ...}, ... ],
         }
     """
-    if not judge.approve("get_traffic_summary", f"ntopng REST at {ntopng_url}", reason=reason):
+    if not judge.approve(
+        "get_traffic_summary", f"ntopng REST at {ntopng_url}", reason=reason
+    ):
         return {}
 
-    iface_url  = f"{ntopng_url}/lua/rest/v2/get/interface/data.lua?ifid=0"
-    flows_url  = f"{ntopng_url}/lua/rest/v2/get/flow/active.lua?ifid=0&perPage={top_flows}"
+    iface_url = f"{ntopng_url}/lua/rest/v2/get/interface/data.lua?ifid=0"
+    flows_url = (
+        f"{ntopng_url}/lua/rest/v2/get/flow/active.lua?ifid=0&perPage={top_flows}"
+    )
 
     def _curl(url: str) -> dict | list | str:
         r = executor.run(f"curl -s {shlex.quote(url)}")
         if r["returncode"] != 0:
-            return f"curl failed: {r.get('stderr','').strip()}"
+            return f"curl failed: {r.get('stderr', '').strip()}"
         try:
             return json.loads(r["stdout"])
         except json.JSONDecodeError as exc:
@@ -178,13 +194,14 @@ def get_traffic_summary(
 
     return {
         "interface": _curl(iface_url),
-        "top_flows":  _curl(flows_url),
+        "top_flows": _curl(flows_url),
     }
 
 
 # ---------------------------------------------------------------------------
 # 4. Nmap LAN scan
 # ---------------------------------------------------------------------------
+
 
 def _parse_nmap_xml(xml_text: str) -> list[dict]:
     """Extract host records from nmap XML output.
@@ -199,7 +216,11 @@ def _parse_nmap_xml(xml_text: str) -> list[dict]:
     hosts: list[dict] = []
     for host in root.findall("host"):
         status_el = host.find("status")
-        state = status_el.attrib.get("state", "unknown") if status_el is not None else "unknown"
+        state = (
+            status_el.attrib.get("state", "unknown")
+            if status_el is not None
+            else "unknown"
+        )
 
         ip = mac = vendor = ""
         for addr in host.findall("address"):
@@ -207,7 +228,7 @@ def _parse_nmap_xml(xml_text: str) -> list[dict]:
             if atype == "ipv4":
                 ip = addr.attrib.get("addr", "")
             elif atype == "mac":
-                mac    = addr.attrib.get("addr", "")
+                mac = addr.attrib.get("addr", "")
                 vendor = addr.attrib.get("vendor", "")
 
         # hostname (if resolved by nmap)
@@ -218,13 +239,15 @@ def _parse_nmap_xml(xml_text: str) -> list[dict]:
             if hn is not None:
                 hostname = hn.attrib.get("name", "")
 
-        hosts.append({
-            "ip":         ip,
-            "mac":        mac,
-            "mac_vendor": vendor,
-            "hostname":   hostname,
-            "status":     state,
-        })
+        hosts.append(
+            {
+                "ip": ip,
+                "mac": mac,
+                "mac_vendor": vendor,
+                "hostname": hostname,
+                "status": state,
+            }
+        )
     return hosts
 
 

@@ -1,4 +1,5 @@
 """LLM clients — OllamaClient (embeddings only) and VLLMClient (chat via OpenAI-compatible API)."""
+
 import json
 import re
 import uuid
@@ -41,14 +42,16 @@ def _extract_tool_calls_from_content(content: str) -> list[dict]:
         args = data.get("arguments") or data.get("parameters") or {}
         if not name:
             continue
-        calls.append({
-            "id": f"call_{uuid.uuid4().hex[:8]}",
-            "type": "function",
-            "function": {
-                "name": name,
-                "arguments": args if isinstance(args, str) else json.dumps(args),
-            },
-        })
+        calls.append(
+            {
+                "id": f"call_{uuid.uuid4().hex[:8]}",
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": args if isinstance(args, str) else json.dumps(args),
+                },
+            }
+        )
     return calls
 
 
@@ -105,6 +108,7 @@ class VLLMClient:
     ) -> dict:
         """Non-streaming chat with tool schemas. Returns the full message dict."""
         import time
+
         t0 = time.perf_counter()
         outcome = "ok"
         with get_tracer().start_as_current_span("hal.llm.chat_with_tools") as span:
@@ -133,7 +137,9 @@ class VLLMClient:
             except Exception as e:
                 outcome = "error"
                 LLM_REQ_TOTAL.inc(endpoint="chat_with_tools", outcome=outcome)
-                LLM_REQ_LATENCY.observe(time.perf_counter() - t0, endpoint="chat_with_tools")
+                LLM_REQ_LATENCY.observe(
+                    time.perf_counter() - t0, endpoint="chat_with_tools"
+                )
                 log.error("vllm chat_with_tools failed: %s", e)
                 raise
             result = data["choices"][0]["message"]
@@ -149,14 +155,20 @@ class VLLMClient:
             has_tool_calls = bool(result.get("tool_calls"))
             span.set_attribute("llm.has_tool_calls", has_tool_calls)
             if has_tool_calls:
-                names = [tc.get("function", {}).get("name", "") for tc in result["tool_calls"]]
+                names = [
+                    tc.get("function", {}).get("name", "")
+                    for tc in result["tool_calls"]
+                ]
                 span.set_attribute("llm.tool_calls", ",".join(names))
             # Basic token accounting if server returns usage
-            usage = data.get("usage") if 'data' in locals() else None
+            usage = data.get("usage") if "data" in locals() else None
             if usage:
                 span.set_attribute("llm.prompt_tokens", usage.get("prompt_tokens", 0))
-                span.set_attribute("llm.completion_tokens", usage.get("completion_tokens", 0))
+                span.set_attribute(
+                    "llm.completion_tokens", usage.get("completion_tokens", 0)
+                )
             import time as _t
+
             LLM_REQ_TOTAL.inc(endpoint="chat_with_tools", outcome=outcome)
             LLM_REQ_LATENCY.observe(_t.perf_counter() - t0, endpoint="chat_with_tools")
             return result
@@ -166,6 +178,7 @@ class VLLMClient:
     ) -> str:
         """Non-streaming chat — returns full response string."""
         import time
+
         t0 = time.perf_counter()
         outcome = "ok"
         with get_tracer().start_as_current_span("hal.llm.chat") as span:
@@ -200,8 +213,11 @@ class VLLMClient:
             usage = data.get("usage")
             if usage:
                 span.set_attribute("llm.prompt_tokens", usage.get("prompt_tokens", 0))
-                span.set_attribute("llm.completion_tokens", usage.get("completion_tokens", 0))
+                span.set_attribute(
+                    "llm.completion_tokens", usage.get("completion_tokens", 0)
+                )
             import time as _t
+
             LLM_REQ_TOTAL.inc(endpoint="chat", outcome=outcome)
             LLM_REQ_LATENCY.observe(_t.perf_counter() - t0, endpoint="chat")
             return content

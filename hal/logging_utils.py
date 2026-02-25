@@ -6,6 +6,7 @@ Exposes get_logger(name) and setup_logging(level) to configure root logging.
 Adds request/session correlation using contextvars. Other modules can set
 context via set_context(session_id=..., turn_id=...).
 """
+
 from __future__ import annotations
 
 import json
@@ -30,6 +31,7 @@ class JsonFormatter(logging.Formatter):
         # Attach tracing/context info if present
         try:
             from opentelemetry import trace  # type: ignore
+
             span = trace.get_current_span()
             ctx = span.get_span_context() if span else None
             if ctx and ctx.is_valid:

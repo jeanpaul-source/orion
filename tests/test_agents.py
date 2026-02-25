@@ -7,6 +7,7 @@ that the sub-agents:
 - Pass the operator query (and plan) into the user message
 - Return the underlying LLM response text unchanged
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -25,7 +26,9 @@ def test_planner_uses_system_prompt_and_returns_text() -> None:
     """
 
     mock_llm = MagicMock()
-    mock_response = "PLAN:\n1. Do the thing.\n\nASSUMPTIONS:\n- none.\n\nRISKS:\n- minimal."
+    mock_response = (
+        "PLAN:\n1. Do the thing.\n\nASSUMPTIONS:\n- none.\n\nRISKS:\n- minimal."
+    )
     mock_llm.chat.return_value = mock_response
 
     agent = PlannerAgent(mock_llm)
@@ -36,7 +39,7 @@ def test_planner_uses_system_prompt_and_returns_text() -> None:
 
     # LLM.chat should have been called exactly once with the planner system prompt.
     mock_llm.chat.assert_called_once()
-    messages, = mock_llm.chat.call_args[0]
+    (messages,) = mock_llm.chat.call_args[0]
     system = mock_llm.chat.call_args[1].get("system")
 
     assert system == PLANNER_SYSTEM_PROMPT
@@ -64,7 +67,7 @@ def test_critic_receives_plan_and_query_in_prompt() -> None:
     assert result == mock_response
 
     mock_llm.chat.assert_called_once()
-    messages, = mock_llm.chat.call_args[0]
+    (messages,) = mock_llm.chat.call_args[0]
     system = mock_llm.chat.call_args[1].get("system")
 
     assert system == CRITIC_SYSTEM_PROMPT

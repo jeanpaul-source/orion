@@ -103,6 +103,7 @@ class TestAuth:
     @pytest.fixture(autouse=True)
     def _set_allowed_user(self):
         import hal.telegram as mod
+
         original = mod.ALLOWED_USER_ID
         mod.ALLOWED_USER_ID = 999
         yield
@@ -134,6 +135,7 @@ class TestCmdNew:
     @pytest.fixture(autouse=True)
     def _set_allowed_user(self):
         import hal.telegram as mod
+
         original = mod.ALLOWED_USER_ID
         mod.ALLOWED_USER_ID = 999
         _sessions.clear()
@@ -163,6 +165,7 @@ class TestHandleMessage:
     @pytest.fixture(autouse=True)
     def _set_allowed_user(self):
         import hal.telegram as mod
+
         original = mod.ALLOWED_USER_ID
         mod.ALLOWED_USER_ID = 999
         _sessions.clear()
@@ -196,7 +199,9 @@ class TestHandleMessage:
 
         with patch("hal.telegram.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
-            mock_client.post = AsyncMock(side_effect=__import__("httpx").ConnectError("refused"))
+            mock_client.post = AsyncMock(
+                side_effect=__import__("httpx").ConnectError("refused")
+            )
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
             asyncio.run(handle_message(update, None))
@@ -208,6 +213,7 @@ class TestHandleMessage:
         update, thinking = _make_update(user_id=999, text="hello")
 
         import httpx as httpx_mod
+
         mock_response = MagicMock()
         mock_response.status_code = 503
 

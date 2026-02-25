@@ -1,4 +1,5 @@
 """Document parsers — extract plain text from HTML and PDF files."""
+
 import hashlib
 import logging
 import re
@@ -24,6 +25,7 @@ def detect_mime(file_path: Path) -> str:
     """Return MIME type from magic bytes, falling back to extension."""
     try:
         import magic
+
         return magic.from_file(str(file_path), mime=True)
     except Exception:
         return _EXT_MIME.get(file_path.suffix.lower(), "application/octet-stream")
@@ -47,8 +49,11 @@ def parse_pdf(file_path: Path) -> str | None:
         doc.close()
         combined = "\n\n".join(pages)
         if len(combined) < _MIN_TEXT_LENGTH:
-            log.debug("PDF too short after extraction (%d chars): %s",
-                      len(combined), file_path)
+            log.debug(
+                "PDF too short after extraction (%d chars): %s",
+                len(combined),
+                file_path,
+            )
             return None
         return combined
     except Exception as e:
@@ -72,6 +77,7 @@ def parse_html(file_path: Path) -> str | None:
     # Primary: trafilatura
     try:
         import trafilatura
+
         text = trafilatura.extract(raw)
         if text and len(text) >= _MIN_TEXT_LENGTH:
             return text

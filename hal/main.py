@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """HAL — Orion's coordinator. Run with: python -m hal"""
+
 import argparse
 import os
 import readline
@@ -88,7 +89,6 @@ Anything else is sent to HAL as a question (with knowledge base context).
 """
 
 
-
 def _connect(
     name: str, url: str, lab_user: str, lab_host: str, default_port: int
 ) -> tuple[str, SSHTunnel | None]:
@@ -109,7 +109,9 @@ def _connect(
 
     # Don't try to SSH-tunnel to ourselves — it can't help.
     if host in ("localhost", "127.0.0.1"):
-        console.print(f"[red]{name} is not reachable on {host}:{port} — is it running?[/]")
+        console.print(
+            f"[red]{name} is not reachable on {host}:{port} — is it running?[/]"
+        )
         sys.exit(1)
 
     console.print(f"[yellow]{name} not directly reachable — trying SSH tunnel...[/]")
@@ -129,7 +131,9 @@ def setup_clients(
     """Connect to vLLM (chat) and Ollama (embeddings). Returns both clients and any tunnels opened."""
     tunnels: list[SSHTunnel] = []
 
-    vllm_url, t = _connect("vLLM", config.vllm_url, config.lab_user, config.lab_host, 8000)
+    vllm_url, t = _connect(
+        "vLLM", config.vllm_url, config.lab_user, config.lab_host, 8000
+    )
     if t:
         tunnels.append(t)
     llm = VLLMClient(vllm_url, config.chat_model)
@@ -140,7 +144,9 @@ def setup_clients(
         )
         sys.exit(1)
 
-    ollama_url, t = _connect("Ollama", config.ollama_host, config.lab_user, config.lab_host, 11434)
+    ollama_url, t = _connect(
+        "Ollama", config.ollama_host, config.lab_user, config.lab_host, 11434
+    )
     if t:
         tunnels.append(t)
     embed = OllamaClient(ollama_url, config.embed_model)
@@ -174,7 +180,9 @@ def cmd_search(query: str, kb: KnowledgeBase) -> None:
         with console.status("searching...", spinner="dots"):
             chunks = kb.search(query, top_k=5)
         for i, c in enumerate(chunks, 1):
-            console.print(f"\n[bold]{i}. {c['file']}[/] [{c['category']}] score={c['score']:.3f}")
+            console.print(
+                f"\n[bold]{i}. {c['file']}[/] [{c['category']}] score={c['score']:.3f}"
+            )
             console.print(textwrap.indent(c["content"][:400].strip(), "   "))
     except Exception as e:
         console.print(f"[red]KB unavailable: {e}[/]")
@@ -309,8 +317,6 @@ def cmd_remember(fact: str, dsn: str, embed: OllamaClient) -> None:
     console.print(f"[green]remembered:[/] {fact}")
 
 
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="hal",
@@ -320,7 +326,9 @@ def main() -> None:
         "--new", action="store_true", help="start a fresh session (don't resume last)"
     )
     parser.add_argument(
-        "--print", dest="query", metavar="QUERY",
+        "--print",
+        dest="query",
+        metavar="QUERY",
         help="run a single query non-interactively, print the answer, and exit",
     )
     args = parser.parse_args()
@@ -371,7 +379,9 @@ def main() -> None:
                 f"[green]connected[/] \u2014 model: [bold]{config.chat_model}[/]  "
                 f"prom: {config.prometheus_url}"
             )
-            console.print(f"[dim]resumed session {session_id} ({exchanges} exchanges)[/]")
+            console.print(
+                f"[dim]resumed session {session_id} ({exchanges} exchanges)[/]"
+            )
     else:
         session_id = mem.new_session()
         history = []
@@ -388,13 +398,46 @@ def main() -> None:
             user_input = args.query.strip()
             intent, confidence = classifier.classify(user_input)
             if intent == "conversational":
-                run_conversational(user_input, history, llm, mem, session_id, SYSTEM_PROMPT, console)
+                run_conversational(
+                    user_input, history, llm, mem, session_id, SYSTEM_PROMPT, console
+                )
             elif intent == "health":
-                run_health(user_input, history, llm, prom, mem, session_id, SYSTEM_PROMPT, console)
+                run_health(
+                    user_input,
+                    history,
+                    llm,
+                    prom,
+                    mem,
+                    session_id,
+                    SYSTEM_PROMPT,
+                    console,
+                )
             elif intent == "fact":
-                run_fact(user_input, history, llm, kb, mem, session_id, SYSTEM_PROMPT, console)
+                run_fact(
+                    user_input,
+                    history,
+                    llm,
+                    kb,
+                    mem,
+                    session_id,
+                    SYSTEM_PROMPT,
+                    console,
+                )
             else:
-                run_agent(user_input, history, llm, kb, prom, executor, judge, mem, session_id, SYSTEM_PROMPT, console, ntopng_url=config.ntopng_url)
+                run_agent(
+                    user_input,
+                    history,
+                    llm,
+                    kb,
+                    prom,
+                    executor,
+                    judge,
+                    mem,
+                    session_id,
+                    SYSTEM_PROMPT,
+                    console,
+                    ntopng_url=config.ntopng_url,
+                )
         finally:
             for tunnel in tunnels:
                 tunnel.stop()
@@ -473,23 +516,49 @@ def main() -> None:
 
                     if intent == "conversational":
                         run_conversational(
-                            user_input, history, llm,
-                            mem, session_id, SYSTEM_PROMPT, console,
+                            user_input,
+                            history,
+                            llm,
+                            mem,
+                            session_id,
+                            SYSTEM_PROMPT,
+                            console,
                         )
                     elif intent == "health":
                         run_health(
-                            user_input, history, llm, prom,
-                            mem, session_id, SYSTEM_PROMPT, console,
+                            user_input,
+                            history,
+                            llm,
+                            prom,
+                            mem,
+                            session_id,
+                            SYSTEM_PROMPT,
+                            console,
                         )
                     elif intent == "fact":
                         run_fact(
-                            user_input, history, llm, kb,
-                            mem, session_id, SYSTEM_PROMPT, console,
+                            user_input,
+                            history,
+                            llm,
+                            kb,
+                            mem,
+                            session_id,
+                            SYSTEM_PROMPT,
+                            console,
                         )
                     else:
                         run_agent(
-                            user_input, history, llm, kb, prom,
-                            executor, judge, mem, session_id, SYSTEM_PROMPT, console,
+                            user_input,
+                            history,
+                            llm,
+                            kb,
+                            prom,
+                            executor,
+                            judge,
+                            mem,
+                            session_id,
+                            SYSTEM_PROMPT,
+                            console,
                             ntopng_url=config.ntopng_url,
                         )
 

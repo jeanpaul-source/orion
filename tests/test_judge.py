@@ -6,6 +6,7 @@ on the server. A silent regression here could auto-approve a destructive command
 
 Run with: pytest tests/test_judge.py -v
 """
+
 import pytest
 
 from hal.judge import classify_command, tier_for
@@ -173,29 +174,38 @@ def test_sensitive_path_commands_are_at_least_tier_1(cmd):
 # tier_for — non-command action types
 # ---------------------------------------------------------------------------
 
+
 def test_tier_for_search_kb():
     assert tier_for("search_kb") == 0
+
 
 def test_tier_for_get_metrics():
     assert tier_for("get_metrics") == 0
 
+
 def test_tier_for_remember_fact():
     assert tier_for("remember_fact") == 0
+
 
 def test_tier_for_write_file():
     assert tier_for("write_file") == 2
 
+
 def test_tier_for_read_file_normal():
     assert tier_for("read_file", "/opt/homelab-infrastructure/something.yml") == 0
+
 
 def test_tier_for_read_file_sensitive():
     assert tier_for("read_file", "/run/homelab-secrets/pgvector-kb.env") == 1
 
+
 def test_tier_for_list_dir_normal():
     assert tier_for("list_dir", "/opt/homelab-infrastructure") == 0
 
+
 def test_tier_for_list_dir_sensitive():
     assert tier_for("list_dir", "~/.ssh") == 1
+
 
 def test_tier_for_unknown_action():
     # Unknown action types default to tier 1 (ask before doing)

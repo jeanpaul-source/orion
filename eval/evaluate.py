@@ -17,6 +17,7 @@ Usage:
     .venv/bin/python -m eval.evaluate --responses eval/responses.jsonl
     .venv/bin/python -m eval.evaluate --skip-llm-eval   # skip LLM-judge metrics
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,6 +37,7 @@ console = Console()
 
 # ── Custom code-based evaluators ─────────────────────────────────────────────
 
+
 class NoRawJsonEvaluator:
     """Detects B1 failure: raw tool-call JSON emitted as response text.
 
@@ -48,8 +50,8 @@ class NoRawJsonEvaluator:
         re.compile(r'\{\s*"name"\s*:'),
         re.compile(r'\{\s*"arguments"\s*:'),
         re.compile(r'"function"\s*:.*?"name"\s*:'),
-        re.compile(r'<function-name>'),
-        re.compile(r'<args-json-object>'),
+        re.compile(r"<function-name>"),
+        re.compile(r"<args-json-object>"),
     ]
 
     def __call__(self, *, response: str) -> dict:
@@ -101,10 +103,12 @@ class IntentAccuracyEvaluator:
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
+
 def _model_config(vllm_url: str, model: str):
     """Build an OpenAI-compatible model config for vLLM."""
     try:
         from azure.ai.evaluation import OpenAIModelConfiguration
+
         return OpenAIModelConfiguration(
             type="openai",
             model=model,
@@ -119,6 +123,7 @@ def _build_llm_evaluators(model_config):
     """Return built-in LLM-judge evaluators, or an empty dict if unavailable."""
     try:
         from azure.ai.evaluation import CoherenceEvaluator, RelevanceEvaluator
+
         return {
             "relevance": RelevanceEvaluator(model_config=model_config),
             "coherence": CoherenceEvaluator(model_config=model_config),
@@ -130,12 +135,14 @@ def _build_llm_evaluators(model_config):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="HAL evaluator")
     parser.add_argument("--responses", type=Path, default=DEFAULT_RESPONSES)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument(
-        "--skip-llm-eval", action="store_true",
+        "--skip-llm-eval",
+        action="store_true",
         help="Skip RelevanceEvaluator and CoherenceEvaluator (no vLLM needed)",
     )
     args = parser.parse_args(argv)
@@ -174,10 +181,13 @@ def main(argv: list[str] | None = None) -> None:
 
     if not args.skip_llm_eval:
         import hal.config as cfg
+
         config = cfg.load()
         model_cfg = _model_config(config.vllm_url, config.chat_model)
         if model_cfg is None:
-            console.print("[yellow]azure-ai-evaluation not available — skipping LLM evaluators[/]")
+            console.print(
+                "[yellow]azure-ai-evaluation not available — skipping LLM evaluators[/]"
+            )
         else:
             llm_evals = _build_llm_evaluators(model_cfg)
             for name, ev in llm_evals.items():
@@ -242,11 +252,13 @@ def main(argv: list[str] | None = None) -> None:
                 failed_metrics.append(f"{k}={v:.2f}")
 
         if failed_metrics:
-            failures_by_case.setdefault(fc, []).append({
-                "query": query[:60],
-                "response_preview": response[:60].replace("\n", " "),
-                "failed": ", ".join(failed_metrics),
-            })
+            failures_by_case.setdefault(fc, []).append(
+                {
+                    "query": query[:60],
+                    "response_preview": response[:60].replace("\n", " "),
+                    "failed": ", ".join(failed_metrics),
+                }
+            )
 
     if failures_by_case:
         console.print("\n[bold red]── Failures by failure case ──[/]")

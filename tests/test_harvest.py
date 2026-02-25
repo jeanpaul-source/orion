@@ -1,9 +1,11 @@
 """Tests for harvest collectors and ingestion logic."""
+
 from harvest.collect import _doc, collect_ground_truth
 from harvest.ingest import _chunk
 from harvest.parsers import content_hash
 
 # --- _doc helper ---
+
 
 def test_doc_includes_doc_tier():
     d = _doc("p", "f", "c", "content", doc_tier="ground-truth")
@@ -21,6 +23,7 @@ def test_doc_strips_content():
 
 
 # --- _chunk ---
+
 
 def test_chunk_short_text():
     chunks = _chunk("short text")
@@ -48,6 +51,7 @@ def test_chunk_overlap():
 
 # --- collect_ground_truth ---
 
+
 def test_collect_ground_truth_reads_md_files(tmp_path, monkeypatch):
     """Ground truth collector reads .md files from knowledge/ dir."""
     knowledge = tmp_path / "knowledge"
@@ -61,6 +65,7 @@ def test_collect_ground_truth_reads_md_files(tmp_path, monkeypatch):
     # So __file__ needs to be tmp_path / "harvest" / "collect.py"
     fake_file = str(tmp_path / "harvest" / "collect.py")
     import harvest.collect as mod
+
     monkeypatch.setattr(mod, "__file__", fake_file)
 
     docs = collect_ground_truth()
@@ -71,6 +76,7 @@ def test_collect_ground_truth_reads_md_files(tmp_path, monkeypatch):
 
 
 # --- content_hash in metadata ---
+
 
 def test_content_hash_used_in_incremental():
     """Verify content_hash produces consistent results for chunk comparison."""

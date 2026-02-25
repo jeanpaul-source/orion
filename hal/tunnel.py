@@ -1,4 +1,5 @@
 """SSH tunnel — used when Ollama port isn't directly reachable from the laptop."""
+
 import socket
 import subprocess
 import time
@@ -14,7 +15,9 @@ def port_open(host: str, port: int, timeout: float = 2.0) -> bool:
 
 
 class SSHTunnel:
-    def __init__(self, remote_user: str, remote_host: str, remote_port: int, local_port: int):
+    def __init__(
+        self, remote_user: str, remote_host: str, remote_port: int, local_port: int
+    ):
         self.remote_user = remote_user
         self.remote_host = remote_host
         self.remote_port = remote_port
@@ -24,8 +27,12 @@ class SSHTunnel:
     def start(self, wait: float = 5.0) -> None:
         self._proc = subprocess.Popen(
             [
-                "ssh", "-N", "-o", "ExitOnForwardFailure=yes",
-                "-L", f"{self.local_port}:localhost:{self.remote_port}",
+                "ssh",
+                "-N",
+                "-o",
+                "ExitOnForwardFailure=yes",
+                "-L",
+                f"{self.local_port}:localhost:{self.remote_port}",
                 f"{self.remote_user}@{self.remote_host}",
             ],
             stdout=subprocess.DEVNULL,

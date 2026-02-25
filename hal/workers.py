@@ -1,4 +1,5 @@
 """Workers — file operations on the lab server, gated through Judge."""
+
 import difflib
 import shlex
 
@@ -6,7 +7,9 @@ from hal.executor import SSHExecutor
 from hal.judge import Judge
 
 
-def read_file(path: str, executor: SSHExecutor, judge: Judge, reason: str = "") -> str | None:
+def read_file(
+    path: str, executor: SSHExecutor, judge: Judge, reason: str = ""
+) -> str | None:
     """Read a file from the server. Returns content string or None."""
     if not judge.approve("read_file", path, reason=reason):
         return None
@@ -16,7 +19,9 @@ def read_file(path: str, executor: SSHExecutor, judge: Judge, reason: str = "") 
     return result["stdout"]
 
 
-def list_dir(path: str, executor: SSHExecutor, judge: Judge, reason: str = "") -> str | None:
+def list_dir(
+    path: str, executor: SSHExecutor, judge: Judge, reason: str = ""
+) -> str | None:
     """List a directory on the server. Returns ls output or None."""
     if not judge.approve("list_dir", path, reason=reason):
         return None
@@ -66,13 +71,15 @@ def patch_file(
     new_content = content.replace(old_str, new_str, 1)
 
     # Build a unified diff to show as context for approval
-    diff_lines = list(difflib.unified_diff(
-        content.splitlines(keepends=True),
-        new_content.splitlines(keepends=True),
-        fromfile=f"a/{path}",
-        tofile=f"b/{path}",
-        n=3,
-    ))
+    diff_lines = list(
+        difflib.unified_diff(
+            content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}",
+            n=3,
+        )
+    )
     diff_text = "".join(diff_lines[:60])  # cap at 60 lines for display
     detail = f"{path}\n{diff_text}"
 

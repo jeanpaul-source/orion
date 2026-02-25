@@ -60,6 +60,7 @@ def _get_session_id(chat_id: int) -> str:
 # Output sanitisation
 # ---------------------------------------------------------------------------
 
+
 def _sanitize(text: str) -> str:
     """Redact sensitive paths and enforce Telegram length limit."""
     text = _SECRETS_RE.sub("[redacted]", text)
@@ -137,6 +138,7 @@ async def handle_message(update: Update, context) -> None:  # noqa: ARG001
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     logging.basicConfig(

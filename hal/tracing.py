@@ -9,6 +9,7 @@ all spans are silently no-ops — HAL continues working normally.
 Default endpoint: http://localhost:4318 (AI Toolkit trace viewer / OTLP HTTP).
 Override with the OTLP_ENDPOINT env var.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,7 +32,9 @@ def setup_tracing(endpoint: str | None = None) -> None:
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        url = (endpoint or os.getenv("OTLP_ENDPOINT", "http://localhost:4318")).rstrip("/")
+        url = (endpoint or os.getenv("OTLP_ENDPOINT", "http://localhost:4318")).rstrip(
+            "/"
+        )
         resource = Resource(attributes={SERVICE_NAME: "hal"})
         provider = TracerProvider(resource=resource)
         provider.add_span_processor(
@@ -52,6 +55,7 @@ def get_tracer():
         return _tracer
     try:
         from opentelemetry import trace
+
         return trace.get_tracer("hal")
     except ImportError:
         return _NoOpTracer()
@@ -60,6 +64,7 @@ def get_tracer():
 # --------------------------------------------------------------------------- #
 # Minimal no-op fallback — used only when opentelemetry-api is not installed. #
 # --------------------------------------------------------------------------- #
+
 
 class _NoOpSpan:
     def __enter__(self):

@@ -1,4 +1,5 @@
 """Ingest documents into pgvector — chunk, embed, upsert."""
+
 import logging
 
 import numpy as np
@@ -11,7 +12,7 @@ from harvest.parsers import content_hash
 
 log = logging.getLogger(__name__)
 
-CHUNK_SIZE = 800   # characters
+CHUNK_SIZE = 800  # characters
 CHUNK_OVERLAP = 100
 LAB_CATEGORIES = {"lab-infrastructure", "lab-state"}
 GROUND_TRUTH_CATEGORIES = {"ground-truth"}
@@ -103,6 +104,7 @@ def clear_ground_truth(conn) -> int:
 
 # --- Incremental ingestion helpers ---
 
+
 def _file_needs_update(cur, file_path: str, new_chunks: list[str]) -> bool:
     """Return True if this file's chunks have changed since last ingestion."""
     cur.execute(
@@ -145,9 +147,17 @@ def _clean_orphan_static_docs(cur, current_file_paths: set[str]) -> int:
     return cur.rowcount
 
 
-def upsert_doc(cur, file_path: str, file_name: str, category: str,
-               chunk_index: int, content: str, embedding: list[float],
-               metadata: dict, doc_tier: str = "reference") -> None:
+def upsert_doc(
+    cur,
+    file_path: str,
+    file_name: str,
+    category: str,
+    chunk_index: int,
+    content: str,
+    embedding: list[float],
+    metadata: dict,
+    doc_tier: str = "reference",
+) -> None:
     cur.execute(
         """
         INSERT INTO documents
@@ -163,8 +173,12 @@ def upsert_doc(cur, file_path: str, file_name: str, category: str,
             doc_tier  = EXCLUDED.doc_tier
         """,
         (
-            file_path, file_name, category, "text",
-            chunk_index, content,
+            file_path,
+            file_name,
+            category,
+            "text",
+            chunk_index,
+            content,
             np.array(embedding),
             psycopg2.extras.Json(metadata),
             doc_tier,
@@ -172,7 +186,9 @@ def upsert_doc(cur, file_path: str, file_name: str, category: str,
     )
 
 
-def ingest(docs: list[dict], dsn: str, llm: OllamaClient, dry_run: bool = False) -> dict:
+def ingest(
+    docs: list[dict], dsn: str, llm: OllamaClient, dry_run: bool = False
+) -> dict:
     conn = psycopg2.connect(dsn)
     register_vector(conn)
 
@@ -212,12 +228,17 @@ def ingest(docs: list[dict], dsn: str, llm: OllamaClient, dry_run: bool = False)
             doc_errors = 0
             for i, chunk in enumerate(chunks):
                 if dry_run:
-                    print(f"  [dry-run] {doc['file_path']} chunk {i}: {len(chunk)} chars")
+                    print(
+                        f"  [dry-run] {doc['file_path']} chunk {i}: {len(chunk)} chars"
+                    )
                     stats["chunks"] += 1
                     continue
                 try:
                     embedding = llm.embed(chunk)
-                    meta = {**doc.get("metadata", {}), "content_hash": content_hash(chunk)}
+                    meta = {
+                        **doc.get("metadata", {}),
+                        "content_hash": content_hash(chunk),
+                    }
                     upsert_doc(
                         cur,
                         file_path=doc["file_path"],

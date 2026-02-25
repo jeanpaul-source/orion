@@ -1,4 +1,5 @@
 """Judge — policy gate for all HAL actions. Every action goes through here."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -22,9 +23,28 @@ TIERS = {
 # Shell command patterns → minimum tier (checked in order, first match wins)
 _CMD_RULES: list[tuple[int, list[str]]] = [
     (3, ["rm -rf", "drop table", "mkfs", "dd if=", ":(){:|:&};:"]),
-    (2, ["docker run", "systemctl enable", "systemctl disable", "chmod 777", "ufw", "> /etc"]),
-    (1, ["docker restart", "docker stop", "docker start",
-         "systemctl restart", "systemctl stop", "systemctl start"]),
+    (
+        2,
+        [
+            "docker run",
+            "systemctl enable",
+            "systemctl disable",
+            "chmod 777",
+            "ufw",
+            "> /etc",
+        ],
+    ),
+    (
+        1,
+        [
+            "docker restart",
+            "docker stop",
+            "docker start",
+            "systemctl restart",
+            "systemctl stop",
+            "systemctl start",
+        ],
+    ),
 ]
 
 # Paths that should never be auto-approved (tier 0 → tier 1)
@@ -39,45 +59,80 @@ _SENSITIVE_PATHS: list[str] = [
 ]
 
 # Safe read-only command first tokens — tier 0 for these
-_SAFE_FIRST_TOKENS: frozenset[str] = frozenset({
-    # process / resource inspection
-    "ps", "top", "htop", "iotop", "free", "uptime",
-    # filesystem / disk
-    "df", "ls", "cat", "head", "tail", "stat", "lsblk", "find",
-    # text processing (read-only)
-    "grep", "egrep", "fgrep", "wc", "sort", "uniq", "echo",
-    # system info
-    "uname", "hostname", "date", "id", "whoami", "pwd",
-    "lscpu", "lspci", "lsusb", "lsof", "printenv", "env",
-    # network observation
-    "netstat", "ss", "ip", "ping",
-    # logging
-    "journalctl",
-})
+_SAFE_FIRST_TOKENS: frozenset[str] = frozenset(
+    {
+        # process / resource inspection
+        "ps",
+        "top",
+        "htop",
+        "iotop",
+        "free",
+        "uptime",
+        # filesystem / disk
+        "df",
+        "ls",
+        "cat",
+        "head",
+        "tail",
+        "stat",
+        "lsblk",
+        "find",
+        # text processing (read-only)
+        "grep",
+        "egrep",
+        "fgrep",
+        "wc",
+        "sort",
+        "uniq",
+        "echo",
+        # system info
+        "uname",
+        "hostname",
+        "date",
+        "id",
+        "whoami",
+        "pwd",
+        "lscpu",
+        "lspci",
+        "lsusb",
+        "lsof",
+        "printenv",
+        "env",
+        # network observation
+        "netstat",
+        "ss",
+        "ip",
+        "ping",
+        # logging
+        "journalctl",
+    }
+)
 
 # Two-token safe prefixes: (first, second) → tier 0
-_SAFE_COMPOUND: frozenset[tuple[str, str]] = frozenset({
-    ("systemctl", "status"),
-    ("docker", "ps"),
-    ("docker", "stats"),
-    ("docker", "logs"),
-    ("docker", "inspect"),
-    ("docker", "images"),
-    ("docker", "network"),
-})
+_SAFE_COMPOUND: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("systemctl", "status"),
+        ("docker", "ps"),
+        ("docker", "stats"),
+        ("docker", "logs"),
+        ("docker", "inspect"),
+        ("docker", "images"),
+        ("docker", "network"),
+    }
+)
 
 # Fixed tiers for non-command action types
 _ACTION_TIERS: dict[str, int] = {
-    "write_file":             2,
-    "search_kb":              0,
-    "get_metrics":            0,
-    "remember_fact":          0,
-    "get_action_stats":       0,
+    "write_file": 2,
+    "search_kb": 0,
+    "get_metrics": 0,
+    "remember_fact": 0,
+    "get_action_stats": 0,
     # Security workers — reads are tier 0, active LAN scan is tier 1
-    "get_security_events":    0,
-    "get_host_connections":   0,
-    "get_traffic_summary":    0,
-    "scan_lan":               1,
+    "get_security_events": 0,
+    "get_host_connections": 0,
+    "get_traffic_summary": 0,
+    "scan_lan": 1,
 }
 
 console = Console()
@@ -153,12 +208,17 @@ class Judge:
             return None
         try:
             return self.llm.chat(
-                [{"role": "user", "content": (
-                    f"Action type: {action_type}\n"
-                    f"Detail: {detail[:300]}\n"
-                    f"Reason: {reason or 'not stated'}\n\n"
-                    "In one sentence: is this routine/safe or does it carry risk?"
-                )}],
+                [
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Action type: {action_type}\n"
+                            f"Detail: {detail[:300]}\n"
+                            f"Reason: {reason or 'not stated'}\n\n"
+                            "In one sentence: is this routine/safe or does it carry risk?"
+                        ),
+                    }
+                ],
                 system=(
                     "You are a security evaluator for a homelab automation system. "
                     "Respond with plain text only — do not call any tools or fetch external data. "
@@ -181,11 +241,15 @@ class Judge:
             tier = tier_for(action_type, detail)
 
         if tier == 0:
-            self._log(action_type, detail, tier, approved=True, auto=True, reason=reason)
+            self._log(
+                action_type, detail, tier, approved=True, auto=True, reason=reason
+            )
             return True
 
         approved = self._request_approval(action_type, detail, tier, reason)
-        self._log(action_type, detail, tier, approved=approved, auto=False, reason=reason)
+        self._log(
+            action_type, detail, tier, approved=approved, auto=False, reason=reason
+        )
         return approved
 
     def _request_approval(

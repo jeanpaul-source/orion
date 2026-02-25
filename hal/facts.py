@@ -1,4 +1,5 @@
 """Write persistent facts into pgvector as category='memory'."""
+
 from datetime import datetime
 
 import numpy as np
@@ -31,7 +32,12 @@ def remember(fact: str, dsn: str, llm: OllamaClient) -> None:
                     doc_tier  = EXCLUDED.doc_tier
                 """,
                 (
-                    file_path, "fact", "memory", "text", 0, fact,
+                    file_path,
+                    "fact",
+                    "memory",
+                    "text",
+                    0,
+                    fact,
                     np.array(embedding),
                     psycopg2.extras.Json({"recorded_at": ts}),
                     "memory",

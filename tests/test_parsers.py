@@ -1,7 +1,9 @@
 """Tests for harvest/parsers.py — PDF, HTML parsing and content hashing."""
+
 from harvest.parsers import content_hash, detect_mime, parse_html, parse_pdf
 
 # --- content_hash ---
+
 
 def test_content_hash_deterministic():
     assert content_hash("hello") == content_hash("hello")
@@ -18,6 +20,7 @@ def test_content_hash_is_hex_string():
 
 
 # --- detect_mime ---
+
 
 def test_detect_mime_pdf_by_magic(tmp_path):
     f = tmp_path / "test.pdf"
@@ -41,6 +44,7 @@ def test_detect_mime_unknown_falls_back(tmp_path):
 
 
 # --- parse_html ---
+
 
 def test_parse_html_extractable(tmp_path):
     """An HTML file with substantial article text should be parsed."""
@@ -70,6 +74,7 @@ def test_parse_html_nonexistent_returns_none(tmp_path):
 
 
 # --- parse_pdf ---
+
 
 def test_parse_pdf_nonexistent_returns_none(tmp_path):
     f = tmp_path / "missing.pdf"

@@ -1,4 +1,5 @@
 """Agentic loop — LLM calls tools autonomously, Judge gates everything."""
+
 import json
 import textwrap
 
@@ -424,7 +425,11 @@ def _dispatch(
         content = args.get("content", "")
         reason = args.get("reason", "")
         ok = write_file(path, content, executor, judge, reason=reason)
-        return f"Written {len(content)} bytes to {path}" if ok else f"Write failed or denied for {path}"
+        return (
+            f"Written {len(content)} bytes to {path}"
+            if ok
+            else f"Write failed or denied for {path}"
+        )
 
     elif name == "search_kb":
         query = args.get("query", "")
@@ -490,7 +495,9 @@ def _dispatch(
     elif name == "get_traffic_summary":
         top_flows = int(args.get("top_flows", 20))
         reason = args.get("reason", "")
-        data = get_traffic_summary(executor, judge, ntopng_url=ntopng_url, top_flows=top_flows, reason=reason)
+        data = get_traffic_summary(
+            executor, judge, ntopng_url=ntopng_url, top_flows=top_flows, reason=reason
+        )
         return json.dumps(data, indent=2) if data else "Denied."
 
     elif name == "scan_lan":
@@ -517,6 +524,7 @@ def run_health(
 ) -> str:
     """Health handler: fetch live metrics, answer in one LLM call with no tools."""
     import time
+
     t0 = time.perf_counter()
     outcome = "ok"
     with get_tracer().start_as_current_span("hal.run_health") as span:
@@ -526,19 +534,19 @@ def run_health(
         try:
             with console.status("[dim]fetching metrics...[/]", spinner="dots"):
                 h = prom.health()
-            metrics_str = "\n".join(
-                f"{k}: {v}" for k, v in h.items() if v is not None
-            )
+            metrics_str = "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
             span.set_attribute("hal.metrics_available", True)
         except Exception as e:
             metrics_str = f"Metrics unavailable: {e}"
             outcome = "metrics_error"
             span.set_attribute("hal.metrics_available", False)
 
-        messages = list(history) + [{
-            "role": "user",
-            "content": f"Current lab metrics:\n{metrics_str}\n\n{user_input}",
-        }]
+        messages = list(history) + [
+            {
+                "role": "user",
+                "content": f"Current lab metrics:\n{metrics_str}\n\n{user_input}",
+            }
+        ]
 
         try:
             with console.status("[dim]thinking...[/]", spinner="dots"):
@@ -583,6 +591,7 @@ def run_fact(
     (which contains key lab facts). If it still doesn't know, it says so.
     """
     import time
+
     t0 = time.perf_counter()
     outcome = "ok"
     with get_tracer().start_as_current_span("hal.run_fact") as span:
@@ -662,6 +671,7 @@ def run_agent(
     Returns the final text response.
     """
     import time
+
     t0 = time.perf_counter()
     outcome = "ok"
     with get_tracer().start_as_current_span("hal.run_agent") as span:
@@ -751,7 +761,9 @@ def run_agent(
             label = f" (step {iteration + 1})" if iteration > 0 else ""
             # If we've already dispatched 5 unique tool calls, stop collecting data
             # and force a text-only response regardless of iteration count
-            effective_tools = TOOLS if (iteration < MAX_ITERATIONS - 1 and total_calls < 5) else []
+            effective_tools = (
+                TOOLS if (iteration < MAX_ITERATIONS - 1 and total_calls < 5) else []
+            )
             with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
                 msg = llm.chat_with_tools(working, effective_tools, system=system)
 
@@ -785,17 +797,29 @@ def run_agent(
                 # Detect repeat calls — model stuck in a loop
                 call_key = (name, json.dumps(raw_args, sort_keys=True))
                 if call_key in seen_calls:
-                    working.append({"role": "tool", "content": "[Already called — use the result above.]", "tool_call_id": call_id})
+                    working.append(
+                        {
+                            "role": "tool",
+                            "content": "[Already called — use the result above.]",
+                            "tool_call_id": call_id,
+                        }
+                    )
                     continue
                 seen_calls.add(call_key)
 
-                console.print(f"\n[bold green]⏺[/] [cyan]{name}[/]({_fmt_args(raw_args)})")
+                console.print(
+                    f"\n[bold green]⏺[/] [cyan]{name}[/]({_fmt_args(raw_args)})"
+                )
                 with get_tracer().start_as_current_span("hal.tool_call") as tool_span:
                     tool_span.set_attribute("tool.name", name)
                     tool_span.set_attribute("tool.iteration", iteration)
-                    tool_span.set_attribute("tool.args", json.dumps(raw_args, sort_keys=True)[:500])
+                    tool_span.set_attribute(
+                        "tool.args", json.dumps(raw_args, sort_keys=True)[:500]
+                    )
                     try:
-                        result = _dispatch(name, raw_args, executor, judge, kb, prom, ntopng_url)
+                        result = _dispatch(
+                            name, raw_args, executor, judge, kb, prom, ntopng_url
+                        )
                         TOOL_CALLS_TOTAL.inc(tool=name, outcome="ok")
                     except Exception as e:
                         result = f"Tool {name} failed: {e}"
@@ -811,21 +835,25 @@ def run_agent(
                 preview = textwrap.shorten(result, width=140, placeholder="…")
                 console.print(f"  [dim]{preview}[/]")
 
-                working.append({"role": "tool", "content": result, "tool_call_id": call_id})
+                working.append(
+                    {"role": "tool", "content": result, "tool_call_id": call_id}
+                )
                 new_calls += 1
                 total_calls += 1
 
             # If every call this iteration was a duplicate, the model is looping.
             # Inject a directive to stop collecting data and respond in plain text.
             if new_calls == 0:
-                working.append({
-                    "role": "user",
-                    "content": (
-                        "You already have all the data you need. "
-                        "Please provide your final answer now as plain text, "
-                        "without calling any more tools."
-                    ),
-                })
+                working.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "You already have all the data you need. "
+                            "Please provide your final answer now as plain text, "
+                            "without calling any more tools."
+                        ),
+                    }
+                )
 
         else:
             response_text = "Reached max iterations without a final answer."

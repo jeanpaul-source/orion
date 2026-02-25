@@ -4,6 +4,7 @@ Approval is NOT handled here — call Judge.approve() before calling run().
 
 When host is localhost/127.0.0.1, commands run directly via subprocess (no SSH).
 """
+
 import shlex
 import subprocess
 
@@ -51,7 +52,12 @@ class SSHExecutor:
             except OSError as e:
                 return {"returncode": 1, "stdout": "", "stderr": str(e)}
         result = subprocess.run(
-            ["ssh", *self._SSH_OPTS, f"{self.user}@{self.host}", f"cat > {shlex.quote(path)}"],
+            [
+                "ssh",
+                *self._SSH_OPTS,
+                f"{self.user}@{self.host}",
+                f"cat > {shlex.quote(path)}",
+            ],
             input=content,
             capture_output=True,
             text=True,

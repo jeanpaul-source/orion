@@ -11,6 +11,7 @@ Categories:
 If confidence is below THRESHOLD, defaults to 'agentic' (safest fallback).
 If the embedding model is unavailable at startup, always returns 'agentic'.
 """
+
 import math
 from typing import Literal
 
@@ -144,9 +145,7 @@ class IntentClassifier:
         """Embed all example sentences once at startup and cache them in memory."""
         try:
             for category, sentences in EXAMPLES.items():
-                self._embeddings[category] = [
-                    self._ollama.embed(s) for s in sentences
-                ]
+                self._embeddings[category] = [self._ollama.embed(s) for s in sentences]
             self._ready = True
         except Exception:
             # Ollama unavailable or embed failed — degrade gracefully.

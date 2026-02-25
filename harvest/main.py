@@ -4,6 +4,7 @@
 Run on the server:  python -m harvest
 Dry run:            python -m harvest --dry-run
 """
+
 import argparse
 import sys
 from datetime import datetime
@@ -17,7 +18,9 @@ from harvest.ingest import ingest
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Harvest lab state into pgvector")
-    parser.add_argument("--dry-run", action="store_true", help="collect and chunk but don't write to DB")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="collect and chunk but don't write to DB"
+    )
     args = parser.parse_args()
 
     config = cfg.load()

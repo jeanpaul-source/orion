@@ -12,6 +12,7 @@ Endpoints:
   GET  /health  — liveness probe
   POST /chat    — send a message, get a response + session_id + intent
 """
+
 from __future__ import annotations
 
 import sys
@@ -52,6 +53,7 @@ from hal.tracing import setup_tracing
 # Server-mode Judge: auto-deny tier 1+ (no TTY available over HTTP)
 # ---------------------------------------------------------------------------
 
+
 class ServerJudge(Judge):
     """Judge variant that auto-denies any action requiring interactive approval."""
 
@@ -65,6 +67,7 @@ class ServerJudge(Judge):
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
 
 class ChatMessage(BaseModel):
     role: str = "user"
@@ -138,8 +141,9 @@ async def lifespan(app: FastAPI):  # noqa: RUF029
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="HAL — Orion homelab coordinator", version="1.0.0", lifespan=lifespan)
-
+app = FastAPI(
+    title="HAL — Orion homelab coordinator", version="1.0.0", lifespan=lifespan
+)
 
 
 @app.get("/health")
@@ -195,11 +199,25 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 )
             elif intent == "health":
                 response = run_health(
-                    req.message, history, llm, prom, mem, session_id, SYSTEM_PROMPT, console
+                    req.message,
+                    history,
+                    llm,
+                    prom,
+                    mem,
+                    session_id,
+                    SYSTEM_PROMPT,
+                    console,
                 )
             elif intent == "fact":
                 response = run_fact(
-                    req.message, history, llm, kb, mem, session_id, SYSTEM_PROMPT, console
+                    req.message,
+                    history,
+                    llm,
+                    kb,
+                    mem,
+                    session_id,
+                    SYSTEM_PROMPT,
+                    console,
                 )
             else:
                 response = run_agent(
@@ -228,6 +246,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="HAL HTTP server")
     parser.add_argument(
@@ -236,8 +255,12 @@ def main() -> None:
         default=True,
         help="Run as HTTP server (default; flag accepted for compatibility)",
     )
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8087, help="Bind port (default: 8087)")
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=8087, help="Bind port (default: 8087)"
+    )
     args = parser.parse_args()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
