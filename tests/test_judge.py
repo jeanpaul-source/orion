@@ -188,7 +188,18 @@ def test_tier_for_remember_fact():
 
 
 def test_tier_for_write_file():
-    assert tier_for("write_file") == 2
+    # Non-repo, non-sensitive path → tier 2 (config change)
+    assert tier_for("write_file", "/tmp/test.txt") == 2
+
+
+def test_tier_for_write_file_repo_path():
+    # Writing to repo → tier 3 (policy: propose only, never apply)
+    assert tier_for("write_file", "hal/agent.py") == 3
+
+
+def test_tier_for_write_file_sensitive_path():
+    # Writing to sensitive path → tier 3 (destructive)
+    assert tier_for("write_file", "/etc/shadow") == 3
 
 
 def test_tier_for_read_file_normal():
@@ -208,5 +219,5 @@ def test_tier_for_list_dir_sensitive():
 
 
 def test_tier_for_unknown_action():
-    # Unknown action types default to tier 1 (ask before doing)
-    assert tier_for("some_unknown_action") == 1
+    # Unknown action types default to tier 2 (default-deny: explain + approve)
+    assert tier_for("some_unknown_action") == 2

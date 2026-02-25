@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import json
+import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,17 +24,76 @@ TIERS = {
 }
 
 # Shell command patterns → minimum tier (checked in order, first match wins)
+# NOTE: these are substring matches against the lowercased full command.
+# Use trailing spaces or specific flags to avoid false positives on short words.
 _CMD_RULES: list[tuple[int, list[str]]] = [
-    (3, ["rm -rf", "drop table", "mkfs", "dd if=", ":(){:|:&};:"]),
+    (
+        3,
+        [
+            # Original destructive patterns
+            "rm -rf",
+            "rm -f",
+            "drop table",
+            "mkfs",
+            "dd if=",
+            ":(){:|:&};:",
+            # Disk / partition destruction
+            "shred ",
+            "wipefs",
+            "fdisk ",
+            "parted ",
+            # System halt / reboot
+            "reboot",
+            "shutdown",
+            "poweroff",
+            "halt",
+            "init 0",
+            "init 6",
+            "telinit",
+            # Firewall flush (drops all rules — locks you out)
+            "iptables -f",
+            "iptables --flush",
+            "nft flush",
+            # Crontab removal
+            "crontab -r",
+            # Filesystem mount/unmount (can corrupt data)
+            "umount ",
+            "swapoff",
+        ],
+    ),
     (
         2,
         [
+            # Original config-change patterns
             "docker run",
             "systemctl enable",
             "systemctl disable",
             "chmod 777",
             "ufw",
             "> /etc",
+            # Scripting interpreters running inline code
+            "python -c",
+            "python3 -c",
+            "perl -e",
+            "ruby -e",
+            "node -e",
+            # Setuid / ownership changes
+            "chmod +s",
+            "chmod u+s",
+            "chmod g+s",
+            "chown ",
+            "chgrp ",
+            # User / group management
+            "useradd",
+            "userdel",
+            "usermod",
+            "groupadd",
+            "groupdel",
+            "visudo",
+            # Scheduled task editing
+            "crontab -e",
+            # Mount (read-write by default)
+            "mount ",
         ],
     ),
     (
@@ -48,15 +110,25 @@ _CMD_RULES: list[tuple[int, list[str]]] = [
 ]
 
 # Paths that should never be auto-approved (tier 0 → tier 1)
+# These are canonical absolute path prefixes.  _is_sensitive_path()
+# canonicalizes the input before matching.  Keep entries as absolute.
 _SENSITIVE_PATHS: list[str] = [
     "/run/homelab-secrets",
-    "/.ssh",
-    "~/.ssh",
+    os.path.expanduser("~/.ssh"),  # e.g. /home/jp/.ssh
     "/etc/shadow",
+    "/etc/gshadow",
+    "/etc/sudoers",
     "/etc/passwd",
-    "/root/",
-    ".env",
+    "/root",
+    "/proc/kcore",
 ]
+
+# Basename patterns that are sensitive regardless of directory
+_SENSITIVE_BASENAMES: frozenset[str] = frozenset(
+    {
+        ".env",
+    }
+)
 
 # Safe read-only command first tokens — tier 0 for these
 _SAFE_FIRST_TOKENS: frozenset[str] = frozenset(
@@ -122,8 +194,8 @@ _SAFE_COMPOUND: frozenset[tuple[str, str]] = frozenset(
 )
 
 # Fixed tiers for non-command action types
+# NOTE: write_file is handled explicitly in tier_for() — not here.
 _ACTION_TIERS: dict[str, int] = {
-    "write_file": 2,
     "search_kb": 0,
     "get_metrics": 0,
     "remember_fact": 0,
@@ -135,11 +207,215 @@ _ACTION_TIERS: dict[str, int] = {
     "scan_lan": 1,
 }
 
+# ---------------------------------------------------------------------------
+# Shell normalisation & evasion detection  (Item 1 — safety hardening)
+# ---------------------------------------------------------------------------
+
+# Patterns that indicate shell evasion — unconditional deny (tier 3)
+_EVASION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # Subshell / command substitution
+    (re.compile(r"\$\("), "command substitution $()"),
+    (re.compile(r"`[^`]+`"), "backtick command substitution"),
+    # eval / exec wrappers
+    (re.compile(r"\beval\b"), "eval keyword"),
+    (re.compile(r"\bexec\b"), "exec keyword"),
+    # Base64 decode piped to shell
+    (re.compile(r"base64\s+(-d|--decode).*\|"), "base64 decode pipe"),
+    (re.compile(r"\|\s*(ba)?sh\b"), "pipe to shell"),
+    (re.compile(r"\|\s*source\b"), "pipe to source"),
+    # Process substitution
+    (re.compile(r"<\("), "process substitution <()"),
+    (re.compile(r">\("), "process substitution >()"),
+    # Hex/octal escape sequences (e.g. $'\x72\x6d')
+    (re.compile(r"\$'[^']*\\x[0-9a-fA-F]"), "hex escape in $''"),
+    (re.compile(r"\$'[^']*\\[0-7]{3}"), "octal escape in $''"),
+]
+
+# Tokens used to chain multiple commands
+_COMMAND_SEPARATORS = re.compile(r"\s*(?:;|&&|\|\||(?<!\|)\|(?!\|)|\n)\s*")
+
+
+def _detect_evasion(cmd: str) -> str | None:
+    """Return evasion description if cmd uses shell evasion, else None."""
+    for pattern, description in _EVASION_PATTERNS:
+        if pattern.search(cmd):
+            return description
+    return None
+
+
+def _split_compound_command(cmd: str) -> list[str]:
+    """Split a compound shell command into individual sub-commands.
+
+    Splits on ; && || | and newlines.  Returns at least one entry.
+    Empty fragments (from trailing separators etc.) are dropped.
+    """
+    parts = _COMMAND_SEPARATORS.split(cmd.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _normalize_command(cmd: str) -> str:
+    """Normalize whitespace and strip leading/trailing junk."""
+    return " ".join(cmd.split())
+
+
+# ---------------------------------------------------------------------------
+# Git write-operation blocking  (Item 3 — safety hardening)
+# ---------------------------------------------------------------------------
+
+# Git subcommands that modify the repository — unconditional deny (tier 3).
+# Read-only subcommands (status, log, diff, show, blame, shortlog, describe,
+# ls-files, ls-tree, rev-parse) are NOT listed here and fall through normally.
+_GIT_WRITE_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
+        "add",
+        "commit",
+        "push",
+        "merge",
+        "rebase",
+        "pull",
+        "reset",
+        "revert",
+        "cherry-pick",
+        "am",
+        "apply",
+        "tag",
+        "branch",
+        "checkout",
+        "switch",
+        "remote",
+        "fetch",  # fetch is safe but remote add/set-url is not — block both, allow via override
+        "clean",
+        "gc",
+        "prune",
+        "stash",  # stash drop/clear can destroy work
+        "rm",
+        "mv",
+        "submodule",
+        "bisect",
+        "init",
+        "clone",
+        "config",  # can set credentials, hooks, aliases
+    }
+)
+
+# Git subcommands that are always read-only — tier 0
+_GIT_SAFE_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
+        "status",
+        "log",
+        "diff",
+        "show",
+        "blame",
+        "shortlog",
+        "describe",
+        "ls-files",
+        "ls-tree",
+        "rev-parse",
+        "rev-list",
+        "reflog",
+        "--version",
+        "help",
+        "--no-pager",
+    }
+)
+
+
+def _classify_git_command(parts: list[str]) -> int | None:
+    """Classify a git command. Returns tier or None if not a git command.
+
+    Policy: server may never write to git. Read-only git ops are tier 0.
+    Write ops are unconditional tier 3 (destructive — policy violation).
+    """
+    if not parts:
+        return None
+    base = parts[0].rsplit("/", 1)[-1].lower()
+    if base != "git":
+        return None
+
+    # 'git' with no subcommand
+    if len(parts) < 2:
+        return 0  # bare 'git' just shows help
+
+    # Skip flags to find the subcommand (e.g. 'git --no-pager log')
+    sub = None
+    for token in parts[1:]:
+        if not token.startswith("-"):
+            sub = token.lower()
+            break
+        # --no-pager is itself a safe token
+        if token.lower() in _GIT_SAFE_SUBCOMMANDS:
+            return 0
+
+    if sub is None:
+        return 0  # only flags, no subcommand
+
+    if sub in _GIT_SAFE_SUBCOMMANDS:
+        return 0
+    if sub in _GIT_WRITE_SUBCOMMANDS:
+        return 3  # unconditional deny — policy: no git writes on server
+    # Unknown git subcommand — treat as write (default-deny)
+    return 3
+
+
+# ---------------------------------------------------------------------------
+# Path canonicalization  (Item 4 — safety hardening)
+# ---------------------------------------------------------------------------
+
+# Repo root — resolved at import time.  write_file to anything under this
+# path is unconditionally denied (policy: propose only, never apply).
+_REPO_ROOT: str = str(Path(__file__).resolve().parent.parent)
+
+
+def _canonicalize_path(path: str) -> str:
+    """Expand ~ and resolve symlinks / .. / double-slashes to a canonical path."""
+    return os.path.realpath(os.path.expanduser(path))
+
+
+def _is_repo_path(path: str) -> bool:
+    """Return True if *path* resolves to a location under the Orion repo root."""
+    canonical = _canonicalize_path(path)
+    return canonical == _REPO_ROOT or canonical.startswith(_REPO_ROOT + "/")
+
+
 console = Console()
 
 
 def _is_sensitive_path(path: str) -> bool:
-    return any(p in path for p in _SENSITIVE_PATHS)
+    """Check if *path* resolves to a sensitive location.
+
+    Handles: ~, .., //, symlinks, and basename patterns like '.env'.
+    """
+    # 1. Check basename patterns (works for bare filenames like '.env')
+    basename = os.path.basename(path.rstrip("/"))
+    if basename in _SENSITIVE_BASENAMES:
+        return True
+
+    # 2. Canonicalize and check prefix matches against _SENSITIVE_PATHS
+    canonical = _canonicalize_path(path)
+    return any(canonical.startswith(sp) for sp in _SENSITIVE_PATHS)
+
+
+def _command_touches_sensitive_path(command: str) -> bool:
+    """Check if any argument in a shell command refers to a sensitive path.
+
+    Extracts path-like tokens (starting with /, ~, or containing .env)
+    from the command and checks each against _is_sensitive_path.
+    """
+    parts = command.strip().split()
+    for token in parts[1:]:  # skip the command itself
+        # Strip leading flags like --file=/etc/shadow
+        if "=" in token:
+            token = token.split("=", 1)[1]
+        # Check tokens that look like paths or sensitive basenames
+        if (
+            token.startswith("/")
+            or token.startswith("~")
+            or token.startswith(".")
+            or os.path.basename(token) in _SENSITIVE_BASENAMES
+        ):
+            if _is_sensitive_path(token):
+                return True
+    return False
 
 
 def _is_safe_command(command: str) -> bool:
@@ -158,7 +434,42 @@ def _is_safe_command(command: str) -> bool:
 
 
 def classify_command(command: str) -> int:
-    """Return the tier for a shell command."""
+    """Return the tier for a shell command.
+
+    Normalizes the command, checks for evasion patterns, splits compound
+    commands, and returns the *highest* tier across all sub-commands.
+    """
+    normalized = _normalize_command(command)
+
+    # 1. Unconditional deny on evasion patterns (before splitting —
+    #    evasion can span the whole string)
+    evasion = _detect_evasion(normalized)
+    if evasion:
+        return 3
+
+    # 2. Check _CMD_RULES against the full command BEFORE splitting —
+    #    some patterns (e.g. fork bomb) span separator characters
+    lower_full = normalized.lower()
+    for tier, patterns in _CMD_RULES:
+        if any(p in lower_full for p in patterns):
+            return tier
+
+    # 3. Split compound commands and evaluate each sub-command
+    sub_commands = _split_compound_command(normalized)
+    if not sub_commands:
+        return 2  # empty command — uncertain, require approval
+
+    worst_tier = 0
+    for sub in sub_commands:
+        tier = _classify_single_command(sub)
+        if tier > worst_tier:
+            worst_tier = tier
+
+    return worst_tier
+
+
+def _classify_single_command(command: str) -> int:
+    """Classify a single (non-compound) shell command."""
     lower = command.lower()
 
     # 1. Known dangerous patterns take priority
@@ -166,16 +477,40 @@ def classify_command(command: str) -> int:
         if any(p in lower for p in patterns):
             return tier
 
-    # 2. Sensitive paths bump unknown-safe commands to tier 1
-    if _is_sensitive_path(lower):
+    # 2. Handle sudo: strip it and re-classify the inner command
+    parts = command.strip().split()
+    if parts and parts[0].lower() == "sudo":
+        inner = command.strip().split(maxsplit=1)
+        if len(inner) > 1:
+            return max(1, _classify_single_command(inner[1]))
+        return 2  # bare sudo
+
+    # 3. Git write-operation blocking (policy: no git writes on server)
+    git_tier = _classify_git_command(parts)
+    if git_tier is not None:
+        return git_tier
+
+    # 4. Strip leading path for first-token matching
+    #    e.g. /usr/bin/cat → cat
+    if parts:
+        base = parts[0].rsplit("/", 1)[-1].lower()
+        parts_copy = [base] + parts[1:]
+        if _is_safe_command(" ".join(parts_copy)):
+            # Re-check sensitive paths even for safe commands
+            if _command_touches_sensitive_path(command):
+                return 1
+            return 0
+
+    # 5. Sensitive paths bump to tier 1
+    if _command_touches_sensitive_path(command):
         return 1
 
-    # 3. Explicit safe allowlist → tier 0
+    # 6. Explicit safe allowlist → tier 0
     if _is_safe_command(command):
         return 0
 
-    # 4. Unknown command — ask before running
-    return 1
+    # 7. Unknown command — default-deny (explain + approve)
+    return 2
 
 
 def tier_for(action_type: str, detail: str = "") -> int:
@@ -184,10 +519,20 @@ def tier_for(action_type: str, detail: str = "") -> int:
         return classify_command(detail)
 
     if action_type in ("read_file", "list_dir"):
-        # detail = the file/dir path
+        # Canonicalize paths before sensitive-path check
         return 1 if _is_sensitive_path(detail) else 0
 
-    return _ACTION_TIERS.get(action_type, 1)
+    if action_type == "write_file":
+        # Policy: HAL may never write to its own repo on the server.
+        # This enforces "propose only, never apply".
+        if _is_repo_path(detail):
+            return 3  # unconditional deny — self-edit policy violation
+        # Non-repo writes still require config-change approval
+        if _is_sensitive_path(detail):
+            return 3  # sensitive paths are destructive-tier for writes
+        return 2
+
+    return _ACTION_TIERS.get(action_type, 2)
 
 
 class Judge:
@@ -289,10 +634,46 @@ class Judge:
         auto: bool,
         reason: str = "",
     ) -> None:
-        ts = datetime.now().isoformat(timespec="seconds")
-        status = "auto    " if auto else ("approved" if approved else "denied  ")
-        log_detail = detail.replace("\n", " ")[:200]
-        reason_str = f" | {reason[:100]}" if reason else ""
-        entry = f"{ts} | tier={tier} | {status} | {action_type:<14} | {log_detail}{reason_str}\n"
+        """Write a structured JSON audit entry.
+
+        Fields: ts, tier, status, action, detail, reason,
+        session_id, trace_id (from contextvars if available).
+        """
+        status = "auto" if auto else ("approved" if approved else "denied")
+        entry: dict[str, object] = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "tier": tier,
+            "status": status,
+            "action": action_type,
+            "detail": detail.replace("\n", " ")[:500],
+        }
+        if reason:
+            entry["reason"] = reason[:200]
+
+        # Session correlation from logging_utils contextvars
+        try:
+            from hal.logging_utils import _ctx_session_id, _ctx_turn_id
+
+            sid = _ctx_session_id.get()
+            tid = _ctx_turn_id.get()
+            if sid:
+                entry["session_id"] = sid
+            if tid:
+                entry["turn_id"] = tid
+        except Exception:
+            pass
+
+        # OTel trace correlation
+        try:
+            from opentelemetry import trace  # type: ignore[import-untyped]
+
+            span = trace.get_current_span()
+            ctx = span.get_span_context() if span else None
+            if ctx and ctx.is_valid:
+                entry["trace_id"] = f"{ctx.trace_id:032x}"
+                entry["span_id"] = f"{ctx.span_id:016x}"
+        except Exception:
+            pass
+
         with open(self.audit_log, "a") as f:
-            f.write(entry)
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")

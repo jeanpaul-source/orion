@@ -103,7 +103,7 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/main.py` | REPL entry point; `SYSTEM_PROMPT`; all slash commands |
 | `hal/agent.py` | Four handlers + agentic loop (`MAX_ITERATIONS=8`) |
 | `hal/intent.py` | Embedding classifier; tune `EXAMPLES` and `THRESHOLD` here |
-| `hal/judge.py` | Policy gate; tier rules; audit log; `_llm_reason()` risk eval |
+| `hal/judge.py` | Policy gate; tier 0-3; command normalization; evasion detection; git write blocking; path canonicalization; self-edit governance; default-deny; JSON audit with session/trace |
 | `hal/llm.py` | `VLLMClient` (chat) and `OllamaClient` (embeddings only) |
 | `hal/security.py` | Falco, Osquery, ntopng, Nmap workers; `_FALCO_NOISE` filter |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
@@ -114,4 +114,4 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/config.py` | Dataclass + `.env` loader; all tunable values live here |
 | `harvest/collect.py` | Lab state + static docs collectors |
 | `harvest/ingest.py` | Chunk → embed → upsert; clears stale chunks before re-ingest |
-| `tests/` | 186 tests: 35 intent (require Ollama) + 151 offline |
+| `tests/` | 340 tests: 35 intent (require Ollama) + 305 offline |

@@ -6,20 +6,17 @@ Provides:
 - get_action_stats(pattern, path=None): filter+aggregate by a substring/regex pattern
 
 Audit log format (from hal/judge.py::_log):
-  f"{ts} | tier={tier} | {status} | {action_type:<14} | {log_detail}{reason_str}\n"
-Where:
-  - ts: ISO 8601, seconds precision (e.g., 2026-02-24T13:42:01)
-  - status: "auto    " (padded), "approved", or "denied  " (padded)
-  - action_type: fixed width 14 chars, left-justified (we strip())
-  - detail: command/path/detail (newlines replaced with spaces, max 200 chars)
-  - optional reason: prefixed with " | "
+  JSON lines (one JSON object per line) since safety-hardening rework.
+  Legacy pipe-delimited format is also supported for backward compatibility.
 
-We parse len(parts) in {4,5} when splitting on " | ". Lines that do not match
-are skipped (robust to future tweaks).
+JSON fields:
+  ts, tier, status (auto|approved|denied), action, detail, reason,
+  session_id, turn_id, trace_id, span_id (all optional except ts/tier/status/action)
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -130,8 +127,63 @@ def _extract_action_class(action_type: str, detail: str) -> Optional[str]:
 
 
 def _parse_line(line: str) -> Optional[AuditEvent]:
+    """Parse a single audit log line.  Supports JSON lines and legacy pipe format."""
+    stripped = line.strip()
+    if not stripped:
+        return None
+
+    # Try JSON first (new format)
+    if stripped.startswith("{"):
+        return _parse_json_line(stripped)
+
+    # Fall back to legacy pipe-delimited format — pass original line so
+    # trailing " | " delimiters are preserved for correct splitting.
+    return _parse_legacy_line(line)
+
+
+def _parse_json_line(line: str) -> Optional[AuditEvent]:
+    """Parse a JSON-format audit entry."""
+    try:
+        obj = json.loads(line)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    try:
+        ts = datetime.fromisoformat(obj["ts"])
+    except (KeyError, ValueError, TypeError):
+        return None
+
+    tier = obj.get("tier")
+    if not isinstance(tier, int):
+        return None
+
+    status = obj.get("status", "").strip()
+    status = _STATUS_NORMALIZE.get(status, status)
+    if status not in ("auto", "approved", "denied"):
+        return None
+
+    action_type = obj.get("action", "").strip()
+    if not action_type:
+        return None
+
+    detail = obj.get("detail", "")
+    reason = obj.get("reason")
+    action_class = _extract_action_class(action_type, detail)
+
+    return AuditEvent(
+        ts=ts,
+        tier=tier,
+        status=status,
+        action_type=action_type,
+        detail=detail,
+        reason=reason,
+        action_class=action_class,
+    )
+
+
+def _parse_legacy_line(line: str) -> Optional[AuditEvent]:
+    """Parse a legacy pipe-delimited audit entry."""
     # Expected segments separated by " | "; reason is optional at the end
-    # Example: 2026-02-24T13:42:01 | tier=1 | approved | run_command    | systemctl restart vllm | planned restart
     parts = line.rstrip("\n").split(" | ")
     if len(parts) < 4:
         return None
@@ -153,7 +205,6 @@ def _parse_line(line: str) -> Optional[AuditEvent]:
     status = _STATUS_NORMALIZE.get(raw_status, raw_status.strip())
 
     action_type = parts[3].strip()
-    # When well-formed, parts[4] is detail; parts[5] (if present) is reason
     detail = parts[4].strip() if len(parts) >= 5 else ""
     reason = parts[5].strip() if len(parts) >= 6 else None
 

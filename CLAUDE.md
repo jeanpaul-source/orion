@@ -188,7 +188,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/main.py` | REPL entry point; intent routing; all slash commands |
 | `hal/intent.py` | Embedding-based intent classifier (conversational / health / fact / agentic); threshold 0.65 |
 | `hal/agent.py` | `run_conversational()`, `run_health()`, `run_fact()`, `run_agent()` — the four handlers |
-| `hal/judge.py` | Policy gate: tier 0-3, sensitive path blocklist, safe command allowlist, LLM risk eval, audit log |
+| `hal/judge.py` | Policy gate: tier 0-3, command normalization, evasion detection (11 patterns), git write blocking, path canonicalization, self-edit governance, default-deny, JSON audit log with session/trace correlation |
 | `hal/workers.py` | `read_file`, `write_file`, `list_dir` — all gated through Judge |
 | `hal/executor.py` | SSH runner; detects localhost and runs directly (no self-SSH) |
 | `hal/memory.py` | SQLite session store (`~/.orion/memory.db`); `search_sessions()` full-text search |
@@ -197,7 +197,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk/swap/load; optional Counter/Histogram helpers (push via PROM_PUSHGATEWAY) |
 | `hal/server.py` | FastAPI HTTP server — `/health` liveness probe, `/POST chat` endpoint; `ServerJudge` auto-denies tier 1+ (no TTY) |
 | `hal/agents.py` | `PlannerAgent` + `CriticAgent` sub-agents — tool-less LLM wrappers with structured output prompts |
-| `hal/trust_metrics.py` | Parses `~/.orion/audit.log` into `AuditEvent` objects; `get_action_stats()` exposed as a HAL tool |
+| `hal/trust_metrics.py` | Parses `~/.orion/audit.log` (JSON + legacy pipe format) into `AuditEvent` objects; `get_action_stats()` exposed as a HAL tool |
 | `hal/logging_utils.py` | Structured logging utilities (JSON), contextvars for session correlation |
 | `hal/llm.py` | `OllamaClient` (embeddings), `VLLMClient` (chat via OpenAI-compatible API) |
 | `hal/tracing.py` | OTel setup; `setup_tracing()` + `get_tracer()`; no-op fallback if collector absent |
@@ -213,7 +213,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 151 offline tests (Judge, MemoryStore, agent loop, trust_metrics, agents, Telegram, parsers, harvest) = 186 total |
+| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 305 offline tests (Judge, Judge hardening, MemoryStore, agent loop, trust_metrics, agents, Telegram, parsers, harvest) = 340 total |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
@@ -393,6 +393,19 @@ Laptop (edit code)
 - **Dependencies added**: `pymupdf>=1.24`, `trafilatura>=1.12`, `python-magic>=0.4.27` in `requirements.txt`
 - **Tests**: 12 new parser tests (`tests/test_parsers.py`) + 8 harvest tests (`tests/test_harvest.py`) = 20 new offline tests; total 186 (35 intent + 151 offline)
 - **Library sync workflow**: `rsync -av --delete /home/jp/Laptop-MAIN/applications/orion-harvester/data/library/ jp@192.168.5.10:/data/orion/orion-data/documents/raw/`
+
+**Done (as of Feb 25, 2026 — Judge safety hardening):**
+
+- **Shell command normalization** (Item 1): `_normalize_command()` strips whitespace; `_split_compound_command()` splits on `;`, `&&`, `||`, `|`, newlines; `classify_command()` runs full-command `_CMD_RULES` check *before* splitting (prevents fork-bomb evasion via `;` split)
+- **Evasion detection** (Item 2): 11 regex patterns in `_EVASION_PATTERNS` — subshell, backtick, eval/exec, base64 decode pipe, pipe-to-shell, process substitution, hex/octal escapes; any match → unconditional tier 3. Expanded `_CMD_RULES`: ~18 tier 3 destructive patterns (shred, reboot, fdisk, iptables flush, etc.), ~15 tier 2 config-change patterns (chown, useradd, python -c, etc.)
+- **Git write-operation blocking** (Item 3): `_GIT_WRITE_SUBCOMMANDS` (22 entries) → tier 3; `_GIT_SAFE_SUBCOMMANDS` (11 entries) → tier 0; unknown git subcommands → tier 3 (default-deny); `_classify_git_command()` skips flags to find the real subcommand
+- **Path canonicalization** (Item 4): `_canonicalize_path()` via `os.path.realpath(os.path.expanduser())`; `_is_sensitive_path()` canonicalizes before prefix matching; `_SENSITIVE_BASENAMES` catches `.env` regardless of directory; `_command_touches_sensitive_path()` extracts path-like tokens from command arguments
+- **Self-edit governance** (Item 5): `_REPO_ROOT` resolved at import time; `_is_repo_path()` checks if path is under repo; `tier_for("write_file")` → tier 3 for repo paths, tier 3 for sensitive paths, tier 2 otherwise. Policy: HAL may only propose changes, never apply to its own codebase
+- **JSON audit logging** (Item 6): `Judge._log()` writes JSON lines with `ts`, `tier`, `status`, `action`, `detail`, `reason`, `session_id`, `turn_id`, `trace_id`, `span_id`; `trust_metrics.py` updated with dual-format parser (`_parse_json_line` + `_parse_legacy_line`) for backward compatibility
+- **ServerJudge audit fix** (Item 7): removed duplicate `_log()` call from `ServerJudge._request_approval()` — parent `approve()` already logs. Previous behavior: every server-mode denial produced two audit entries, one with status "auto" (counted as approved in trust metrics). Now: exactly one "denied" entry per denial
+- **Default-deny** (Item 8): unknown commands → tier 2 (was 1); unknown action types → tier 2 (was 1). Policy: anything not explicitly classified requires explain-and-approve
+- **Regression test suite** (Item 9): `tests/test_judge_hardening.py` — 187 tests across 6 sections: (A) invariant tests derived from data structures, (B) adversarial evasion attempts, (C) exactly-one-audit-entry contract, (D) usability guard for benign commands, (E) default-deny assertions, (F) self-edit governance. Coverage on `hal/judge.py`: 78% (uncovered: TTY input prompts, LLM risk eval, OTel trace correlation — all runtime-only)
+- **Test count**: 340 (35 intent + 305 offline); was 186
 
 **Backlog:**
 

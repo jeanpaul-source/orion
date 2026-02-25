@@ -55,13 +55,18 @@ from hal.tracing import setup_tracing
 
 
 class ServerJudge(Judge):
-    """Judge variant that auto-denies any action requiring interactive approval."""
+    """Judge variant that auto-denies any action requiring interactive approval.
+
+    Only overrides _request_approval to return False unconditionally.
+    The parent approve() already calls _log() after _request_approval returns,
+    so we must NOT log here — doing so would produce a duplicate entry with
+    status "auto" that inflates approved counts in trust metrics.
+    """
 
     def _request_approval(
         self, action_type: str, detail: str, tier: int, reason: str
     ) -> bool:
-        self._log(action_type, detail, tier, approved=False, auto=True, reason=reason)
-        return False  # deny non-read-only ops silently in server mode
+        return False  # parent approve() logs the denial
 
 
 # ---------------------------------------------------------------------------
