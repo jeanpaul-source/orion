@@ -151,10 +151,21 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 
 - ~19,900 document chunks, 768-dim HNSW embeddings (cosine)
 - 18 categories: github (7,197), virtualization (1,980), ai-agents-and-multi-agent-systems (1,771), databases (1,183), llm-serving-and-inference (1,145), homelab-networking-security (1,092), homelab-infrastructure (1,054), rag-and-knowledge-retrieval (1,048), readthedocs (960), gpu-passthrough-and-vgpu (669), vector-databases (511), self-healing-and-remediation (432), container-platforms (399), observability-and-alerting (316), workflow-automation-n8n (79), lab-infrastructure (35), lab-state (18), vendor_pdf (7)
-- Static docs ingested from `/data/orion/orion-data/documents/raw` — 727 documents, 17,657 chunks (Feb 23 2026)
+- Static docs ingested from `/data/orion/orion-data/documents/raw` — supports plain text, HTML (trafilatura), and PDF (pymupdf); MIME detection from magic bytes catches mismatched extensions
 - Nightly harvest timer (`harvest.timer`) deployed on server — clears and re-ingests at 3am daily
 - `search_kb` threshold 0.45, top_k 8 (raised from 0.3/5 to reduce low-quality results with larger KB)
-- Table: `documents` — columns: content, embedding, category, file_name, file_path, metadata
+- Table: `documents` — columns: content, embedding, category, file_name, file_path, metadata, doc_tier
+- **Three-layer knowledge model** (`doc_tier` column):
+
+| Tier | Name | What | Freshness |
+|------|------|------|-----------|
+| `ground-truth` | Ground Truth | User's own lab description — `knowledge/*.md` in the repo | Updated by user, version-controlled |
+| `reference` | Reference | Official docs, guides, tutorials (HTML + PDF + text) from `/data/orion/orion-data/documents/raw` | Synced from laptop via rsync; incremental ingestion (content-hash based, skips unchanged docs) |
+| `live-state` | Live State | Containers, services, disk, configs, hardware | Re-harvested nightly (clear + rebuild) |
+| `memory` | Memory | `/remember` facts | Never cleared by harvest |
+
+- Ground-truth results get a +0.10 score boost in search, re-sorted after fetch
+- Reference docs use incremental ingestion: content hashes compared per-chunk, only changed files re-embedded; orphan rows (deleted source files) cleaned up automatically
 
 **NOT running:** Qdrant, AnythingLLM, n8n, Traefik, Authelia
 
@@ -191,16 +202,18 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/llm.py` | `OllamaClient` (embeddings), `VLLMClient` (chat via OpenAI-compatible API) |
 | `hal/tracing.py` | OTel setup; `setup_tracing()` + `get_tracer()`; no-op fallback if collector absent |
 | `hal/tunnel.py` | SSH tunnel for laptop-side use (auto-tunnel when vLLM/Ollama not directly reachable) |
-| `hal/knowledge.py` | pgvector KB search |
+| `hal/knowledge.py` | pgvector KB search — `doc_tier` filtering, ground-truth score boost |
 | `hal/security.py` | Security workers: `get_security_events` (Falco), `get_host_connections` (Osquery), `get_traffic_summary` (ntopng), `scan_lan` (Nmap) — all Judge-gated, tiers 0/1 |
 | `hal/telegram.py` | Telegram bot — polls Telegram API, POSTs to `/chat` HTTP endpoint; auth by `TELEGRAM_ALLOWED_USER_ID`; sessions as `tg-{chat_id}` |
 | `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`, `NTOPNG_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`) |
 | `~/ntopng/docker-compose.yml` | ntopng + Redis compose; host network; interface `enp130s0`; not in this repo |
 | `harvest/` | Lab infrastructure harvester — re-indexes lab state into pgvector |
+| `harvest/parsers.py` | PDF parser (pymupdf), HTML parser (trafilatura), MIME detection, content hashing |
+| `knowledge/` | Ground-truth Markdown docs — user's own lab description, version-controlled |
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 129 offline tests (Judge, MemoryStore, agent loop, trust_metrics, agents, Telegram) = 164 total |
+| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 151 offline tests (Judge, MemoryStore, agent loop, trust_metrics, agents, Telegram, parsers, harvest) = 186 total |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
@@ -355,7 +368,7 @@ Laptop (edit code)
 - **Config**: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_ID` added to `hal/config.py` and `.env.example`
 - **Dependency**: `python-telegram-bot>=21.0` added to `requirements.txt`
 - **Tests**: 17 offline tests in `tests/test_telegram.py` (sanitize, sessions, auth, commands, HTTP mocking)
-- **Test count**: 164 (35 intent + 129 offline)
+- **Test count**: 186 (35 intent + 151 offline)
 
 **Done (as of Feb 24, 2026 — Telegram deployment):**
 
@@ -364,6 +377,22 @@ Laptop (edit code)
 - **Both services deployed to server**: copied to `~/.config/systemd/user/`, `daemon-reload`, enabled and started. Deploy order matters: `server.service` first, then `telegram.service`.
 - **End-to-end verified**: bot received message from phone, `sendMessage` confirmed in journal, both services survived SSH disconnect (`loginctl enable-linger jp` already set).
 - **`.env` workflow**: `.env` is gitignored — use `scp ~/orion/.env jp@192.168.5.10:~/orion/.env` to push credentials to server. Never edit `.env` directly on the server.
+
+**Done (as of Feb 24, 2026 — three-layer knowledge base):**
+
+- **Three-layer KB model implemented**: `doc_tier` column added to `documents` table with four tiers: `ground-truth`, `reference`, `live-state`, `memory`
+- **`harvest/parsers.py` created**: PDF extraction (pymupdf), HTML article extraction (trafilatura), MIME detection (python-magic), content hashing (SHA-256); `_MIN_TEXT_LENGTH=200` quality gate filters captcha/paywall pages
+- **HTML + PDF parsing in `collect_static_docs()`**: unlocks ~1,300 previously skipped files in the reference library; MIME detection catches `.html` files that are actually PDFs
+- **`knowledge/` directory created**: ground-truth Markdown docs version-controlled in the repo; `LAB_ENVIRONMENT.md` starter template pre-populated with lab specs; `README.md` explains conventions
+- **`collect_ground_truth()` collector**: reads `knowledge/*.md`, category `ground-truth`, registered first in `collect_all()`
+- **Incremental ingestion for reference docs**: content hashes stored in metadata; unchanged docs skipped entirely (no Ollama calls); changed docs have old chunks deleted then re-embedded
+- **Orphan cleanup**: DB rows for reference docs whose source files no longer exist on disk are deleted automatically during harvest
+- **Tier-boosted search**: `KnowledgeBase.search()` supports `doc_tier` filtering and `boost_ground_truth` (+0.10 score boost, re-sorted); return dicts include `doc_tier` key
+- **`hal/facts.py` updated**: `/remember` facts stored with `doc_tier='memory'` — never cleared by harvest
+- **`ensure_doc_tier_column()` migration**: idempotent `ALTER TABLE ADD COLUMN IF NOT EXISTS` + backfill for existing rows (live-state, memory categories)
+- **Dependencies added**: `pymupdf>=1.24`, `trafilatura>=1.12`, `python-magic>=0.4.27` in `requirements.txt`
+- **Tests**: 12 new parser tests (`tests/test_parsers.py`) + 8 harvest tests (`tests/test_harvest.py`) = 20 new offline tests; total 186 (35 intent + 151 offline)
+- **Library sync workflow**: `rsync -av --delete /home/jp/Laptop-MAIN/applications/orion-harvester/data/library/ jp@192.168.5.10:/data/orion/orion-data/documents/raw/`
 
 **Backlog:**
 

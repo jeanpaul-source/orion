@@ -22,17 +22,53 @@ def _read(path: str) -> str | None:
 
 # --- helpers ---
 
-def _doc(file_path: str, file_name: str, category: str, content: str, metadata: dict = None) -> dict:
+def _doc(file_path: str, file_name: str, category: str, content: str,
+         metadata: dict = None, doc_tier: str = "reference") -> dict:
     return {
         "file_path": file_path,
         "file_name": file_name,
         "category": category,
         "content": content.strip(),
         "metadata": metadata or {},
+        "doc_tier": doc_tier,
     }
 
 
 # --- collectors ---
+
+def collect_ground_truth() -> list[dict]:
+    """Ingest hand-written ground-truth docs from the knowledge/ directory.
+
+    These are the highest-priority documents — the user's own description
+    of their lab, goals, and constraints.  They live in the git repo and
+    travel with push/pull.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    knowledge_dir = repo_root / "knowledge"
+
+    if not knowledge_dir.exists():
+        return []
+
+    docs = []
+    for file_path in sorted(knowledge_dir.rglob("*.md")):
+        if not file_path.is_file() or file_path.name == "README.md":
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if not content.strip():
+            continue
+        docs.append(_doc(
+            file_path=str(file_path),
+            file_name=file_path.name,
+            category="ground-truth",
+            content=content,
+            metadata={"source_path": str(file_path)},
+            doc_tier="ground-truth",
+        ))
+    return docs
+
 
 def collect_docker_containers() -> list[dict]:
     """One doc per running container with full context."""
@@ -69,6 +105,7 @@ def collect_docker_containers() -> list[dict]:
             category="lab-state",
             content=content,
             metadata={"image": image, "ports": ports},
+            doc_tier="live-state",
         ))
 
     return docs
@@ -86,6 +123,7 @@ def collect_system_state() -> list[dict]:
         file_name="system:disk",
         category="lab-state",
         content=f"Disk usage (as of {ts}):\n{disk}",
+        doc_tier="live-state",
     ))
 
     # Memory
@@ -105,6 +143,7 @@ def collect_system_state() -> list[dict]:
         file_name="system:memory",
         category="lab-state",
         content=f"Memory usage (as of {ts}):\n{mem}{swap_warn}",
+        doc_tier="live-state",
     ))
 
     # Listening ports (non-loopback)
@@ -114,6 +153,7 @@ def collect_system_state() -> list[dict]:
         file_name="system:ports",
         category="lab-state",
         content=f"Listening ports on all interfaces (as of {ts}):\n{ports}",
+        doc_tier="live-state",
     ))
 
     # Running systemd services (non-kernel)
@@ -126,6 +166,7 @@ def collect_system_state() -> list[dict]:
         file_name="system:services",
         category="lab-state",
         content=f"Running systemd services (as of {ts}):\n{services}",
+        doc_tier="live-state",
     ))
 
     # Ollama models
@@ -136,6 +177,7 @@ def collect_system_state() -> list[dict]:
             file_name="system:ollama-models",
             category="lab-state",
             content=f"Ollama models available (as of {ts}):\n{models}",
+            doc_tier="live-state",
         ))
 
     return docs
@@ -171,6 +213,7 @@ Storage:
         file_name="hardware:summary",
         category="lab-infrastructure",
         content=content,
+        doc_tier="live-state",
     )]
 
 
@@ -197,6 +240,7 @@ def collect_config_files() -> list[dict]:
             category=category,
             content=f"# {full_path}\n\n{content}",
             metadata={"source_path": str(full_path)},
+            doc_tier="live-state",
         ))
 
     # README if present
@@ -207,6 +251,7 @@ def collect_config_files() -> list[dict]:
             file_name="README.md",
             category="lab-infrastructure",
             content=readme,
+            doc_tier="live-state",
         ))
 
     return docs
@@ -226,6 +271,7 @@ def collect_systemd_units() -> list[dict]:
             file_name=unit,
             category="lab-infrastructure",
             content=f"systemd unit: {unit}\n\n{content}",
+            doc_tier="live-state",
         ))
 
     return docs
@@ -233,6 +279,9 @@ def collect_systemd_units() -> list[dict]:
 
 # Extensions that are treated as plain text for ingestion
 _TEXT_EXTENSIONS = {".md", ".txt", ".rst", ".conf", ".yaml", ".yml", ".json", ".sh", ".py", ".toml", ".ini"}
+_HTML_EXTENSIONS = {".html", ".htm"}
+_PDF_EXTENSIONS = {".pdf"}
+_ALL_EXTENSIONS = _TEXT_EXTENSIONS | _HTML_EXTENSIONS | _PDF_EXTENSIONS
 _STATIC_DOCS_ROOT = Path("/data/orion/orion-data/documents/raw")
 
 
@@ -240,10 +289,13 @@ def collect_static_docs(root: Path = _STATIC_DOCS_ROOT) -> list[dict]:
     """Ingest pre-scraped documents from the raw documents directory.
 
     Each top-level subdirectory becomes a category (e.g.
-    ``ai-agents-and-multi-agent-systems``).  Files are read as-is; binary
-    and unrecognised extensions are skipped.  The raw files are never moved
-    or modified.
+    ``ai-agents-and-multi-agent-systems``).  Supports plain text, HTML
+    (via trafilatura), and PDF (via pymupdf).  MIME detection from magic
+    bytes catches files whose extension doesn't match their content.
+    The raw files are never moved or modified.
     """
+    from harvest.parsers import detect_mime, parse_html, parse_pdf
+
     if not root.exists():
         return []
 
@@ -255,13 +307,25 @@ def collect_static_docs(root: Path = _STATIC_DOCS_ROOT) -> list[dict]:
         for file_path in sorted(category_dir.rglob("*")):
             if not file_path.is_file():
                 continue
-            if file_path.suffix.lower() not in _TEXT_EXTENSIONS:
+            ext = file_path.suffix.lower()
+            if ext not in _ALL_EXTENSIONS:
                 continue
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            if not content.strip():
+
+            # Detect actual type (catches .html that are really PDFs)
+            mime = detect_mime(file_path)
+
+            content = None
+            if mime == "application/pdf" or ext in _PDF_EXTENSIONS:
+                content = parse_pdf(file_path)
+            elif mime in ("text/html", "application/xhtml+xml") or ext in _HTML_EXTENSIONS:
+                content = parse_html(file_path)
+            elif ext in _TEXT_EXTENSIONS:
+                try:
+                    content = file_path.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+
+            if not content or not content.strip():
                 continue
             docs.append(_doc(
                 file_path=str(file_path),
@@ -275,6 +339,7 @@ def collect_static_docs(root: Path = _STATIC_DOCS_ROOT) -> list[dict]:
 
 def collect_all() -> list[dict]:
     collectors = [
+        ("ground truth",      collect_ground_truth),
         ("docker containers", collect_docker_containers),
         ("system state",      collect_system_state),
         ("hardware",          collect_hardware),

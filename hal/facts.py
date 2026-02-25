@@ -23,16 +23,18 @@ def remember(fact: str, dsn: str, llm: OllamaClient) -> None:
                 """
                 INSERT INTO documents
                     (file_path, file_name, category, file_type,
-                     chunk_index, content, embedding, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     chunk_index, content, embedding, metadata, doc_tier)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (file_path, chunk_index) DO UPDATE SET
                     content   = EXCLUDED.content,
-                    embedding = EXCLUDED.embedding
+                    embedding = EXCLUDED.embedding,
+                    doc_tier  = EXCLUDED.doc_tier
                 """,
                 (
                     file_path, "fact", "memory", "text", 0, fact,
                     np.array(embedding),
                     psycopg2.extras.Json({"recorded_at": ts}),
+                    "memory",
                 ),
             )
         conn.commit()

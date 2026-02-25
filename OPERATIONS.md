@@ -156,6 +156,32 @@ python -m harvest              # manual run
 python -m harvest --dry-run   # preview only
 ```
 
+### Knowledge base tiers
+
+The harvest pipeline populates a three-layer knowledge base via the `doc_tier` column:
+
+| Tier | Source | Harvest behavior |
+|------|--------|-----------------|
+| `ground-truth` | `knowledge/*.md` in the repo | Cleared and re-ingested every run |
+| `reference` | `/data/orion/orion-data/documents/raw` (HTML, PDF, text) | Incremental — unchanged docs skipped via content hash; orphan rows cleaned |
+| `live-state` | Docker, systemd, disk, memory, ports, hardware, configs | Cleared and re-ingested every run |
+| `memory` | `/remember` facts | Never touched by harvest |
+
+Ground-truth docs get a +0.10 score boost in KB search results.
+
+### Syncing the reference library (laptop to server)
+
+The 2.3 GB reference library lives on the laptop and is **not** in git. Sync via rsync:
+
+```bash
+rsync -av --delete \
+  /home/jp/Laptop-MAIN/applications/orion-harvester/data/library/ \
+  jp@192.168.5.10:/data/orion/orion-data/documents/raw/
+```
+
+After syncing, run `python -m harvest` on the server (or wait for the nightly timer).
+The `--delete` flag + orphan cleanup ensures removed files don't leave stale KB rows.
+
 ### HAL HTTP server (`ops/server.service`)
 
 FastAPI server that handles all `/chat` and `/health` requests. Required by the
