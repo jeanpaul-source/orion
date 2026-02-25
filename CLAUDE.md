@@ -344,6 +344,8 @@ Laptop (edit code)
 
 **Backlog:**
 
+See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
+
 - **Falco noise filter**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` (same pattern as existing `unix_chkpwd` entry)
 - **Swap investigation**: 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Eval re-run**: baseline predates security tools, prompt rewrite, and KB expansion; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline
