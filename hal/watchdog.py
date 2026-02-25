@@ -30,6 +30,8 @@ THRESHOLDS: dict[str, tuple[float, str, str]] = {
     "cpu_pct": (85.0, "CPU usage", "default"),
     "mem_pct": (90.0, "Memory usage", "high"),
     "disk_root_pct": (85.0, "Disk / usage", "high"),
+    "disk_docker_pct": (85.0, "Disk /docker usage", "high"),
+    "disk_data_pct": (85.0, "Disk /data/projects usage", "high"),
     "swap_pct": (80.0, "Swap usage", "urgent"),
     "load1": (16.0, "Load average", "default"),  # 16 on a 20-core machine
     "gpu_vram_pct": (95.0, "GPU VRAM usage", "urgent"),
