@@ -24,6 +24,23 @@ LOG_FILE = Path.home() / ".orion" / "watchdog.log"
 COOLDOWN_MINUTES = 30
 HARVEST_LAST_RUN = Path.home() / ".orion" / "harvest_last_run"
 HARVEST_LAG_HOURS = 2
+FALCO_LOG = Path("/var/log/falco/events.json")
+FALCO_TAIL = 200
+_FALCO_ALERT_PRIORITIES = {"Emergency", "Alert", "Critical", "Error", "Warning"}
+
+# Replicated from hal/security.py — avoids pulling SSHExecutor/Judge deps into
+# a lightweight timer script.  Keep in sync manually.
+_WATCHDOG_FALCO_NOISE: list = [
+    lambda e: (
+        e.get("output_fields", {}).get("proc.name") == "pg_isready"
+        and "/etc/shadow" in e.get("output_fields", {}).get("fd.name", "")
+    ),
+    lambda e: (
+        e.get("output_fields", {}).get("proc.name")
+        in ("systemd-tmpfile", "unix_chkpwd", "systemd-userwork")
+        and "/etc/shadow" in e.get("output_fields", {}).get("fd.name", "")
+    ),
+]
 
 # metric_key: (threshold, label, urgency)
 THRESHOLDS: dict[str, tuple[float, str, str]] = {
@@ -96,7 +113,7 @@ def _log(msg: str) -> None:
         f.write(f"{ts}  {msg}\n")
 
 
-def _check_ntp() -> str | None:
+def _check_ntp(**_kw: object) -> str | None:
     """Returns an alert message if NTP is not synchronized, else None."""
     try:
         out = subprocess.run(
@@ -112,7 +129,7 @@ def _check_ntp() -> str | None:
     return None
 
 
-def _check_harvest() -> str | None:
+def _check_harvest(**_kw: object) -> str | None:
     """Returns an alert message if harvest_last_run is missing or stale."""
     try:
         mtime = HARVEST_LAST_RUN.stat().st_mtime
@@ -162,7 +179,7 @@ CRITICAL_CONTAINERS: set[str] = {
 }
 
 
-def _check_containers() -> str | None:
+def _check_containers(**_kw: object) -> str | None:
     """Returns an alert message if any critical container is exited/dead, else None."""
     try:
         out = subprocess.run(
@@ -190,6 +207,68 @@ def _check_containers() -> str | None:
     except Exception:
         pass
     return None
+
+
+def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
+    """Returns alert message if new high-priority Falco events found, else None.
+
+    Tracks ``falco_last_seen`` in *state* so the same events are not re-alerted
+    on the next timer run.
+    """
+    if not FALCO_LOG.exists():
+        return None
+    try:
+        out = subprocess.run(
+            ["tail", "-n", str(FALCO_TAIL), str(FALCO_LOG)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout
+    except Exception:
+        return None
+
+    last_seen = (state or {}).get("falco_last_seen", "")
+    newest_time = last_seen
+
+    events: list[dict] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if any(f(event) for f in _WATCHDOG_FALCO_NOISE):
+            continue
+        priority = event.get("priority", "")
+        if priority not in _FALCO_ALERT_PRIORITIES:
+            continue
+        event_time = event.get("time", "")
+        if last_seen and event_time <= last_seen:
+            continue
+        if event_time > newest_time:
+            newest_time = event_time
+        events.append(event)
+
+    # Persist high-water mark so next run skips these events
+    if state is not None and newest_time:
+        state["falco_last_seen"] = newest_time
+
+    if not events:
+        return None
+
+    lines: list[str] = []
+    for e in events[:10]:
+        rule = e.get("rule", "unknown")
+        pri = e.get("priority", "?")
+        proc = e.get("output_fields", {}).get("proc.name", "?")
+        lines.append(f"[{pri}] {rule} (proc: {proc})")
+    count = len(events)
+    if count > 10:
+        lines.append(f"... and {count - 10} more")
+    header = f"{count} Falco security event{'s' if count != 1 else ''}"
+    return f"{header}:\n" + "\n".join(lines)
 
 
 def run() -> None:
@@ -250,8 +329,9 @@ def run() -> None:
         ("ntp", _check_ntp, "urgent"),
         ("harvest_lag", _check_harvest, "high"),
         ("containers", _check_containers, "urgent"),
+        ("falco", _check_falco, "urgent"),
     ]:
-        msg = check_fn()
+        msg = check_fn(state=state)
         if msg:
             if not _in_cooldown(state, key):
                 simple_alerts.append(msg)
