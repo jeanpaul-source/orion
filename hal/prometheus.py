@@ -55,12 +55,16 @@ class PrometheusClient:
         swap = self.scalar(
             "(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) * 100"
         )
+        gpu_vram = self.scalar('node_gpu_vram_usage_percent{gpu="0"}')
+        gpu_temp = self.scalar('node_gpu_temperature_celsius{gpu="0"}')
         return {
             "cpu_pct": round(cpu, 1) if cpu is not None else None,
             "mem_pct": round(mem, 1) if mem is not None else None,
             "disk_root_pct": round(disk_root, 1) if disk_root is not None else None,
             "swap_pct": round(swap, 1) if swap is not None else None,
             "load1": round(load, 2) if load is not None else None,
+            "gpu_vram_pct": round(gpu_vram, 1) if gpu_vram is not None else None,
+            "gpu_temp_c": round(gpu_temp, 1) if gpu_temp is not None else None,
         }
 
 

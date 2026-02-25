@@ -32,6 +32,8 @@ THRESHOLDS: dict[str, tuple[float, str, str]] = {
     "disk_root_pct": (85.0, "Disk / usage", "high"),
     "swap_pct": (80.0, "Swap usage", "urgent"),
     "load1": (16.0, "Load average", "default"),  # 16 on a 20-core machine
+    "gpu_vram_pct": (95.0, "GPU VRAM usage", "urgent"),
+    "gpu_temp_c": (83.0, "GPU temperature", "urgent"),  # 3090 Ti throttle point
 }
 
 

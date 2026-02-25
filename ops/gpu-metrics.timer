@@ -1,0 +1,10 @@
+[Unit]
+Description=Run GPU metrics exporter every 15s
+
+[Timer]
+OnBootSec=10
+OnUnitActiveSec=15s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,6 @@
+[Unit]
+Description=Orion GPU metrics exporter — writes .prom file for node-exporter textfile collector
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash %h/orion/ops/gpu-metrics.sh
