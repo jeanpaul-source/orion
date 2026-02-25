@@ -68,8 +68,10 @@ TOOLS = [
         "function": {
             "name": "get_metrics",
             "description": (
-                "Get live Prometheus metrics: CPU usage, memory, disk, "
-                "load average, uptime."
+                "Get live Prometheus metrics: CPU %, memory %, disk usage "
+                "(root /, /docker, /data/projects), swap %, 1-min load average, "
+                "GPU VRAM %, and GPU temperature. Returns None for any metric "
+                "that is temporarily unavailable."
             ),
             "parameters": {
                 "type": "object",
