@@ -106,6 +106,7 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/judge.py` | Policy gate; tier 0-3; command normalization; evasion detection; git write blocking; path canonicalization; self-edit governance; default-deny; JSON audit with session/trace |
 | `hal/llm.py` | `VLLMClient` (chat) and `OllamaClient` (embeddings only) |
 | `hal/security.py` | Falco, Osquery, ntopng, Nmap workers; `_FALCO_NOISE` filter |
+| `hal/web.py` | `web_search()` via Tavily; `sanitize_query()` privacy guard; conditional on `TAVILY_API_KEY` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/prometheus.py` | PromQL client; `flush_metrics()` batch push to Pushgateway |
 | `hal/server.py` | FastAPI `/chat` + `/health`; `ServerJudge` auto-denies tier 1+ |
@@ -114,4 +115,4 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/config.py` | Dataclass + `.env` loader; all tunable values live here |
 | `harvest/collect.py` | Lab state + static docs collectors |
 | `harvest/ingest.py` | Chunk → embed → upsert; clears stale chunks before re-ingest |
-| `tests/` | 363 tests: 35 intent (require Ollama) + 328 offline |
+| `tests/` | 389 tests: 35 intent (require Ollama) + 354 offline |

@@ -89,6 +89,16 @@ What's built, what's next, and where this is going.
 - 17 offline tests in `tests/test_telegram.py` (sanitize, sessions, auth, commands, HTTP mocking)
 - Test count: 164 (35 intent + 129 offline)
 
+### Feb 25, 2026 — Web search (internet access Step 1)
+- `hal/web.py` — `web_search()` via Tavily API with `sanitize_query()` privacy guard (strips RFC1918, loopback, Tailscale, private hostnames)
+- Tool registry pattern: `_BASE_TOOLS` + `get_tools(*, tavily_api_key)` — conditional tool inclusion; LLM never sees disabled tools
+- `web_search` tier 0 in Judge (read-only, audit-logged)
+- 5 agentic intent examples for web search queries
+- `TAVILY_API_KEY` in config + `.env.example`; `tavily-python>=0.5` in requirements
+- 26 new tests in `tests/test_web.py` (sanitisation, mocked Tavily, tool registry)
+- Test count: 389 (35 intent + 354 offline)
+- Next: Step 2 (`fetch_url` with SSRF protection), then Step 3 (eval expansion)
+
 ---
 
 ## Backlog (immediate)

@@ -206,8 +206,9 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/tunnel.py` | SSH tunnel for laptop-side use (auto-tunnel when vLLM/Ollama not directly reachable) |
 | `hal/knowledge.py` | pgvector KB search — `doc_tier` filtering, ground-truth score boost |
 | `hal/security.py` | Security workers: `get_security_events` (Falco), `get_host_connections` (Osquery), `get_traffic_summary` (ntopng), `scan_lan` (Nmap) — all Judge-gated, tiers 0/1 |
+| `hal/web.py` | `web_search()` via Tavily API; `sanitize_query()` strips private IPs/hostnames; lazy import of `tavily-python` |
 | `hal/telegram.py` | Telegram bot — polls Telegram API, POSTs to `/chat` HTTP endpoint; auth by `TELEGRAM_ALLOWED_USER_ID`; sessions as `tg-{chat_id}` |
-| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`, `NTOPNG_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`) |
+| `hal/config.py` | Config dataclass + `.env` loader (includes `NTFY_URL`, `VLLM_URL`, `NTOPNG_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `TAVILY_API_KEY`) |
 | `~/ntopng/docker-compose.yml` | ntopng + Redis compose; host network; interface `enp130s0`; not in this repo |
 | `harvest/` | Lab infrastructure harvester — re-indexes lab state into pgvector |
 | `harvest/parsers.py` | PDF parser (pymupdf), HTML parser (trafilatura), MIME detection, content hashing |
@@ -215,7 +216,7 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 328 offline tests (Judge, Judge hardening, MemoryStore, agent loop, trust_metrics, agents, Telegram, parsers, harvest) = 363 total |
+| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 354 offline tests (Judge, Judge hardening, MemoryStore, agent loop, trust_metrics, agents, Telegram, parsers, harvest, web) = 389 total |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
@@ -418,6 +419,19 @@ Laptop (edit code)
 - **Falco proactive alerting** (Item 5): `_check_falco()` in watchdog reads `/var/log/falco/events.json` (tail 200), filters noise via `_WATCHDOG_FALCO_NOISE` (replicated from `hal/security.py` to avoid heavy deps), tracks `falco_last_seen` timestamp in state to avoid re-alerting; alerts on Emergency/Alert/Critical/Error/Warning priority events; `systemd-userwork` added to noise filter
 - **System prompt rewritten** with full operational awareness: all automated/scheduled tasks (watchdog thresholds, harvest timer, gpu-metrics timer, server + telegram services); diagnostic guidance for "is everything okay?", "why did I get an alert?", "what changed?"; KB tier model; complete service inventory; troubleshooting order; `get_metrics` tool description updated to list all 9 actual metrics
 - **Test count**: 363 (35 intent + 328 offline)
+
+**Done (as of Feb 25, 2026 — web search):**
+
+- **`web_search` tool via Tavily** (Step 1 of internet access plan): `hal/web.py` — `web_search()` sends queries to Tavily API, returns `[{title, url, content, score}]`; lazy-imports `tavily-python` so HAL works without it installed
+- **Privacy guard**: `sanitize_query()` strips RFC1918, loopback, Tailscale CGNAT, and private hostnames (`localhost`, `the-lab`, `.local`, `.internal`) from outbound queries before they reach the external API
+- **Tool registry pattern**: `TOOLS` → `_BASE_TOOLS` (private); new `get_tools(*, tavily_api_key)` function builds active tool list from config — LLM never sees disabled tools. Extends cleanly for future `fetch_url` / GitHub tools
+- **Conditional inclusion**: `web_search` only appears in the tool list when `TAVILY_API_KEY` is set (same pattern as Telegram)
+- **Judge tier 0**: read-only, no side effects; every outbound query logged in audit
+- **5 agentic intent examples** added: latest version queries, CVE lookups, release notes
+- **`TAVILY_API_KEY`** added to `hal/config.py` and `.env.example`
+- **`tavily-python>=0.5`** added to `requirements.txt`
+- **26 new tests** in `tests/test_web.py`: 15 sanitisation, 6 Tavily mock (via `sys.modules` injection), 5 tool registry
+- **Test count**: 389 (35 intent + 354 offline)
 
 **Backlog:**
 
