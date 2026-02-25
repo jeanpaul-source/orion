@@ -149,6 +149,45 @@ def _send_ntfy_simple(
         return False
 
 
+CRITICAL_CONTAINERS: set[str] = {
+    "prometheus",
+    "grafana",
+    "pgvector-kb",
+    "ntopng",
+    "pushgateway",
+}
+
+
+def _check_containers() -> str | None:
+    """Returns an alert message if any critical container is exited/dead, else None."""
+    try:
+        out = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "--filter",
+                "status=exited",
+                "--filter",
+                "status=dead",
+                "--format",
+                "{{.Names}}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        if not out:
+            return None
+        stopped = set(out.splitlines())
+        down = CRITICAL_CONTAINERS & stopped
+        if down:
+            names = ", ".join(sorted(down))
+            return f"Critical containers down: {names}"
+    except Exception:
+        pass
+    return None
+
+
 def run() -> None:
     config = cfg.load()
     prom = PrometheusClient(config.prometheus_url)
@@ -199,6 +238,7 @@ def run() -> None:
     for key, check_fn, urgency in [
         ("ntp", _check_ntp, "urgent"),
         ("harvest_lag", _check_harvest, "high"),
+        ("containers", _check_containers, "urgent"),
     ]:
         msg = check_fn()
         if msg:
