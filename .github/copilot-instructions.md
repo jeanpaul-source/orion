@@ -74,7 +74,7 @@ whether the component itself is wrong. Band-aids already in the codebase are doc
 
 ```bash
 # Tests (offline — no Ollama needed)
-.venv/bin/pytest tests/ -k "not require_ollama" -v
+.venv/bin/pytest tests/ --ignore=tests/test_intent.py -v
 
 # Tests (full — requires Ollama reachable)
 OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v

@@ -58,7 +58,7 @@ HAL_INSTANCE=laptop
 OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 
 # Offline tests only (no Ollama needed)
-.venv/bin/pytest tests/ -v -k "not require_ollama"
+.venv/bin/pytest tests/ --ignore=tests/test_intent.py -v
 ```
 
 147 tests total:
@@ -146,7 +146,7 @@ fix stuff                             ← which stuff?
 ### Commit granularity
 
 **One logical change per commit.** A commit is ready when:
-- `pytest tests/ -k "not require_ollama"` passes
+- `pytest tests/ --ignore=tests/test_intent.py` passes
 - `ruff check hal/ tests/ harvest/ eval/` passes
 - One thing changed with a clear description
 
