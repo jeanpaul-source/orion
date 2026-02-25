@@ -127,7 +127,11 @@ def _check_harvest() -> str | None:
 
 
 def _send_ntfy_simple(
-    ntfy_url: str, messages: list[str], urgency: str = "high"
+    ntfy_url: str,
+    messages: list[str],
+    urgency: str = "high",
+    title: str = "Orion Alert — the-lab",
+    tags: str = "warning,server",
 ) -> bool:
     """Send a free-form ntfy notification for non-metric alerts. Returns True on success."""
     if not ntfy_url:
@@ -138,9 +142,9 @@ def _send_ntfy_simple(
             ntfy_url,
             data=body.encode(),
             headers={
-                "Title": "Orion Alert — the-lab",
+                "Title": title,
                 "Priority": urgency,
-                "Tags": "warning,server",
+                "Tags": tags,
             },
             timeout=10,
         )
@@ -218,6 +222,13 @@ def run() -> None:
             if key in state:
                 del state[key]
                 _log(f"CLEAR  {key}={value:.1f}")
+                _send_ntfy_simple(
+                    config.ntfy_url,
+                    [f"{label} recovered: {value:.1f} (threshold: {threshold:.0f})"],
+                    urgency="low",
+                    title="Orion RESOLVED \u2014 the-lab",
+                    tags="white_check_mark,server",
+                )
 
     if alerts:
         ok = _send_ntfy(config.ntfy_url, alerts)
@@ -250,6 +261,13 @@ def run() -> None:
             if key in state:
                 del state[key]
                 _log(f"CLEAR  {key}")
+                _send_ntfy_simple(
+                    config.ntfy_url,
+                    [f"{key} resolved"],
+                    urgency="low",
+                    title="Orion RESOLVED \u2014 the-lab",
+                    tags="white_check_mark,server",
+                )
 
     if simple_alerts:
         ok = _send_ntfy_simple(config.ntfy_url, simple_alerts)
