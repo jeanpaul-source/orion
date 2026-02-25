@@ -113,8 +113,10 @@ You → HAL (thin coordinator, LLM brain)
 | pgvector-kb-api | 5001 | — | systemd | Python search API wrapping pgvector; at /opt/homelab-infrastructure/pgvector-kb/api.py |
 | prometheus | 9091 | 9090 | Docker | compose at /opt/homelab-infrastructure/monitoring-stack/ |
 | grafana | 3001 | 3000 | Docker | same compose stack |
-| node-exporter | — | 9100 | Docker | internal to monitoring network only |
+| node-exporter | — | 9100 | Docker | internal to monitoring network; `pid: host`, `--path.rootfs=/rootfs`, `--collector.textfile.directory=/textfiles`; GPU metrics via textfile collector |
 | blackbox-exporter | — | 9115 | Docker | internal to monitoring network only |
+| pushgateway | 9092 | 9091 | Docker | same compose stack; HAL metrics accumulator target |
+| gpu-metrics | — | — | user systemd timer | `ops/gpu-metrics.sh` → `/var/lib/node-exporter/textfiles/gpu.prom` every 15s |
 | cockpit | 9090 | — | systemd | Server management UI — NOT Prometheus |
 | vLLM | 8000 | — | user systemd | `~/vllm-env/bin/vllm`; `VLLM_USE_FLASHINFER_SAMPLER=0` workaround for RTX 3090 Ti CUDA issue; `--enable-auto-tool-choice --tool-call-parser hermes --enforce-eager --max-model-len 8192 --gpu-memory-utilization 0.95`; model `Qwen/Qwen2.5-32B-Instruct-AWQ` |
 | ntopng | 3000 | 3000 | Docker | `~/ntopng/docker-compose.yml`; Redis on same stack; interface `enp130s0`; login disabled; Community API at `/lua/rest/v2/` |
@@ -193,8 +195,8 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `hal/executor.py` | SSH runner; detects localhost and runs directly (no self-SSH) |
 | `hal/memory.py` | SQLite session store (`~/.orion/memory.db`); `search_sessions()` full-text search |
 | `hal/facts.py` | `/remember` — embeds facts to pgvector as `category='memory'` |
-| `hal/watchdog.py` | Standalone monitoring watchdog (run via systemd timer) |
-| `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk/swap/load; optional Counter/Histogram helpers (push via PROM_PUSHGATEWAY) |
+| `hal/watchdog.py` | Standalone monitoring watchdog (run via systemd timer); checks: metric thresholds (CPU, mem, disk×3, swap, load, GPU VRAM, GPU temp), NTP sync, harvest freshness, critical containers, Falco security events; sends ntfy alerts + RESOLVED recovery notifications |
+| `hal/prometheus.py` | Prometheus query client; `health()` returns cpu/mem/disk_root/disk_docker/disk_data/swap/load/gpu_vram/gpu_temp; optional Counter/Histogram helpers (push via PROM_PUSHGATEWAY) |
 | `hal/server.py` | FastAPI HTTP server — `/health` liveness probe, `/POST chat` endpoint; `ServerJudge` auto-denies tier 1+ (no TTY) |
 | `hal/agents.py` | `PlannerAgent` + `CriticAgent` sub-agents — tool-less LLM wrappers with structured output prompts |
 | `hal/trust_metrics.py` | Parses `~/.orion/audit.log` (JSON + legacy pipe format) into `AuditEvent` objects; `get_action_stats()` exposed as a HAL tool |
@@ -213,12 +215,12 @@ Secrets files: `monitoring-stack.env`, `agent-zero.env`, `pgvector-kb.env`.
 | `eval/queries.jsonl` | 24 test queries covering B1–B6 failure cases from SESSION_FINDINGS |
 | `eval/run_eval.py` | Eval runner — drives HAL handlers, writes `eval/responses.jsonl` |
 | `eval/evaluate.py` | Scores responses: no_raw_json, hal_identity, intent_accuracy, relevance, coherence |
-| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 305 offline tests (Judge, Judge hardening, MemoryStore, agent loop, trust_metrics, agents, Telegram, parsers, harvest) = 340 total |
+| `tests/` | pytest suite: 35 intent classifier tests (require Ollama) + 328 offline tests (Judge, Judge hardening, MemoryStore, agent loop, trust_metrics, agents, Telegram, parsers, harvest) = 363 total |
 | `pytest.ini` | `pythonpath = .` so pytest can find the `hal` package |
 | `requirements.txt` | Production Python deps (includes opentelemetry-*) |
 | `requirements-dev.txt` | Dev-only deps (pytest, azure-ai-evaluation) |
 | `.env.example` | Config template |
-| `ops/` | Systemd units: `vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`, `telegram.service`; `KEYS_AND_TOKENS.md` |
+| `ops/` | Systemd units: `vllm.service`, `watchdog.service`, `watchdog.timer`, `harvest.service`, `harvest.timer`, `telegram.service`, `server.service`, `gpu-metrics.service`, `gpu-metrics.timer`; `gpu-metrics.sh` (nvidia-smi → .prom); `KEYS_AND_TOKENS.md` |
 
 ---
 
@@ -317,7 +319,7 @@ Laptop (edit code)
 - **`_extract_tool_calls_from_content()`**: fallback parser in `llm.py` for `<tools>`/`<tool_call>` wrappers; active while Coder model was loaded, retained as defensive code
 - **End-to-end verified**: `get_security_events` fires as structured tool call, Falco events returned, HAL answers correctly
 
-**Known noise (Falco):** `systemd-userwork` accessing `/etc/shadow` — benign, not yet in noise filter. Add to `_FALCO_NOISE` in `hal/security.py`.
+**Known noise (Falco):** `systemd-userwork` accessing `/etc/shadow` — added to watchdog's `_WATCHDOG_FALCO_NOISE` filter (Feb 25, 2026). Also add to `_FALCO_NOISE` in `hal/security.py` for interactive queries.
 
 **Done (as of Feb 23, 2026 — session 2):**
 
@@ -407,11 +409,20 @@ Laptop (edit code)
 - **Regression test suite** (Item 9): `tests/test_judge_hardening.py` — 187 tests across 6 sections: (A) invariant tests derived from data structures, (B) adversarial evasion attempts, (C) exactly-one-audit-entry contract, (D) usability guard for benign commands, (E) default-deny assertions, (F) self-edit governance. Coverage on `hal/judge.py`: 78% (uncovered: TTY input prompts, LLM risk eval, OTel trace correlation — all runtime-only)
 - **Test count**: 340 (35 intent + 305 offline); was 186
 
+**Done (as of Feb 25, 2026 — monitoring improvements):**
+
+- **GPU monitoring** (Item 1): nvidia-smi metrics via node-exporter textfile collector pattern; `ops/gpu-metrics.sh` writes `gpu.prom` every 15s via systemd user timer; node-exporter mounts `/var/lib/node-exporter/textfiles:/textfiles:ro,Z`; `gpu_vram_pct` (threshold 95%) and `gpu_temp_c` (threshold 83°C) added to `hal/prometheus.py` health() and `hal/watchdog.py` THRESHOLDS
+- **Disk mount point monitoring** (Item 2): node-exporter updated with `--path.rootfs=/rootfs` and `pid: host` (was returning zero filesystem metrics); `disk_docker_pct` (mountpoint `/docker`) and `disk_data_pct` (mountpoint `/data/projects`) added to health() and watchdog THRESHOLDS (both threshold 85%)
+- **Container health check** (Item 3): `_check_containers()` in watchdog checks `docker ps --filter status=exited --filter status=dead`; `CRITICAL_CONTAINERS` set: prometheus, grafana, pgvector-kb, ntopng, pushgateway; fires urgent ntfy on any critical container down
+- **Recovery RESOLVED notifications** (Item 4): when a metric drops below threshold or a boolean check recovers, sends low-priority ntfy with ✅ tag (title "Orion RESOLVED — the-lab"); `_send_ntfy_simple()` gains optional `title` and `tags` parameters
+- **Falco proactive alerting** (Item 5): `_check_falco()` in watchdog reads `/var/log/falco/events.json` (tail 200), filters noise via `_WATCHDOG_FALCO_NOISE` (replicated from `hal/security.py` to avoid heavy deps), tracks `falco_last_seen` timestamp in state to avoid re-alerting; alerts on Emergency/Alert/Critical/Error/Warning priority events; `systemd-userwork` added to noise filter
+- **Test count**: 363 (35 intent + 328 offline)
+
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
 
-- **Falco noise filter**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` (same pattern as existing `unix_chkpwd` entry)
+- **Falco noise filter in security.py**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` for interactive queries (already in watchdog's filter)
 - **Swap investigation**: 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Eval re-run**: baseline predates security tools, prompt rewrite, and KB expansion; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline
 - **Tempo / OTel traces**: `hal/tracing.py` is wired and emitting spans; deploy Grafana Tempo container to receive them (separate item, pending investigation)

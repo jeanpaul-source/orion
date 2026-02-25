@@ -114,4 +114,4 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/config.py` | Dataclass + `.env` loader; all tunable values live here |
 | `harvest/collect.py` | Lab state + static docs collectors |
 | `harvest/ingest.py` | Chunk → embed → upsert; clears stale chunks before re-ingest |
-| `tests/` | 340 tests: 35 intent (require Ollama) + 305 offline |
+| `tests/` | 363 tests: 35 intent (require Ollama) + 328 offline |
