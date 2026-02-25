@@ -156,14 +156,31 @@ python -m harvest              # manual run
 python -m harvest --dry-run   # preview only
 ```
 
+### HAL HTTP server (`ops/server.service`)
+
+FastAPI server that handles all `/chat` and `/health` requests. Required by the
+Telegram bot — deploy and start this before `telegram.service`.
+
+```bash
+cp ops/server.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now server.service
+```
+
+Wait for `HAL services connected — server ready` in the journal before starting the bot:
+
+```bash
+journalctl --user -u server -f
+```
+
 ### Telegram bot (`ops/telegram.service`)
 
 Long-running polling bot. Connects to the Telegram API and forwards messages to the
 HTTP server at `localhost:8087`. Requires `TELEGRAM_BOT_TOKEN` and
-`TELEGRAM_ALLOWED_USER_ID` in `.env`.
+`TELEGRAM_ALLOWED_USER_ID` in `.env`. **Deploy `server.service` first.**
 
 ```bash
-# Deploy
+# Deploy (server.service must already be running)
 cp ops/telegram.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now telegram.service

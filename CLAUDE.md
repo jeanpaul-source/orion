@@ -357,6 +357,14 @@ Laptop (edit code)
 - **Tests**: 17 offline tests in `tests/test_telegram.py` (sanitize, sessions, auth, commands, HTTP mocking)
 - **Test count**: 164 (35 intent + 129 offline)
 
+**Done (as of Feb 24, 2026 — Telegram deployment):**
+
+- **`ops/server.service` created**: user systemd unit for the FastAPI HTTP server (`hal/server.py`, port 8087); same pattern as other units (`%h`, no `User=`, `Restart=on-failure`, `RestartSec=10`). Required by `telegram.service` — bot POSTs to `http://127.0.0.1:8087/chat`.
+- **`ops/telegram.service` launch fix**: `ExecStart` changed from `python hal/telegram.py` → `python -m hal.telegram`. The filename `telegram.py` shadows the `telegram` library when run as a script; `-m` resolves the correct module.
+- **Both services deployed to server**: copied to `~/.config/systemd/user/`, `daemon-reload`, enabled and started. Deploy order matters: `server.service` first, then `telegram.service`.
+- **End-to-end verified**: bot received message from phone, `sendMessage` confirmed in journal, both services survived SSH disconnect (`loginctl enable-linger jp` already set).
+- **`.env` workflow**: `.env` is gitignored — use `scp ~/orion/.env jp@192.168.5.10:~/orion/.env` to push credentials to server. Never edit `.env` directly on the server.
+
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
