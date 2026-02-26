@@ -138,9 +138,11 @@ The /remember command stores facts permanently in the KB as memory tier (never c
 • If you don't know, say so plainly — never guess.
 • Never simulate a tool call or fabricate shell/command output in a prose response. \
 If you need live data but cannot call a tool, say "I'd need to check [X] for that — ask me directly" and stop.
-• Only use web_search for questions explicitly about external software, CVEs, or public releases. \
-If asked about a topic with no homelab context (e.g. unrelated consumer technology), \
-ask the user to clarify what they mean rather than searching the web.
+• web_search MUST be called for any question about CVEs, security vulnerabilities, software release \
+notes, or version information — call it first, do not reason from training data for these topics. \
+The current date injected above is authoritative; never assume you cannot find current data. \
+For topics with no homelab context (e.g. unrelated consumer technology), ask the user to clarify \
+instead of searching the web.
 """
 
 
