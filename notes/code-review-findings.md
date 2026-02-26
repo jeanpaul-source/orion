@@ -59,7 +59,7 @@ if not os.getenv("OLLAMA_HOST"):
 
 ## High Priority / Do Soon
 
-### H1 — Gate PlannerAgent / CriticAgent
+### ~~H1 — Gate PlannerAgent / CriticAgent~~ ✅ DONE (Feb 25, 2026)
 
 Every agentic query — including `ls /opt` — runs PlannerAgent + CriticAgent first. That is
 2 LLM inference calls (32B model) before the main loop starts. The planner output is
@@ -75,7 +75,7 @@ prepended to the user message but there is no evidence the model follows it for 
 
 ---
 
-### H2 — `agent.py` is 1045 lines with a 17-branch dispatch
+### ~~H2 — `agent.py` is 1045 lines with a 17-branch dispatch~~ ✅ DONE (Feb 25, 2026)
 
 `_dispatch()` is a long if-elif chain. `_BASE_TOOLS` is a flat list of dicts in the same
 file. Every new tool requires touching both in multiple places.
@@ -180,7 +180,8 @@ requires running the full test suite first.
 - [ ] Run eval re-run on server (no code changes needed)
 - [ ] C2: Gate or remove `_extract_tool_calls_from_content`
 - [ ] C3: Config fail-loud on missing `.env` required fields
-- [ ] H1: Gate PlannerAgent on query complexity
+- [x] H1: Gate PlannerAgent on query complexity
+- [x] H2: Refactor tool schema + dispatch registry
 - [ ] Tests: `hal/watchdog.py` threshold + cooldown logic
 - [ ] Tests: `hal/server.py` endpoints via `TestClient`
 - [ ] Tests: `hal/executor.py` subprocess mock

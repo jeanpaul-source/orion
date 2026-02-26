@@ -465,6 +465,12 @@ Laptop (edit code)
 - **H3 completed**: `run_conversational()` now uses OTel span `hal.run_conversational`, sets `hal.session_id` / `hal.query` / `hal.response_len`, calls `set_context(session_id=session_id)`, and logs `conversational turn` with intent
 - **Validation**: `.venv/bin/ruff check hal/agent.py` clean; `.venv/bin/pytest tests/ -x -q --ignore=tests/test_intent.py` passed (`432`)
 
+**Done (as of Feb 25, 2026 — H1/H2 planner gate + tool registry):**
+
+- **H1 completed**: deterministic planner/critic complexity gate added in `hal/agent.py` (`_should_use_planner_critic`) with explicit constants (`PLANNER_CRITIC_SHORT_QUERY_WORDS`, `PLANNER_CRITIC_ACTION_VERBS`); simple short non-action queries skip Planner/Critic, action-ish/long queries use them; span attributes record used/skipped + gate reason; planner/critic exception fallback behavior preserved.
+- **H2 completed**: tool schema + dispatch refactored into `hal/tools.py` with `TOOL_REGISTRY` entries pairing schema + handler + availability predicate; `get_tools()` now iterates registry; dispatch now registry lookup (`dispatch_tool`) with legacy unknown-tool error shape preserved; `hal/agent.py` keeps a thin `_dispatch` compatibility wrapper for existing tests/imports.
+- **Validation**: `.venv/bin/ruff check hal/ tests/` clean; `.venv/bin/pytest tests/ -x -q --ignore=tests/test_intent.py` passed (`437`).
+
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
