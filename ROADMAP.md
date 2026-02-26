@@ -25,7 +25,7 @@ What's built, what's next, and where this is going.
 - KB search threshold raised to 0.45, top_k raised to 8
 - Session history poison filter + `prune_old_turns(days=30)` — resolves RC3
 - 96 new unit tests for Judge and MemoryStore
-- Eval harness: 24 queries, 5 evaluators, baselines established
+- Eval harness: 32 queries, 4 code evaluators — baselines: intent 100%, no_raw_json 93.8%, hal_identity 96.9%, web_tool_accuracy 96.9% (Feb 26 2026)
 
 ### Feb 23, 2026 — Trust hardening
 - NTFY_URL configured — watchdog alerts now delivered
@@ -118,7 +118,6 @@ What's built, what's next, and where this is going.
 
 ## Backlog (immediate)
 
-- **Eval re-run:** Baseline predates security tools, prompt rewrite, and KB expansion — run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server
 - **Swap investigation:** 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Grafana Tempo:** `hal/tracing.py` emits OTel spans but no receiver is deployed — deploy Tempo container in monitoring stack
 - **Integration tests:** Zero coverage on SSH executor, pgvector search, HTTP server, security tools — these all require live services but should have smoke tests
