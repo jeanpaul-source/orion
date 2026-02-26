@@ -113,5 +113,6 @@ HAL is fully operational on the-lab (192.168.5.10). All core components working:
 - **Monitoring**: watchdog (CPU, mem, disk x3, swap, load, GPU VRAM/temp, NTP, containers, Falco); ntfy alerts + recovery notifications
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
+- **Test suite**: 472 tests (judge, web, memory, trust, watchdog, server, executor, agents); executor at full branch coverage via mocked subprocess
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

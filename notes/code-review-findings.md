@@ -128,9 +128,9 @@ Current coverage: 34%. Distribution is very uneven.
 | `hal/memory.py` | 92% | Low |
 | `hal/trust_metrics.py` | 87% | Low |
 | `hal/web.py` | High (60+ tests) | Low |
-| **`hal/executor.py`** | **0%** | **HIGH — runs commands on the server** |
-| **`hal/watchdog.py`** | **0%** | **HIGH — threshold logic, cooldown, containers** |
-| **`hal/server.py` endpoints** | ~0% | Medium — HTTP layer |
+| `hal/executor.py` | ~95% (21 tests) | Low — fully mocked offline |
+| `hal/watchdog.py` | ~70% (7 tests) | Low — threshold + cooldown tested |
+| `hal/server.py` endpoints | ~60% (7 tests) | Low — TestClient coverage |
 | `harvest/collect.py` | Low | Medium — nightly job |
 | `hal/prometheus.py` accumulator | 0% | Medium |
 
@@ -184,4 +184,4 @@ requires running the full test suite first.
 - [x] H2: Refactor tool schema + dispatch registry
 - [x] Tests: `hal/watchdog.py` threshold + cooldown logic
 - [x] Tests: `hal/server.py` endpoints via `TestClient`
-- [ ] Tests: `hal/executor.py` subprocess mock
+- [x] Tests: `hal/executor.py` subprocess mock
