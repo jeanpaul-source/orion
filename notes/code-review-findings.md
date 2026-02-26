@@ -1,183 +1,409 @@
-# Code Review Findings — Feb 25, 2026
+# Code Review Findings — Feb 25–26, 2026
 
-*Full architectural review done by Copilot. This note captures the actionable findings
-only. See ROADMAP.md for the strategic backlog.*
+*Full architectural review done by Copilot (two passes: Feb 25 structural, Feb 26 deep
+audit). This note captures actionable findings only. See ROADMAP.md for the strategic
+backlog.*
 
 ---
 
 ## Summary verdict
 
-**Grade: B+ / A−**
+### Grade: B+ / A−
 
 Architecture is clean. Security model (Judge) is production-quality. Documentation is
-unusually good. Main gaps: test coverage on runtime components (executor, watchdog, harvest),
-some accumulated hardcoding, and a few pieces of dead/duplicated code that haven't been
-cleaned up yet.
+unusually good. Main gaps: structural coupling between `server.py` and `main.py`,
+three separate implementations of the same tool-call stripping logic, duplicated
+intent-dispatch blocks across three callers, and the Planner/Critic sub-agents adding
+2× LLM latency with no measured quality benefit.
 
 ---
 
-## Critical / Do Immediately
+## Completed — Feb 25, 2026
 
-### ~~C1 — Merge the duplicate Falco noise filter~~ ✅ DONE (Feb 25, 2026)
+### ~~C1 — Merge the duplicate Falco noise filter~~ ✅ DONE
 
-`hal/falco_noise.py` created with `NOISE_RULES` data tuples and `is_falco_noise()`.
-Both `security.py` and `watchdog.py` import from it. Watchdog no longer loads `security.py`
-(and its SSHExecutor/Judge deps) at all. Also fixed: `_POISON_FENCE_RE` private cross-module
-import replaced by `TOOL_CALL_FENCE_RE` in `hal/patterns.py`.
+`hal/falco_noise.py` with `NOISE_RULES` tuples and `is_falco_noise()`. Both
+`security.py` and `watchdog.py` import it. Watchdog no longer loads `security.py`
+(and its `SSHExecutor`/`Judge` deps). `_POISON_FENCE_RE` cross-module import replaced
+by `TOOL_CALL_FENCE_RE` in `hal/patterns.py`.
 
----
+### ~~C2 — Gate `_extract_tool_calls_from_content()`~~ ✅ DONE
 
-### ~~C2 — `_extract_tool_calls_from_content()` is live dead code~~ ✅ DONE (Feb 25, 2026)
+Fallback tag extraction in `hal/llm.py` is now off by default behind
+`HAL_EXTRACT_FALLBACK=1`. Tests in `tests/test_llm.py` cover default-off, opt-in,
+and malformed-tag cases.
 
-`hal/llm.py` contains a fallback parser that extracts `<tool_call>` / `<tools>` tags from
-model content. It was written for the Coder model and should never fire on the Instruct
-model. It has no tests. If the Instruct model ever emits those tags in free text (e.g. in
-a code example), it would silently inject phantom tool calls into the agent loop.
+### ~~C3 — `config.py` fail-loud on missing required fields~~ ✅ DONE
 
-`hal/llm.py` fallback extraction is now gated behind `HAL_EXTRACT_FALLBACK` and is
-disabled by default (`0`). Focused tests in `tests/test_llm.py` verify default-off
-pass-through behavior, opt-in extraction when set to `1`, and malformed tag safety.
+`OLLAMA_HOST`, `PGVECTOR_DSN`, `PROMETHEUS_URL` now raise `RuntimeError` with an
+`.env.example` message when absent. No more silent LAN-IP defaults.
+Covered by `tests/test_config.py`.
 
----
+### ~~H1 — Gate PlannerAgent / CriticAgent on query complexity~~ ✅ DONE
 
-### ~~C3 — `config.py` hardcoded IP defaults~~ ✅ DONE (Feb 25, 2026)
+`_should_use_planner_critic()` added. Short non-action queries skip the two extra
+LLM calls. `MAX_TOOL_CALLS = 5` and `PLANNER_CRITIC_ACTION_VERBS` defined as module
+constants.
 
-All three service defaults (`OLLAMA_HOST`, `PGVECTOR_DSN`, `PROMETHEUS_URL`) point to
-`192.168.5.10`. A fresh checkout without a `.env` will silently try to connect to a
-specific LAN address and fail in confusing ways.
+### ~~H2 — Extract tool registry into `hal/tools.py`~~ ✅ DONE
 
-`hal/config.py` now fails loud for missing required vars (`OLLAMA_HOST`,
-`PGVECTOR_DSN`, `PROMETHEUS_URL`) with a clear `.env.example` message, and no longer
-silently defaults to a specific LAN IP. Covered by `tests/test_config.py`.
+`TOOL_REGISTRY` dict with `schema` + `handler` per tool. `_dispatch()` is now a
+3-line registry lookup. `get_tools()` iterates the registry.
 
----
+### ~~H3 — `run_conversational` missing latency telemetry~~ ✅ DONE
 
-## High Priority / Do Soon
+OTel span, `t0`/latency observe, and `REQ_TOTAL` added. Matches the pattern from
+the other three handlers.
 
-### ~~H1 — Gate PlannerAgent / CriticAgent~~ ✅ DONE (Feb 25, 2026)
+### ~~H4 — `MAX_TOOL_CALLS` magic number~~ ✅ DONE
 
-Every agentic query — including `ls /opt` — runs PlannerAgent + CriticAgent first. That is
-2 LLM inference calls (32B model) before the main loop starts. The planner output is
-prepended to the user message but there is no evidence the model follows it for simple queries.
+`MAX_TOOL_CALLS = 5` defined next to `MAX_ITERATIONS = 8` with an explanatory comment.
 
-**Fix options:**
-- Add a complexity heuristic: skip if query < N words and contains no action verbs
-- Add a `--no-plan` REPL flag
-- Move planner/critic to opt-in only (caller passes `use_planner=True`)
+### ~~Tests — executor / server / watchdog / prometheus~~ ✅ DONE
 
-**Where to change:** `hal/agent.py` `run_agent()` — the planner block around lines 795–820.
-**Effort:** ~2 hr.
+530 offline tests passing. `test_executor.py`, `test_server.py`, `test_watchdog.py`,
+`test_prometheus.py` all added (Feb 25). Integration tests for pgvector KB, security
+workers, `_strip_tool_artifacts`, and server routing added Feb 26.
 
 ---
 
-### ~~H2 — `agent.py` is 1045 lines with a 17-branch dispatch~~ ✅ DONE (Feb 25, 2026)
+## Completed — Feb 26, 2026
 
-`_dispatch()` is a long if-elif chain. `_BASE_TOOLS` is a flat list of dicts in the same
-file. Every new tool requires touching both in multiple places.
+### ~~Eval failures — all four metrics to 100%~~ ✅ DONE
 
-**Fix:** Extract tools into `hal/tools.py` — one dict per tool combining schema + handler:
+- `hal/agent.py`: `_strip_tool_artifacts()` — strips bare `{"name":...}` JSON leaked into prose after tool-loop exhaustion; fixes no_raw_json failures B1 + B4
+- `hal/main.py`: identity rule extended to forbid naming provider/company (not just first-person claims); fixes hal_identity failure
+- `hal/main.py`: `web_search` permission changed to mandatory MUST directive for CVEs/vulnerabilities/release notes; fixes web_tool_accuracy failure
+- Eval re-run: `intent_accuracy=100%`, `no_raw_json=100%`, `hal_identity=100%`, `web_tool_accuracy=100%` (32/32 queries)
+
+### ~~Integration tests — KB, security workers, agent loop, server routing~~ ✅ DONE
+
+- `tests/test_knowledge.py` (13 tests) — pgvector `KnowledgeBase.search()` with mocked psycopg2
+- `tests/test_security.py` (17 tests) — Falco/Osquery workers, noise filter, judge denial
+- `tests/test_executor.py` (+3) — SSH connect-refused, `_MockExecutor` contract
+- `tests/test_agent_loop.py` (+10) — `_strip_tool_artifacts` edge cases + end-to-end
+- `tests/test_server.py` (+3) — agentic/health routing, fenced-block stripping
+- Test count: 486 → 530 (all offline)
+
+### ~~Markdownlint toolchain~~ ✅ DONE
+
+- `.markdownlint.jsonc` — explicit rule config in version control (MD013 off, MD024 off, MD046 fenced, MD060 spaced)
+- `markdownlint-cli2 v0.17.2` added as pre-commit hook
+- `make lint-md` target added
+- `CONTRIBUTING.md` updated: lint-md in checklists, test counts 151/186→495/530, eval baselines to 100%
+
+### ~~Swap investigation~~ ✅ DONE
+
+`/dev/zram0` is compressed in-RAM swap, not a disk partition. 75 Mi used is normal.
+`vm.swappiness=10`. No remediation needed. Documented in `OPERATIONS.md` Known traps.
+
+---
+
+## Open — Feb 26, 2026
+
+### N1 — `server.py` imports from `main.py` (architectural inversion)
+
+`hal/server.py` imports `get_system_prompt()` and `setup_clients()` from
+`hal/main.py`, the REPL entrypoint. A server should never depend on a script.
+Any linter or packaging step that treats `main.py` as an entrypoint breaks because
+it is also acting as a library.
+
+**Fix:** Extract `get_system_prompt()` and `setup_clients()` into a shared module
+(e.g. `hal/bootstrap.py`). Both `main.py` and `server.py` import from there. `main.py`
+stops being a library. `hal/patterns.py` (one regex in one file, created only to break
+the circular import that this coupling caused) can then be inlined into its two callers
+and deleted.
+
+**Files touched:** `hal/main.py`, `hal/server.py`, new `hal/bootstrap.py`, remove
+`hal/patterns.py`.
+**Effort:** ~2 hr. Low risk, high clarity gain.
+
+---
+
+### N2 — Three implementations of the same tool-call stripping logic
+
+The same failure mode (LLM hallucinating a tool call in prose) is detected and stripped
+in three separate places with three different implementations:
+
+1. `agent.py:_strip_tool_artifacts()` — JSON decoder, strips bare `{"name":...,"arguments":...}` objects from final response text.
+2. `server.py:_strip_tool_call_blocks()` — regex fence, strips ` ```json {...} ``` ` fences, applied after handler returns.
+3. `memory.py:is_poison_response()` — hybrid, used as a save-gate before writing to SQLite.
+
+They use different detection paths, have different failure modes, and must all be updated
+if the pattern changes.
+
+**Fix:** One canonical function in `hal/sanitize.py` (or inline into `hal/patterns.py`):
+`strip_tool_call_artifacts(text) -> str` and `is_tool_call_artifact(text) -> bool`.
+All three callers use it. Delete the three local implementations.
+
+**Effort:** ~1.5 hr. Medium risk — add tests before touching `is_poison_response()`.
+
+---
+
+### N3 — Intent dispatch block copy-pasted three times
+
+The `if intent == "conversational": ... elif intent == "health": ... elif intent == "fact": ... else: run_agent(...)` block appears identically in:
+
+- `hal/main.py` REPL loop
+- `hal/main.py` `--print` mode
+- `hal/server.py` `_run()`
+
+~30 lines × 3 = 90 lines of duplication. Any new intent category requires three edits.
+
+**Fix:** Extract into `dispatch_intent(intent, user_input, ctx)` in `hal/bootstrap.py`
+(or wherever N1 lands). All three callers reduce to one line.
+
+**Effort:** ~1 hr.
+
+---
+
+### N4 — `args.get()` returns `None` on `null` LLM argument (latent crash)
+
+`args.get("command", "")` only uses the default when the key is *absent*. When the LLM
+passes `{"command": null}`, `args.get("command", "")` returns `None`. This `None` flows
+into `judge.approve("run_command", None)` → `classify_command(None)` →
+`_normalize_command(None)` → `None.split()` → `AttributeError`.
+
+Same issue in `_handle_scan_lan` (subnet), `_handle_search_kb` (query), and any other
+handler with a required string argument.
+
+**Fix:** Replace `args.get("command", "")` with `args.get("command") or ""` in every
+tool handler.
+
+**Files touched:** `hal/tools.py` — all `_handle_*` functions.
+**Effort:** ~20 min. Do immediately.
+
+---
+
+### N5 — SSH has no connect timeout (slow failure on dead host)
+
+`SSHExecutor._SSH_OPTS` has no `ConnectTimeout`. When the lab host is unreachable
+(powered off, network partition), SSH hangs until the subprocess 30-second timeout fires.
+The error raised is `subprocess.TimeoutExpired`, not "host unreachable" — unclear failure.
+
+**Fix:** Add `"-o", "ConnectTimeout=5"` to `_SSH_OPTS` in `hal/executor.py`.
+
+**Effort:** ~5 min.
+
+---
+
+### N6 — `_dispatch()` in `agent.py` labeled "legacy" but is the live call path
 
 ```python
-TOOL_REGISTRY = {
-    "search_kb": {"schema": {...}, "handler": _handle_search_kb},
-    ...
-}
+def _dispatch(...):
+    """Compatibility wrapper for legacy tests/imports."""
+    return dispatch_tool(...)
 ```
 
-`_dispatch()` becomes a 3-line lookup. `get_tools()` iterates the registry.
-**Effort:** ~3 hr. Not urgent but will become urgent as tool count grows.
+This 8-line wrapper calls `dispatch_tool()` with no logic. It is the only dispatch call
+in `run_agent()`. Labeling it "legacy" makes it look like dead code; it is not.
 
----
+**Fix:** Replace the `_dispatch()` call in `run_agent()` with a direct `dispatch_tool()`
+call. Delete `_dispatch()`.
 
-### ~~H3 — `run_conversational` is missing latency telemetry~~ ✅ DONE (Feb 25, 2026)
-
-The other three handlers (`run_health`, `run_fact`, `run_agent`) all call
-`REQ_LATENCY.observe(dur, intent=...)` and wrap everything in an OTel span.
-`run_conversational` calls `REQ_TOTAL.inc()` but has no latency metric and no span.
-
-**Fix:** Add `import time`, `t0 = time.perf_counter()`, latency observe, and an OTel span
-to `run_conversational` in `hal/agent.py`. Exact pattern: copy from `run_health`.
-**Effort:** ~20 min.
-
----
-
-### ~~H4 — `total_calls < 5` magic number in agent loop~~ ✅ DONE (Feb 25, 2026)
-
-In `hal/agent.py` the agent loop stopping condition is:
-"terminate after 8 iterations OR after 5 unique tool calls, whichever comes first."
-The `5` is an undocumented inline literal. The dual constraint is not mentioned in ARCHITECTURE.md.
-
-**Fix:** Define `MAX_TOOL_CALLS = 5` next to `MAX_ITERATIONS = 8` and add a comment
-explaining the dual constraint. Update ARCHITECTURE.md agent loop section.
 **Effort:** ~10 min.
 
 ---
 
-## Test Coverage Gaps
+### N7 — Legacy pipe-format parser in `trust_metrics.py` is dead code
 
-Current coverage: 34%. Distribution is very uneven.
+`_parse_legacy_line()` handles a pipe-delimited audit log format that was replaced by
+JSON during safety hardening. The JSON format is all that is written today.
 
-| Module | Coverage | Risk |
-|---|---|---|
-| `hal/judge.py` | ~78% | Low — well tested |
-| `hal/memory.py` | 92% | Low |
-| `hal/trust_metrics.py` | 87% | Low |
-| `hal/web.py` | High (60+ tests) | Low |
-| `hal/executor.py` | ~95% (21 tests) | Low — fully mocked offline |
-| `hal/watchdog.py` | ~70% (7 tests) | Low — threshold + cooldown tested |
-| `hal/server.py` endpoints | ~60% (7 tests) | Low — TestClient coverage |
-| `harvest/collect.py` | Low | Medium — nightly job |
-| `hal/prometheus.py` accumulator | Covered by `tests/test_prometheus.py` | Low |
+**Fix:** Delete `_parse_legacy_line()` and the `_STATUS_NORMALIZE` entries that exist
+only for it. Verify no test generates the old format first.
 
-**Priority order for adding tests:**
-
-1. `hal/watchdog.py` — test threshold evaluation and cooldown state (fully mockable)
-2. `hal/server.py` — test `/chat` + `/health` with FastAPI `TestClient` (no live services)
-3. `hal/executor.py` — test localhost detection, command formatting, return dict shape (mock `subprocess`)
+**Effort:** ~30 min.
 
 ---
 
-## Style / Smell Notes (low priority)
+### N8 — `import time` duplicated twice in `VLLMClient.chat_with_tools()`
 
-- **`watchdog.py` `_WATCHDOG_FALCO_NOISE` uses lambdas in a list.** Replace with
-  `(proc_name, path_substring)` tuples and a `_matches_noise(event, filters)` helper.
-  Makes it testable and readable.
+`time` is imported at function entry, then imported again as `import time as _t` at the
+end of the same span block. Classic copy-paste from `chat()`.
 
-- **`reason` field on tool calls is optional everywhere.** The Judge logs empty reason
-  strings when the model skips it, degrading audit-trail quality. Consider making it
-  required in the schema or at least warning when absent.
+**Fix:** Single `import time` at module level in `hal/llm.py`.
 
-- **`SYSTEM_PROMPT` in `main.py` is 110 lines with hardcoded ports, IPs, thresholds.**
-  Adding a service means editing two files (`config.py` + `SYSTEM_PROMPT`). Template it
-  from `Config` fields. Tracked in ROADMAP.md Path C item 1.
+**Effort:** 2 min.
+
+---
+
+### N9 — Planner/Critic gate fires on nearly everything
+
+The gate `_should_use_planner_critic()` triggers on:
+
+- any query containing an action verb ("list", "check", "show", "explain", "search", ...)
+- any query longer than 7 words
+
+In practice this fires for most non-trivial queries, adding 2 extra 32B inference
+calls (potentially 30–90 s total on the RTX 3090 Ti) with no A/B evidence of quality
+improvement. The CLAUDE.md itself calls these "pure LLM wrappers" — which is accurate,
+but also describes what the base model already does via its instruction tuning.
+
+**Longer-term decision required** (see N10). In the interim, consider raising the word
+threshold from 7 → 15 and narrowing the verb set to truly multi-step action verbs
+(remove "list", "check", "show", "explain", "search").
+
+---
+
+### N10 — Measure or remove the Planner/Critic sub-agents
+
+The Planner/Critic have been in place as "v1" since their introduction. There is no eval
+showing they improve accuracy or reduce tool loop errors. Two options:
+
+**Option A (measure):** Run `eval/run_eval.py` against the current query set with and
+without sub-agents (add a `NO_PLANNER_CRITIC=1` env gate). Compare accuracy and latency.
+Make a data-driven decision.
+
+**Option B (simplify now):** Remove `hal/agents.py` and the Planner/Critic blocks from
+`run_agent()`. Replace with a single system-prompt instruction: *"Before calling tools,
+state your plan in 2–3 sentences — what you're checking and why."* Same reasoning
+behavior, zero extra LLM calls.
+
+If Option B, delete `hal/agents.py`, remove the 40-line Planner/Critic blocks from
+`agent.py`, remove the `PlannerAgent/CriticAgent` imports. The gate heuristic
+(`_should_use_planner_critic`) also goes.
+
+**Effort (Option B):** ~1 hr. Requires full eval run before and after to confirm no regression.
+
+---
+
+### N11 — `KnowledgeBase` opens a new DB connection on every `search()` call
+
+No connection pooling. In server mode, a single `/chat` request can open 3–6 psycopg2
+connections (KB seed + tool calls + intent embedding path). Under concurrent requests
+this creates a connection storm and will eventually hit PostgreSQL's `max_connections`.
+
+**Fix:** Add `psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=4, dsn=...)` as a
+module-level pool, reuse it in `KnowledgeBase._connect()`.
+
+**Effort:** ~1 hr.
+
+---
+
+### N12 — `facts.py:remember()` duplicates `KnowledgeBase` DB connection pattern
+
+`hal/facts.py` opens its own psycopg2 connection, calls `register_vector()`, and
+manages `conn.close()` in a try/finally — the same pattern as `hal/knowledge.py`, in
+a 40-line standalone function. It's `KnowledgeBase.remember()` in disguise.
+
+**Fix:** Move `remember()` into `KnowledgeBase` as a method. Delete `hal/facts.py`.
+Update `hal/main.py:cmd_remember()` to call `kb.remember()`.
+
+**Effort:** ~30 min.
+
+---
+
+### N13 — Tool handler 7-argument signature is a hidden context object
+
+Every tool handler takes `(args, executor, judge, kb, prom, ntopng_url, tavily_api_key)`.
+Most handlers ignore 4–5 of those arguments (evidenced by `_` prefix on unused params).
+This is a context struct disguised as positional arguments.
+
+**Fix:** Define `class ToolContext(NamedTuple)` with these fields. `dispatch_tool()`
+constructs it once and passes `ctx`. Handlers become `(args: dict, ctx: ToolContext)`.
+Also fixes `run_agent()`'s 14-argument signature (same root cause).
+
+**Effort:** ~2 hr. Medium risk — touches every handler and all tests that mock them.
+Wrap existing handler tests first.
+
+---
+
+### N14 — Watchdog silently exits when Prometheus is unreachable
+
+`watchdog.py:run()` does `sys.exit(0)` when `prom.health()` fails: *"not an
+alert-worthy failure."* Since the watchdog is a timer, this means a Prometheus outage
+silently disables all metric alerts for each 5-minute window until Prometheus recovers.
+The operator learns about it only by noticing the absence of alerts.
+
+**Fix:** Change `sys.exit(0)` to log a WARNING to the watchdog log and, if `ntfy_url`
+is configured, send a low-urgency ntfy notification: *"Watchdog: Prometheus unreachable
+— metric alerts suspended."* Then exit. Recovery is automatic when Prometheus comes back.
+
+**Effort:** ~20 min.
+
+---
+
+### N15 — `NTFY_URL` empty gives no startup warning
+
+`ntfy_url` defaults to `""` with no validation or startup warning. An operator who
+forgets to set it receives zero push alerts — silently. Disk-full, GPU-temp, and Falco
+events all go nowhere.
+
+**Fix:** Add an `INFO` log at startup in `watchdog.py:run()` when `config.ntfy_url` is
+empty: *"NTFY_URL is not set — all alerts will be logged only, no push notifications."*
+
+**Effort:** 5 min.
+
+---
+
+## Test Coverage
+
+530 offline tests passing (Feb 26). Gaps remaining:
+
+| Module | Status |
+| --- | --- |
+| `hal/judge.py` | Strong — 716 lines in `test_judge_hardening.py` + `test_judge.py` |
+| `hal/web.py` | Strong — 495 lines |
+| `hal/memory.py` | Good — add boundary tests for `is_poison_response()` before N2 |
+| `hal/agents.py` | Light — low priority if N10 Option B proceeds |
+| `harvest/collect.py` | Light — medium risk (nightly job) |
+| `hal/intent.py` | Requires live Ollama — freeze a labeled query set before changing examples or threshold |
 
 ---
 
 ## Confirmed Solid — Do Not Touch Without Tests
 
-These components are working correctly and have meaningful test coverage. Any change here
-requires running the full test suite first.
-
 - **`hal/judge.py`** — tier classification, evasion detection, git write blocking, path
-  canonicalization, self-edit governance, audit logging. 941 lines of tests between
-  `test_judge.py` and `test_judge_hardening.py`.
+  canonicalization, self-edit policy, audit logging.
 - **`hal/web.py`** — SSRF protection, DNS rebinding defense, URL validation, sanitisation.
-  60+ tests in `test_web.py`.
 - **`hal/memory.py`** — poison filter, prune logic, session management. 92% coverage.
 
 ---
 
-## Quick Wins Checklist
+## Current Backlog Checklist
 
-- [x] C1: Merge Falco noise filter into shared module — done, `hal/falco_noise.py`
-- [x] H3: Add latency telemetry to `run_conversational` (~20 min)
-- [x] H4: Name the `5` as `MAX_TOOL_CALLS` next to `MAX_ITERATIONS` (~10 min)
-- [ ] Run eval re-run on server (no code changes needed)
-- [x] C2: Gate or remove `_extract_tool_calls_from_content`
-- [x] C3: Config fail-loud on missing `.env` required fields
-- [x] H1: Gate PlannerAgent on query complexity
-- [x] H2: Refactor tool schema + dispatch registry
-- [x] Tests: `hal/watchdog.py` threshold + cooldown logic
-- [x] Tests: `hal/server.py` endpoints via `TestClient`
-- [x] Tests: `hal/executor.py` subprocess mock
-- [x] Tests: `hal/prometheus.py` accumulator + heartbeat behavior
+### Correctness / safety (do first)
+
+- [ ] N4: Fix `args.get() or ""` in all tool handlers (~20 min)
+- [ ] N5: Add `ConnectTimeout=5` to `SSHExecutor._SSH_OPTS` (~5 min)
+- [ ] N14: Watchdog ntfy notification on Prometheus unreachable (~20 min)
+- [ ] N15: Warn on empty `NTFY_URL` at startup (~5 min)
+
+### Dev infrastructure
+
+- [ ] CI: Add `.github/workflows/ci.yml` — run `make lint`, `make lint-md`, `make test` on every push/PR; currently only gated by the custom server-side push hook which gives no protection against direct pushes or a second contributor (~20 lines, low effort, largest remaining gap)
+
+### Structural cleanup (1–2 week horizon)
+
+- [ ] N1: Extract `get_system_prompt()` + `setup_clients()` → `hal/bootstrap.py` (~2 hr)
+- [ ] N2: Consolidate three tool-call stripping impls → `hal/sanitize.py` (~1.5 hr)
+- [ ] N3: Extract `dispatch_intent()` shared function (~1 hr)
+- [ ] N6: Delete `_dispatch()` shim in `agent.py` (~10 min)
+- [ ] N7: Delete legacy pipe-format parser in `trust_metrics.py` (~30 min)
+- [ ] N8: Fix double `import time` in `llm.py` (~2 min)
+- [ ] N12: Move `facts.py:remember()` into `KnowledgeBase`, delete `facts.py` (~30 min)
+
+### Architecture (month scale, data-driven)
+
+- [ ] N9: Narrow Planner/Critic gate (raise word threshold, tighten verb set)
+- [ ] N10: Eval Planner/Critic with/without; decide keep or remove
+- [ ] N11: Add psycopg2 `ThreadedConnectionPool` to `KnowledgeBase` (~1 hr)
+- [ ] N13: Replace 7-arg tool handler signature with `ToolContext` namedtuple (~2 hr)
+
+### Previously completed (Feb 25)
+
+- [x] C1: Falco noise filter → `hal/falco_noise.py`
+- [x] C2: Gate `_extract_tool_calls_from_content` behind `HAL_EXTRACT_FALLBACK`
+- [x] C3: Config fail-loud on missing required fields
+- [x] H1: Gate PlannerAgent/CriticAgent on query complexity
+- [x] H2: Extract tool registry into `hal/tools.py`
+- [x] H3: Add latency telemetry to `run_conversational`
+- [x] H4: Name `MAX_TOOL_CALLS = 5` constant
+- [x] Tests: executor, server, watchdog, prometheus (Feb 25); KB, security, agent loop, server routing (Feb 26) — 530 total
+
+### Previously completed (Feb 26)
+
+- [x] Eval fixes: _strip_tool_artifacts, identity rule, web_search mandate — all four metrics 100%
+- [x] Swap investigation — zram0 documented in OPERATIONS.md, no remediation
+- [x] Markdownlint toolchain: `.markdownlint.jsonc`, pre-commit hook, `make lint-md`
