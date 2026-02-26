@@ -26,6 +26,7 @@ from hal.logging_utils import set_context, setup_logging
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import get_tracer, setup_tracing
+from hal.trust_metrics import get_action_stats, load_audit_log
 from hal.tunnel import SSHTunnel, port_open
 from hal.workers import list_dir, read_file, write_file
 
@@ -150,6 +151,7 @@ Commands:
   /ls <path>       — list a directory on the server
   /write <path>    — write a file on the server (prompts for content)
   /audit           — show recent audit log
+  /web_stats       — show web search + fetch_url usage stats
   /kb              — list knowledge base categories
   /remember <fact> — store a fact permanently in the knowledge base
   /search_memory <q> — search past sessions for a keyword
@@ -344,6 +346,48 @@ def cmd_audit(n: int = 20) -> None:
                 console.print(f"  [yellow]{line}[/]")
     except FileNotFoundError:
         console.print("[dim]no audit log yet[/]")
+
+
+def cmd_web_stats() -> None:
+    """Show web tool usage stats from the audit log."""
+    ws = get_action_stats("web_search")
+    fu = get_action_stats("fetch_url")
+
+    if ws["total"] == 0 and fu["total"] == 0:
+        console.print("[dim]no web tool activity in audit log[/]")
+        return
+
+    console.print("\n[bold]Web tool usage[/]")
+    console.print(
+        f"  web_search : {ws['total']} calls  "
+        f"({ws['approved']} approved, {ws['denied']} denied)"
+    )
+    console.print(
+        f"  fetch_url  : {fu['total']} calls  "
+        f"({fu['approved']} approved, {fu['denied']} denied)"
+    )
+
+    # Collect recent queries / URLs from the audit log (last 10 each)
+    ws_queries: list[str] = []
+    fu_urls: list[str] = []
+    try:
+        for ev in load_audit_log():
+            if ev.action_type == "web_search" and ev.detail:
+                ws_queries.append(ev.detail)
+            elif ev.action_type == "fetch_url" and ev.detail:
+                fu_urls.append(ev.detail)
+    except FileNotFoundError:
+        pass
+
+    if ws_queries:
+        console.print("\n[dim]Recent web_search queries (last 10):[/]")
+        for q in ws_queries[-10:]:
+            console.print(f"    {q}")
+    if fu_urls:
+        console.print("\n[dim]Recent fetch_url calls (last 10):[/]")
+        for u in fu_urls[-10:]:
+            console.print(f"    {u}")
+    console.print()
 
 
 def cmd_kb(kb: KnowledgeBase) -> None:
@@ -569,6 +613,8 @@ def main() -> None:
                 cmd_write(user_input[7:].strip(), executor, judge)
             elif user_input == "/audit":
                 cmd_audit()
+            elif user_input == "/web_stats":
+                cmd_web_stats()
             elif user_input == "/kb":
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):
