@@ -279,6 +279,12 @@ filtered by default in `hal/security.py`. Do not suppress the rule globally in F
 (`/home/jp/vllm-env/bin/vllm`). If the venv location changes or the user is different,
 edit the unit file before deploying.
 
+**OTLP tracing probe at startup:** HAL TCP-probes the OTLP endpoint (default
+`http://localhost:4318`) once at startup. If Grafana Tempo is not deployed, the probe
+fails, tracing is skipped silently (DEBUG log only), and no background exporter thread
+runs. The 1-second timeout adds ~1 second to startup. To skip the probe entirely, set
+`OTEL_SDK_DISABLED=true` in `.env`.
+
 **Swap on zram0 — not a leak:** The server uses `/dev/zram0` (8 Gi compressed in-RAM
 swap, not a disk partition). A few hundred MiB "used" there is normal — the kernel
 compresses cold pages into RAM itself. `vm.swappiness=10` ensures the kernel strongly
