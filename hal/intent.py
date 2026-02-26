@@ -135,6 +135,12 @@ EXAMPLES: dict[str, list[str]] = {
         "read the release notes at https://github.com/vllm-project/vllm/releases",
         "what does this page say? https://docs.falco.org/rules",
         "fetch https://prometheus.io/blog and summarise",
+        # Trend queries
+        "is disk usage growing?",
+        "show me the cpu trend over the last 6 hours",
+        "is /docker disk filling up?",
+        "has memory been climbing today?",
+        "what is the trend for gpu vram over the last 24 hours?",
     ],
 }
 
