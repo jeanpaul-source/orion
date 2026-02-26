@@ -31,7 +31,7 @@ from hal.intent import IntentClassifier
 from hal.judge import Judge, tier_for
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
-from hal.main import SYSTEM_PROMPT
+from hal.main import get_system_prompt
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tracing import setup_tracing
@@ -204,7 +204,7 @@ def main(argv: list[str] | None = None) -> None:
     console.print("[dim]Building intent classifier...[/]")
     classifier = IntentClassifier(embed)
 
-    SYSTEM = SYSTEM_PROMPT
+    SYSTEM = get_system_prompt()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     results: list[dict] = []

@@ -6,6 +6,7 @@ import os
 import readline
 import sys
 import textwrap
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -31,9 +32,15 @@ console = Console()
 
 HISTORY_FILE = Path.home() / ".orion" / "history"
 
-SYSTEM_PROMPT = """\
+
+def get_system_prompt() -> str:
+    """Return the system prompt with today's date injected."""
+    today = datetime.now().strftime("%A, %B %d, %Y")
+    return f"""\
 You are HAL — the intelligence layer of a personal homelab. \
 You are not Qwen, Claude, or any other model. You are HAL. Never break this identity.
+
+Today is {today}.
 
 ── YOUR PURPOSE ──────────────────────────────────────────────────────
 You are the single point of awareness for the entire lab. Five roles:
@@ -126,6 +133,7 @@ The /remember command stores facts permanently in the KB as memory tier (never c
 • Keep answers SHORT: 2–5 sentences for status, one short paragraph for complex questions.
 • If you don't know, say so plainly — never guess.
 """
+
 
 HELP_TEXT = """\
 Commands:
@@ -459,7 +467,13 @@ def main() -> None:
             intent, confidence = classifier.classify(user_input)
             if intent == "conversational":
                 run_conversational(
-                    user_input, history, llm, mem, session_id, SYSTEM_PROMPT, console
+                    user_input,
+                    history,
+                    llm,
+                    mem,
+                    session_id,
+                    get_system_prompt(),
+                    console,
                 )
             elif intent == "health":
                 run_health(
@@ -469,7 +483,7 @@ def main() -> None:
                     prom,
                     mem,
                     session_id,
-                    SYSTEM_PROMPT,
+                    get_system_prompt(),
                     console,
                 )
             elif intent == "fact":
@@ -480,7 +494,7 @@ def main() -> None:
                     kb,
                     mem,
                     session_id,
-                    SYSTEM_PROMPT,
+                    get_system_prompt(),
                     console,
                 )
             else:
@@ -494,7 +508,7 @@ def main() -> None:
                     judge,
                     mem,
                     session_id,
-                    SYSTEM_PROMPT,
+                    get_system_prompt(),
                     console,
                     ntopng_url=config.ntopng_url,
                     tavily_api_key=config.tavily_api_key,
@@ -582,7 +596,7 @@ def main() -> None:
                             llm,
                             mem,
                             session_id,
-                            SYSTEM_PROMPT,
+                            get_system_prompt(),
                             console,
                         )
                     elif intent == "health":
@@ -593,7 +607,7 @@ def main() -> None:
                             prom,
                             mem,
                             session_id,
-                            SYSTEM_PROMPT,
+                            get_system_prompt(),
                             console,
                         )
                     elif intent == "fact":
@@ -604,7 +618,7 @@ def main() -> None:
                             kb,
                             mem,
                             session_id,
-                            SYSTEM_PROMPT,
+                            get_system_prompt(),
                             console,
                         )
                     else:
@@ -618,7 +632,7 @@ def main() -> None:
                             judge,
                             mem,
                             session_id,
-                            SYSTEM_PROMPT,
+                            get_system_prompt(),
                             console,
                             ntopng_url=config.ntopng_url,
                             tavily_api_key=config.tavily_api_key,

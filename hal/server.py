@@ -43,7 +43,7 @@ from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
 from hal.logging_utils import setup_logging
-from hal.main import SYSTEM_PROMPT, setup_clients
+from hal.main import get_system_prompt, setup_clients
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import setup_tracing
@@ -200,7 +200,13 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
             if intent == "conversational":
                 response = run_conversational(
-                    req.message, history, llm, mem, session_id, SYSTEM_PROMPT, console
+                    req.message,
+                    history,
+                    llm,
+                    mem,
+                    session_id,
+                    get_system_prompt(),
+                    console,
                 )
             elif intent == "health":
                 response = run_health(
@@ -210,7 +216,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     prom,
                     mem,
                     session_id,
-                    SYSTEM_PROMPT,
+                    get_system_prompt(),
                     console,
                 )
             elif intent == "fact":
@@ -221,7 +227,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     kb,
                     mem,
                     session_id,
-                    SYSTEM_PROMPT,
+                    get_system_prompt(),
                     console,
                 )
             else:
@@ -235,7 +241,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     judge,
                     mem,
                     session_id,
-                    SYSTEM_PROMPT,
+                    get_system_prompt(),
                     console,
                     ntopng_url=config.ntopng_url,
                     tavily_api_key=config.tavily_api_key,
