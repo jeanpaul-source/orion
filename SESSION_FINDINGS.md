@@ -455,7 +455,7 @@ Two failure patterns seen in the Telegram chat:
 
 **Layer 2 — output guard (`hal/server.py`):** `_strip_tool_call_blocks(text)` — strips ` ```json {...} ``` ` code fences whose body parses as a JSON object with both `"name"` and `"arguments"` keys, before the response reaches the Telegram user. Real JSON (metrics, data) is left untouched.
 
-**Layer 3 — poison detection (`hal/memory.py`):** Extended `is_poison_response()` to also scan for embedded code-fence tool-call blocks via `_POISON_FENCE_RE`. Catches Pattern 1 (starts-with-`{`, existing) and Pattern 2 (prose + embedded fence, new). Prevents hallucinated turns from being saved to SQLite and re-injected into future context.
+**Layer 3 — poison detection (`hal/memory.py`):** Extended `is_poison_response()` to also scan for embedded code-fence tool-call blocks via `TOOL_CALL_FENCE_RE` (from `hal/patterns.py`). Catches Pattern 1 (starts-with-`{`, existing) and Pattern 2 (prose + embedded fence, new). Prevents hallucinated turns from being saved to SQLite and re-injected into future context.
 
 ### Tests
 

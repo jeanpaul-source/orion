@@ -18,14 +18,12 @@ cleaned up yet.
 
 ## Critical / Do Immediately
 
-### C1 — Merge the duplicate Falco noise filter
+### ~~C1 — Merge the duplicate Falco noise filter~~ ✅ DONE (Feb 25, 2026)
 
-`_WATCHDOG_FALCO_NOISE` in `hal/watchdog.py` and `_FALCO_NOISE` in `hal/security.py`
-are separate copies with a comment saying "keep in sync manually." That comment is a bug
-report. They will diverge.
-
-**Fix:** Extract to a shared module (e.g. `hal/falco_noise.py`) and import in both places.
-**Effort:** ~30 min. **This is also in the existing backlog.**
+`hal/falco_noise.py` created with `NOISE_RULES` data tuples and `is_falco_noise()`.
+Both `security.py` and `watchdog.py` import from it. Watchdog no longer loads `security.py`
+(and its SSHExecutor/Judge deps) at all. Also fixed: `_POISON_FENCE_RE` private cross-module
+import replaced by `TOOL_CALL_FENCE_RE` in `hal/patterns.py`.
 
 ---
 
@@ -176,7 +174,7 @@ requires running the full test suite first.
 
 ## Quick Wins Checklist
 
-- [ ] C1: Merge Falco noise filter into shared module (~30 min)
+- [x] C1: Merge Falco noise filter into shared module — done, `hal/falco_noise.py`
 - [ ] H3: Add latency telemetry to `run_conversational` (~20 min)
 - [ ] H4: Name the `5` as `MAX_TOOL_CALLS` next to `MAX_ITERATIONS` (~10 min)
 - [ ] Run eval re-run on server (no code changes needed)

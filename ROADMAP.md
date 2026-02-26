@@ -118,7 +118,6 @@ What's built, what's next, and where this is going.
 
 ## Backlog (immediate)
 
-- **Falco noise filter in security.py:** Add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` for interactive queries (already in watchdog's filter)
 - **Eval re-run:** Baseline predates security tools, prompt rewrite, and KB expansion — run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server
 - **Swap investigation:** 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Grafana Tempo:** `hal/tracing.py` emits OTel spans but no receiver is deployed — deploy Tempo container in monitoring stack

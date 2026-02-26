@@ -105,7 +105,9 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/intent.py` | Embedding classifier; tune `EXAMPLES` and `THRESHOLD` here |
 | `hal/judge.py` | Policy gate; tier 0-3; command normalization; evasion detection; git write blocking; path canonicalization; self-edit governance; default-deny; JSON audit with session/trace |
 | `hal/llm.py` | `VLLMClient` (chat) and `OllamaClient` (embeddings only) |
-| `hal/security.py` | Falco, Osquery, ntopng, Nmap workers; `_FALCO_NOISE` filter |
+| `hal/falco_noise.py` | Falco noise rules (`NOISE_RULES` tuples + `is_falco_noise()`); zero `hal.*` deps |
+| `hal/patterns.py` | Shared compiled regexes (`TOOL_CALL_FENCE_RE`) used by `memory.py` + `server.py` |
+| `hal/security.py` | Falco, Osquery, ntopng, Nmap workers; noise-filtered via `hal/falco_noise.py` |
 | `hal/web.py` | `web_search()` via Tavily; `fetch_url()` with SSRF protection + DNS rebinding defence; `sanitize_query()` privacy guard |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/prometheus.py` | PromQL client; `flush_metrics()` batch push to Pushgateway |

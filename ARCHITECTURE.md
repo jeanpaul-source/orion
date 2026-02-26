@@ -282,6 +282,7 @@ underlying tool is absent):
 | `get_traffic_summary` | ntopng — Community REST API at `:3000` | 0 | Top talkers, protocol breakdown |
 | `scan_lan` | Nmap — XML output (`-oX -`) | 1 | LAN host inventory (requires approval) |
 
-**Falco noise filter:** `_FALCO_NOISE` in `security.py` suppresses known false positives
-(e.g., `unix_chkpwd`, `pg_isready` reading `/etc/shadow`). Add new noise entries there —
-do not suppress rules globally in Falco config.
+**Falco noise filter:** `is_falco_noise()` from `hal/falco_noise.py` suppresses known false
+positives (e.g., `unix_chkpwd`, `pg_isready` reading `/etc/shadow`). Rules live in
+`NOISE_RULES` as `(proc_name, fd_name_substring)` data tuples — add new entries there.
+Do not suppress rules globally in Falco config.

@@ -320,7 +320,7 @@ Laptop (edit code)
 - **`_extract_tool_calls_from_content()`**: fallback parser in `llm.py` for `<tools>`/`<tool_call>` wrappers; active while Coder model was loaded, retained as defensive code
 - **End-to-end verified**: `get_security_events` fires as structured tool call, Falco events returned, HAL answers correctly
 
-**Known noise (Falco):** `systemd-userwork` accessing `/etc/shadow` — added to watchdog's `_WATCHDOG_FALCO_NOISE` filter (Feb 25, 2026). Also add to `_FALCO_NOISE` in `hal/security.py` for interactive queries.
+**Known noise (Falco):** `systemd-userwork` accessing `/etc/shadow` — in `NOISE_RULES` in `hal/falco_noise.py` (Feb 25, 2026). Both `watchdog.py` and `security.py` use `is_falco_noise()` from that shared module.
 
 **Done (as of Feb 23, 2026 — session 2):**
 
@@ -416,7 +416,7 @@ Laptop (edit code)
 - **Disk mount point monitoring** (Item 2): node-exporter updated with `--path.rootfs=/rootfs` and `pid: host` (was returning zero filesystem metrics); `disk_docker_pct` (mountpoint `/docker`) and `disk_data_pct` (mountpoint `/data/projects`) added to health() and watchdog THRESHOLDS (both threshold 85%)
 - **Container health check** (Item 3): `_check_containers()` in watchdog checks `docker ps --filter status=exited --filter status=dead`; `CRITICAL_CONTAINERS` set: prometheus, grafana, pgvector-kb, ntopng, pushgateway; fires urgent ntfy on any critical container down
 - **Recovery RESOLVED notifications** (Item 4): when a metric drops below threshold or a boolean check recovers, sends low-priority ntfy with ✅ tag (title "Orion RESOLVED — the-lab"); `_send_ntfy_simple()` gains optional `title` and `tags` parameters
-- **Falco proactive alerting** (Item 5): `_check_falco()` in watchdog reads `/var/log/falco/events.json` (tail 200), filters noise via `_WATCHDOG_FALCO_NOISE` (replicated from `hal/security.py` to avoid heavy deps), tracks `falco_last_seen` timestamp in state to avoid re-alerting; alerts on Emergency/Alert/Critical/Error/Warning priority events; `systemd-userwork` added to noise filter
+- **Falco proactive alerting** (Item 5): `_check_falco()` in watchdog reads `/var/log/falco/events.json` (tail 200), filters noise via `is_falco_noise()` from `hal/falco_noise.py`, tracks `falco_last_seen` timestamp in state to avoid re-alerting; alerts on Emergency/Alert/Critical/Error/Warning priority events; `systemd-userwork` in noise rules
 - **System prompt rewritten** with full operational awareness: all automated/scheduled tasks (watchdog thresholds, harvest timer, gpu-metrics timer, server + telegram services); diagnostic guidance for "is everything okay?", "why did I get an alert?", "what changed?"; KB tier model; complete service inventory; troubleshooting order; `get_metrics` tool description updated to list all 9 actual metrics
 - **Test count**: 363 (35 intent + 328 offline)
 
@@ -450,14 +450,19 @@ Laptop (edit code)
 - **Root cause**: two failure modes observed in Telegram — (1) `run_health` has no tools, so when the user asked a compound question the LLM *narrated* a fake `git_status` call and invented plausible commit history; (2) "What's new in HVAC?" had no homelab context, so the LLM launched a `web_search` for HVAC technology trends.
 - **System prompt (`hal/main.py`)**: two new RULES — "never simulate a tool call or fabricate shell/command output in prose" and "only use `web_search` for explicit external software/CVE topics; ask to clarify otherwise"
 - **Output guard (`hal/server.py`)**: `_strip_tool_call_blocks()` — strips ` ```json {"name":...,"arguments":...} ``` ` fences from the final response before it reaches the user; real JSON (metrics, data) is left untouched
-- **Poison detection (`hal/memory.py`)**: extended `is_poison_response()` with `_POISON_FENCE_RE` — catches embedded code-fence tool-call blocks in prose (not just responses that start with `{`); prevents hallucinated turns from being saved to SQLite and re-injected into future sessions
+- **Poison detection (`hal/memory.py`)**: extended `is_poison_response()` with `TOOL_CALL_FENCE_RE` (from `hal/patterns.py`) — catches embedded code-fence tool-call blocks in prose (not just responses that start with `{`); prevents hallucinated turns from being saved to SQLite and re-injected into future sessions
 - **Test count**: 423 (35 intent + 388 offline) — all passing
+
+**Done (as of Feb 25, 2026 — dedup refactors):**
+
+- **`hal/patterns.py` created**: shared `TOOL_CALL_FENCE_RE` regex; removes private cross-module `_POISON_FENCE_RE` import from `server.py` and its `_TOOL_FENCE_RE` alias
+- **`hal/falco_noise.py` created**: zero `hal.*` deps; `NOISE_RULES` as data tuples; `is_falco_noise(event)` function; used by both `security.py` and `watchdog.py` — watchdog no longer imports from `security.py` at all
+- **432 tests passing**
 
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
 
-- **Falco noise filter in security.py**: add `systemd-userwork` + `/etc/shadow` to `_FALCO_NOISE` in `hal/security.py` for interactive queries (already in watchdog's filter)
 - **Swap investigation**: 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Eval re-run**: baseline predates security tools, prompt rewrite, and KB expansion; run `python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval` on server to capture new baseline
 - **Tempo / OTel traces**: `hal/tracing.py` is wired and emitting spans; deploy Grafana Tempo container to receive them (separate item, pending investigation)
