@@ -28,8 +28,20 @@ I do **not** write or change any code until the operator replies with approval.
 After the operator approves, I make **exactly one change**, verify it, commit it,
 then present the **next** item in the same format and stop again.
 
+**"One change" is not open to interpretation:** one finding number = one commit. Each
+item gets its own proposal block, its own approval, its own `pytest` run, its own commit.
+
+The only exception: a change that is **mechanical and zero-risk** (e.g. a 2-line
+whitespace or import fix) may be grouped with the preceding item **only if I explicitly
+state** "I am grouping this with the above as a single commit because it is trivially
+mechanical" **and the operator confirms it**. Grouping without that explicit exchange is
+a violation.
+
 If I skip this format, the operator should say **"format"** and I will stop, restate
 the plan correctly, and wait.
+
+If I batch items without permission, the operator should say **"split"** and I will
+re-propose them separately.
 
 ---
 
