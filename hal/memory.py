@@ -1,6 +1,8 @@
 """SQLite-backed session and conversation history store."""
 
+import json
 import logging
+import re
 import sqlite3
 import uuid
 from datetime import datetime
@@ -12,21 +14,40 @@ DB_PATH = Path.home() / ".orion" / "memory.db"
 TURN_WINDOW = 40  # messages loaded into LLM context (20 exchanges)
 
 
+_POISON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
 def is_poison_response(text: str) -> bool:
     """Return True if text looks like a raw tool-call JSON dump, not a real response.
 
-    Pre-vLLM, Ollama's qwen2.5-coder would emit tool calls as JSON in the content
-    field rather than via the structured tool_calls field.  Those turns were saved to
-    SQLite and re-injected into later sessions, compounding identity and routing bugs.
+    Catches two patterns:
 
-    The pattern is unambiguous: {"name": "<tool>", "arguments": {...}}.  No legitimate
-    HAL response starts with a bare JSON object that contains both "name" and
-    "arguments" as top-level keys.
+    1. The entire response IS a bare JSON object with "name" and "arguments" keys
+       (legacy Ollama qwen2.5-coder behaviour — response starts with '{').
+
+    2. The response contains one or more ```json {...} ``` code fences whose body
+       parses as a JSON object with both "name" and "arguments" keys (tool-call
+       hallucination where the LLM narrates a tool call in prose instead of calling
+       it properly via the tool_calls field).
+
+    Neither pattern should ever appear in a legitimate HAL response.
     """
     stripped = text.strip()
-    if not stripped.startswith("{"):
-        return False
-    return '"name"' in stripped and '"arguments"' in stripped
+
+    # Pattern 1: response IS a bare tool-call object
+    if stripped.startswith("{") and '"name"' in stripped and '"arguments"' in stripped:
+        return True
+
+    # Pattern 2: embedded ```json {...} ``` fences containing tool-call objects
+    for m in _POISON_FENCE_RE.finditer(stripped):
+        try:
+            data = json.loads(m.group(1))
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(data, dict) and "name" in data and "arguments" in data:
+            return True
+
+    return False
 
 
 def _connect() -> sqlite3.Connection:

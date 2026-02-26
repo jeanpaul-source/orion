@@ -26,6 +26,8 @@ if _workspace_root not in sys.path:
 
 import argparse
 import asyncio
+import json as _json
+import re as _re
 from contextlib import asynccontextmanager
 from io import StringIO
 from typing import Any
@@ -159,6 +161,30 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+_TOOL_FENCE_RE = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL)
+
+
+def _strip_tool_call_blocks(text: str) -> str:
+    """Strip ```json {...} ``` fences that contain hallucinated tool-call objects.
+
+    The LLM occasionally narrates tool calls in prose (e.g. printing a raw
+    {"name": "web_search", "arguments": {...}} block) instead of invoking them
+    via the structured tool_calls field.  Remove these before they reach the
+    user — they are always an error, never intentional output.
+    """
+
+    def _replacer(m: _re.Match) -> str:
+        try:
+            data = _json.loads(m.group(1))
+        except (_json.JSONDecodeError, ValueError):
+            return m.group(0)  # not valid JSON — leave untouched
+        if isinstance(data, dict) and "name" in data and "arguments" in data:
+            return ""  # tool-call hallucination — strip
+        return m.group(0)  # real JSON — leave untouched
+
+    return _TOOL_FENCE_RE.sub(_replacer, text).strip()
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     """Send a message to HAL; returns the assistant response."""
@@ -251,6 +277,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             mem.close()
 
     response, session_id = await asyncio.to_thread(_run)
+    response = _strip_tool_call_blocks(response)
     return ChatResponse(response=response, session_id=session_id, intent=intent)
 
 

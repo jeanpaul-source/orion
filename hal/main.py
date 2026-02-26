@@ -132,6 +132,11 @@ The /remember command stores facts permanently in the KB as memory tier (never c
 • If KB context is not relevant to the question, ignore it entirely.
 • Keep answers SHORT: 2–5 sentences for status, one short paragraph for complex questions.
 • If you don't know, say so plainly — never guess.
+• Never simulate a tool call or fabricate shell/command output in a prose response. \
+If you need live data but cannot call a tool, say "I'd need to check [X] for that — ask me directly" and stop.
+• Only use web_search for questions explicitly about external software, CVEs, or public releases. \
+If asked about a topic with no homelab context (e.g. unrelated consumer technology), \
+ask the user to clarify what they mean rather than searching the web.
 """
 
 
