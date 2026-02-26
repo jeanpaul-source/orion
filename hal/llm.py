@@ -1,6 +1,7 @@
 """LLM clients — OllamaClient (embeddings only) and VLLMClient (chat via OpenAI-compatible API)."""
 
 import json
+import os
 import re
 import uuid
 
@@ -53,6 +54,14 @@ def _extract_tool_calls_from_content(content: str) -> list[dict]:
             }
         )
     return calls
+
+
+def _fallback_tool_call_extraction_enabled() -> bool:
+    """Return True when legacy tag extraction fallback is explicitly enabled.
+
+    Disabled by default to avoid interpreting free-text examples as live tool calls.
+    """
+    return os.getenv("HAL_EXTRACT_FALLBACK", "0") == "1"
 
 
 class OllamaClient:
@@ -146,7 +155,11 @@ class VLLMClient:
             # Fallback: Qwen2.5-Coder emits tool calls as <tools>/{json}</tools>
             # in content rather than in the tool_calls field when using the
             # hermes parser. Extract them so the agent loop sees proper calls.
-            if not result.get("tool_calls") and result.get("content"):
+            if (
+                _fallback_tool_call_extraction_enabled()
+                and not result.get("tool_calls")
+                and result.get("content")
+            ):
                 extracted = _extract_tool_calls_from_content(result["content"])
                 if extracted:
                     result = dict(result)
