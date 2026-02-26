@@ -183,8 +183,10 @@ def _parse_json_line(line: str) -> Optional[AuditEvent]:
 
 def _parse_legacy_line(line: str) -> Optional[AuditEvent]:
     """Parse a legacy pipe-delimited audit entry."""
-    # Expected segments separated by " | "; reason is optional at the end
-    parts = line.rstrip("\n").split(" | ")
+    # Expected segments separated by " | "; reason is optional at the end.
+    # Strip trailing " | " or " |" (linters/editors may strip trailing whitespace).
+    cleaned = line.rstrip("\n").rstrip().rstrip("|").rstrip()
+    parts = cleaned.split(" | ")
     if len(parts) < 4:
         return None
     try:

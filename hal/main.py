@@ -2,6 +2,7 @@
 """HAL — Orion's coordinator. Run with: python -m hal"""
 
 import argparse
+import json
 import os
 import readline
 import sys
@@ -328,9 +329,16 @@ def cmd_audit(n: int = 20) -> None:
             console.print("[dim]audit log is empty[/]")
             return
         for line in lines[-n:]:
-            if "denied" in line:
+            # Parse JSON to determine color (legacy pipe format falls back to yellow)
+            try:
+                entry = json.loads(line)
+                status = entry.get("status", "")
+                tier = entry.get("tier", -1)
+            except (json.JSONDecodeError, TypeError):
+                status, tier = "", -1
+            if status == "denied":
                 console.print(f"  [red]{line}[/]")
-            elif "tier=0" in line:
+            elif tier == 0 or status == "auto":
                 console.print(f"  [dim]{line}[/]")
             else:
                 console.print(f"  [yellow]{line}[/]")
@@ -407,6 +415,12 @@ def main() -> None:
     args = parser.parse_args()
 
     config = cfg.load()
+
+    if not config.pgvector_dsn:
+        console.print(
+            "[red]PGVECTOR_DSN is not set. Add it to .env (see .env.example).[/]"
+        )
+        sys.exit(1)
 
     # Observability init: logs then tracing
     setup_logging()

@@ -194,82 +194,83 @@ def ingest(
 
     stats = {"deleted": 0, "chunks": 0, "docs": 0, "errors": 0, "skipped": 0}
 
-    if not dry_run:
-        ensure_doc_tier_column(conn)
-        # Always clear and re-ingest lab state + ground truth (small, change often)
-        n_lab = clear_lab_docs(conn)
-        n_gt = clear_ground_truth(conn)
-        stats["deleted"] = n_lab + n_gt
-        print(f"  cleared {n_lab} lab, {n_gt} ground-truth docs")
-        # Reference docs use incremental mode — no bulk clear
-
-    # Track reference doc file_paths for orphan cleanup
-    reference_file_paths: set[str] = set()
-
-    with conn.cursor() as cur:
-        for doc in docs:
-            chunks = _chunk(doc["content"])
-            doc_tier = doc.get("doc_tier", "reference")
-
-            if doc_tier == "reference":
-                reference_file_paths.add(doc["file_path"])
-
-            # Incremental: skip unchanged reference docs
-            if not dry_run and doc_tier == "reference":
-                if not _file_needs_update(cur, doc["file_path"], chunks):
-                    stats["skipped"] += 1
-                    stats["docs"] += 1
-                    continue
-                # Changed — delete old chunks first
-                n_del = _delete_file_chunks(cur, doc["file_path"])
-                if n_del:
-                    stats["deleted"] += n_del
-
-            doc_errors = 0
-            for i, chunk in enumerate(chunks):
-                if dry_run:
-                    print(
-                        f"  [dry-run] {doc['file_path']} chunk {i}: {len(chunk)} chars"
-                    )
-                    stats["chunks"] += 1
-                    continue
-                try:
-                    embedding = llm.embed(chunk)
-                    meta = {
-                        **doc.get("metadata", {}),
-                        "content_hash": content_hash(chunk),
-                    }
-                    upsert_doc(
-                        cur,
-                        file_path=doc["file_path"],
-                        file_name=doc["file_name"],
-                        category=doc["category"],
-                        chunk_index=i,
-                        content=chunk,
-                        embedding=embedding,
-                        metadata=meta,
-                        doc_tier=doc_tier,
-                    )
-                    stats["chunks"] += 1
-                except Exception as e:
-                    print(f"  ERROR embedding {doc['file_path']} chunk {i}: {e}")
-                    doc_errors += 1
-                    stats["errors"] += 1
-
-            if doc_errors == 0:
-                stats["docs"] += 1
-
-        # Orphan cleanup: delete DB rows for reference docs no longer on disk
-        if not dry_run and reference_file_paths:
-            n_orphans = _clean_orphan_static_docs(cur, reference_file_paths)
-            if n_orphans:
-                stats["deleted"] += n_orphans
-                print(f"  cleaned {n_orphans} orphan static doc chunks")
-
+    try:
         if not dry_run:
-            conn.commit()
+            ensure_doc_tier_column(conn)
+            # Always clear and re-ingest lab state + ground truth (small, change often)
+            n_lab = clear_lab_docs(conn)
+            n_gt = clear_ground_truth(conn)
+            stats["deleted"] = n_lab + n_gt
+            print(f"  cleared {n_lab} lab, {n_gt} ground-truth docs")
+            # Reference docs use incremental mode — no bulk clear
 
-    conn.close()
+        # Track reference doc file_paths for orphan cleanup
+        reference_file_paths: set[str] = set()
+
+        with conn.cursor() as cur:
+            for doc in docs:
+                chunks = _chunk(doc["content"])
+                doc_tier = doc.get("doc_tier", "reference")
+
+                if doc_tier == "reference":
+                    reference_file_paths.add(doc["file_path"])
+
+                # Incremental: skip unchanged reference docs
+                if not dry_run and doc_tier == "reference":
+                    if not _file_needs_update(cur, doc["file_path"], chunks):
+                        stats["skipped"] += 1
+                        stats["docs"] += 1
+                        continue
+                    # Changed — delete old chunks first
+                    n_del = _delete_file_chunks(cur, doc["file_path"])
+                    if n_del:
+                        stats["deleted"] += n_del
+
+                doc_errors = 0
+                for i, chunk in enumerate(chunks):
+                    if dry_run:
+                        print(
+                            f"  [dry-run] {doc['file_path']} chunk {i}: {len(chunk)} chars"
+                        )
+                        stats["chunks"] += 1
+                        continue
+                    try:
+                        embedding = llm.embed(chunk)
+                        meta = {
+                            **doc.get("metadata", {}),
+                            "content_hash": content_hash(chunk),
+                        }
+                        upsert_doc(
+                            cur,
+                            file_path=doc["file_path"],
+                            file_name=doc["file_name"],
+                            category=doc["category"],
+                            chunk_index=i,
+                            content=chunk,
+                            embedding=embedding,
+                            metadata=meta,
+                            doc_tier=doc_tier,
+                        )
+                        stats["chunks"] += 1
+                    except Exception as e:
+                        print(f"  ERROR embedding {doc['file_path']} chunk {i}: {e}")
+                        doc_errors += 1
+                        stats["errors"] += 1
+
+                if doc_errors == 0:
+                    stats["docs"] += 1
+
+            # Orphan cleanup: delete DB rows for reference docs no longer on disk
+            if not dry_run and reference_file_paths:
+                n_orphans = _clean_orphan_static_docs(cur, reference_file_paths)
+                if n_orphans:
+                    stats["deleted"] += n_orphans
+                    print(f"  cleaned {n_orphans} orphan static doc chunks")
+
+            if not dry_run:
+                conn.commit()
+    finally:
+        conn.close()
 
     if stats["skipped"]:
         print(f"  skipped {stats['skipped']} unchanged reference docs")

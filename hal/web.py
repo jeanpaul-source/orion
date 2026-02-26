@@ -173,7 +173,9 @@ def _validate_url(url: str) -> str:
     # Resolve hostname → IP and verify *every* returned address
     try:
         addrinfos = socket.getaddrinfo(
-            hostname, parsed.port or 443, proto=socket.IPPROTO_TCP
+            hostname,
+            parsed.port or (443 if parsed.scheme == "https" else 80),
+            proto=socket.IPPROTO_TCP,
         )
     except socket.gaierror:
         raise ValueError(f"DNS resolution failed for {hostname}")

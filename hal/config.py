@@ -28,10 +28,7 @@ def load() -> Config:
         ollama_host=os.getenv("OLLAMA_HOST", "http://192.168.5.10:11434"),
         chat_model=os.getenv("CHAT_MODEL", "Qwen/Qwen2.5-32B-Instruct-AWQ"),
         embed_model=os.getenv("EMBED_MODEL", "nomic-embed-text:latest"),
-        pgvector_dsn=os.getenv(
-            "PGVECTOR_DSN",
-            "postgresql://kb_user@192.168.5.10:5432/knowledge_base",
-        ),
+        pgvector_dsn=os.getenv("PGVECTOR_DSN", ""),
         prometheus_url=os.getenv("PROMETHEUS_URL", "http://192.168.5.10:9091"),
         lab_host=os.getenv("LAB_HOST", "192.168.5.10"),
         lab_user=os.getenv("LAB_USER", "jp"),

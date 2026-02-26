@@ -100,10 +100,22 @@ def collect_docker_containers() -> list[dict]:
         status = c.get("Status", "")
         networks = c.get("Networks", "")
 
-        # Get mount/volume info
-        mounts = _run(
-            f"docker inspect {name} --format '{{{{range .Mounts}}}}{{{{.Type}}}}:{{{{.Source}}}}->{{{{.Destination}}}} {{{{end}}}}'"
-        )
+        # Get mount/volume info (never shell=True — name comes from docker ps)
+        try:
+            mounts = subprocess.run(
+                [
+                    "docker",
+                    "inspect",
+                    name,
+                    "--format",
+                    "{{range .Mounts}}{{.Type}}:{{.Source}}->{{.Destination}} {{end}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            ).stdout.strip()
+        except Exception:
+            mounts = ""
 
         content = f"""Docker container: {name}
   Image:    {image}

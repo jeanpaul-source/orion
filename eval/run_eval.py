@@ -25,7 +25,7 @@ from rich.console import Console
 
 # ── HAL imports ─────────────────────────────────────────────────────────────
 import hal.config as cfg
-from hal.agent import run_agent, run_fact, run_health
+from hal.agent import run_agent, run_conversational, run_fact, run_health
 from hal.executor import SSHExecutor
 from hal.intent import IntentClassifier
 from hal.judge import Judge, tier_for
@@ -136,6 +136,10 @@ def _run_query(
         response = run_health(query, history, llm, prom, mem, session_id, system, quiet)
     elif intent == "fact":
         response = run_fact(query, history, llm, kb, mem, session_id, system, quiet)
+    elif intent == "conversational":
+        response = run_conversational(
+            query, history, llm, mem, session_id, system, quiet
+        )
     else:
         response = run_agent(
             query,
@@ -193,7 +197,9 @@ def main(argv: list[str] | None = None) -> None:
     kb = KnowledgeBase(config.pgvector_dsn, embed)
     prom = PrometheusClient(config.prometheus_url)
     executor = _MockExecutor(config.lab_host, config.lab_user)
-    judge = _EvalJudge(llm=None)  # no LLM risk eval during eval runs
+    judge = _EvalJudge(
+        llm=None, audit_log=Path("/dev/null")
+    )  # no LLM risk eval; sink audit
     mem = MemoryStore()
 
     # Fresh throwaway session — won't interfere with real sessions

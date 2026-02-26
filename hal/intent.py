@@ -12,11 +12,14 @@ If confidence is below THRESHOLD, defaults to 'agentic' (safest fallback).
 If the embedding model is unavailable at startup, always returns 'agentic'.
 """
 
+import logging
 import math
 from typing import Literal
 
 from hal.llm import OllamaClient
 from hal.tracing import get_tracer
+
+log = logging.getLogger(__name__)
 
 Intent = Literal["health", "fact", "agentic", "conversational"]
 
@@ -160,9 +163,13 @@ class IntentClassifier:
             for category, sentences in EXAMPLES.items():
                 self._embeddings[category] = [self._ollama.embed(s) for s in sentences]
             self._ready = True
-        except Exception:
+        except Exception as exc:
             # Ollama unavailable or embed failed — degrade gracefully.
             # classify() will return ("agentic", 0.0) until this succeeds.
+            log.warning(
+                "IntentClassifier failed to build: %s — all queries will route to agentic",
+                exc,
+            )
             self._ready = False
 
     def classify(self, query: str) -> tuple[Intent, float]:
