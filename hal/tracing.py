@@ -4,7 +4,7 @@ Call setup_tracing() once at startup (in main.py). All instrumented code
 imports get_tracer() to obtain the configured tracer.
 
 If the OTLP endpoint is unreachable or opentelemetry packages are absent,
-all spans are silently no-ops — HAL continues working normally.
+the provider is not wired and all spans are no-ops — HAL continues normally.
 
 Default endpoint: http://localhost:4318 (AI Toolkit trace viewer / OTLP HTTP).
 Override with the OTLP_ENDPOINT env var.
@@ -31,7 +31,7 @@ def setup_tracing(endpoint: str | None = None) -> None:
     Behaviour summary (visible at INFO log level):
       OTEL_SDK_DISABLED=true  -> returns immediately, no SDK wiring.
       opentelemetry missing   -> returns immediately.
-      endpoint unreachable    -> one WARNING, spans will be dropped.
+      endpoint unreachable    -> DEBUG log, returns without wiring any provider.
       everything OK           -> INFO confirming endpoint URL.
     """
     global _tracer
@@ -56,6 +56,12 @@ def setup_tracing(endpoint: str | None = None) -> None:
         url = (endpoint or os.getenv("OTLP_ENDPOINT", "http://localhost:4318")).rstrip(
             "/"
         )
+
+        # Probe before wiring the provider. If the endpoint is down, skip setup
+        # entirely — no BatchSpanProcessor thread, no silently-dropped spans.
+        if not _probe_endpoint(url):
+            return
+
         resource = Resource(attributes={SERVICE_NAME: "hal"})
         provider = TracerProvider(resource=resource)
         provider.add_span_processor(
@@ -64,10 +70,6 @@ def setup_tracing(endpoint: str | None = None) -> None:
         trace.set_tracer_provider(provider)
         _tracer = trace.get_tracer("hal", "1.0.0")
 
-        # Probe once so operators see one actionable WARNING instead of a
-        # background-thread flood from BatchSpanProcessor on every export cycle.
-        _probe_endpoint(url)
-
         logger.info("Tracing enabled -> %s", url)
     except ImportError:
         logger.info("opentelemetry not installed -- tracing disabled")
@@ -75,28 +77,28 @@ def setup_tracing(endpoint: str | None = None) -> None:
         logger.info("Tracing setup failed (%s) -- continuing without tracing", exc)
 
 
-def _probe_endpoint(url: str) -> None:
-    """TCP-probe the OTLP endpoint once at startup. Logs one WARNING if unreachable.
+def _probe_endpoint(url: str) -> bool:
+    """TCP-probe the OTLP endpoint. Returns True if reachable, False otherwise.
 
-    Runs synchronously so the warning appears before any background
-    BatchSpanProcessor export failures, giving operators a single clear
-    call-to-action rather than repeated SDK-level noise.
+    Called before the provider is constructed so that an unreachable endpoint
+    causes a clean early-exit rather than a running BatchSpanProcessor that
+    silently drops every span it tries to export.
     """
     parsed = urlparse(url)
     host = parsed.hostname or "localhost"
     port = parsed.port or (443 if parsed.scheme == "https" else 4318)
     try:
         with socket.create_connection((host, port), timeout=1.0):
-            pass  # endpoint reachable
+            return True
     except OSError:
-        logger.warning(
-            "OTLP endpoint unreachable at %s (TCP %s:%d). "
-            "Spans will be silently dropped by the background exporter. "
-            "Fix the endpoint or set OTEL_SDK_DISABLED=true to silence this warning.",
+        logger.debug(
+            "OTLP endpoint unreachable at %s (TCP %s:%d) -- tracing disabled. "
+            "Set OTEL_SDK_DISABLED=true to skip this probe.",
             url,
             host,
             port,
         )
+        return False
 
 
 def get_tracer():
