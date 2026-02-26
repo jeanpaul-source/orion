@@ -12,7 +12,7 @@ the home network.
 
 For each proposed change I must output exactly this block and then **STOP and wait**:
 
-```
+```markdown
 ### Item N — <short title>
 
 **Root cause (not symptom):** <what is actually wrong and why>
@@ -88,7 +88,7 @@ I'm drifting the explanation will sound wrong or thin. That is the catch mechani
 Read these before working on the relevant area. They are the source of truth — not this file.
 
 | Doc | What it covers |
-|---|---|
+| --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Component map, data flow, design rationale (intent routing, Judge, agent loop, LLM backend split, memory, observability, KB pipeline, security stack) |
 | [OPERATIONS.md](OPERATIONS.md) | Lab host details, services table, `.env` reference, systemd units, deploy procedures, known traps, secrets |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev workflow, test commands, linting, eval harness, git conventions, branch policy |
@@ -115,6 +115,6 @@ HAL is fully operational on the-lab (192.168.5.10). All core components working:
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 486 offline tests passing (`pytest tests/ -x -q --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 530 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

@@ -135,6 +135,14 @@ What's built, what's next, and where this is going.
 - Test count: 486 → 530 (all offline, ruff clean)
 - Eval re-run: all four metrics 100% (32/32 queries)
 
+### Feb 26, 2026 — Markdown linting toolchain
+
+- `.markdownlint.jsonc` added — explicit rule config checked into version control; key decisions: MD013 disabled (long prose lines), MD024 disabled (duplicate Feb 23 headings in ROADMAP), MD046 fenced, MD060 spaced (matches `| --- |` table style used throughout)
+- `markdownlint-cli2 v0.17.2` added as pre-commit hook — violations caught at `git commit`, not only in the VS Code Problems panel
+- `make lint-md` target added to `Makefile` — wraps `pre-commit run markdownlint-cli2 --all-files`
+- `CONTRIBUTING.md` updated: document markdown linting + `make lint-md`; add `lint-md` to both commit-readiness checklists; fix stale test counts (151/186 → 495/530); update eval baselines to Feb 26 100% figures; fix all MD031/MD032/MD040/MD060 violations surfaced by the new config
+- Fixed all pre-existing MD022/MD031/MD032/MD060 violations in `ROADMAP.md` and `OPERATIONS.md`
+
 ---
 
 ## Backlog (immediate)
