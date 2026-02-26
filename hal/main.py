@@ -21,6 +21,7 @@ from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
 from hal.logging_utils import set_context, setup_logging
 from hal.memory import MemoryStore
+from hal.postmortem import gather_postmortem_context
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import get_tracer, setup_tracing
 from hal.trust_metrics import get_action_stats, load_audit_log
@@ -43,6 +44,7 @@ Commands:
   /web_stats       — show web search + fetch_url usage stats
   /kb              — list knowledge base categories
   /remember <fact> — store a fact permanently in the knowledge base
+  /postmortem <desc> — reconstruct timeline and synthesize post-mortem (--hours N, default 2)
   /search_memory <q> — search past sessions for a keyword
   /sessions        — list recent sessions
   /resume <id>     — resume a past session
@@ -263,6 +265,67 @@ def cmd_remember(fact: str, kb: KnowledgeBase) -> None:
     console.print(f"[green]remembered:[/] {fact}")
 
 
+_POSTMORTEM_SYSTEM = (
+    "You are performing a post-incident analysis. "
+    "Reconstruct the timeline, identify the likely root cause, and write a brief post-mortem. "
+    "Be factual and concise. Do not invent events not present in the data."
+)
+
+
+def cmd_postmortem(
+    raw_args: str,
+    prom: PrometheusClient,
+    executor: SSHExecutor,
+    judge: Judge,
+    history: list[dict],
+    llm: object,
+    kb: object,
+    mem: object,
+    session_id: str,
+) -> None:
+    """Gather evidence and synthesize a post-mortem via the agent loop."""
+    from hal.agent import run_agent
+
+    # Parse optional --hours N suffix.
+    window_hours = 2
+    description = raw_args.strip()
+    if "--hours" in description:
+        parts = description.split("--hours", 1)
+        description = parts[0].strip()
+        try:
+            window_hours = int(parts[1].strip().split()[0])
+        except (ValueError, IndexError):
+            console.print("[yellow]Invalid --hours value; using default 2h.[/]")
+
+    if not description:
+        console.print(
+            "[yellow]Usage: /postmortem <incident description> [--hours N][/]"
+        )
+        return
+
+    console.print(
+        f"[dim]Gathering evidence for '{description}' (window={window_hours}h)...[/]"
+    )
+    context_block = gather_postmortem_context(
+        description, window_hours, prom, executor, judge
+    )
+
+    user_input = f"{context_block}\n\nIncident to analyse: {description}"
+    run_agent(
+        user_input=user_input,
+        history=history,
+        llm=llm,
+        kb=kb,
+        prom=prom,
+        executor=executor,
+        judge=judge,
+        mem=mem,
+        session_id=session_id,
+        system=_POSTMORTEM_SYSTEM,
+        console=console,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="hal",
@@ -408,6 +471,18 @@ def main() -> None:
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):
                 cmd_remember(user_input[10:].strip(), kb)
+            elif user_input.startswith("/postmortem"):
+                cmd_postmortem(
+                    user_input[11:].strip(),
+                    prom,
+                    executor,
+                    judge,
+                    history,
+                    llm,
+                    kb,
+                    mem,
+                    session_id,
+                )
             elif user_input.startswith("/search_memory "):
                 cmd_search_memory(user_input[15:].strip(), mem)
             elif user_input == "/sessions":
