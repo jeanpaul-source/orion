@@ -1,7 +1,10 @@
-.PHONY: lint format test test-full coverage typecheck
+.PHONY: lint lint-md format test test-full coverage typecheck
 
 lint:
 	.venv/bin/ruff check hal/ tests/ harvest/ eval/
+
+lint-md:
+	pre-commit run markdownlint-cli2 --all-files
 
 format:
 	.venv/bin/ruff format hal/ tests/ harvest/ eval/

@@ -14,6 +14,7 @@ explains the purpose of this discipline: preventing drift on a long-running proj
 individual fixes can look correct in isolation while the system degrades overall.
 
 The short version:
+
 1. State root cause + proposed change + why it's correct long-term + confidence level
 2. Wait for approval
 3. Make exactly one change
@@ -38,7 +39,8 @@ cp .env.example .env
 ```
 
 Laptop `.env` should have:
-```
+
+```env
 OLLAMA_HOST=http://192.168.5.10:11434
 PROMETHEUS_URL=http://192.168.5.10:9091
 LAB_HOST=192.168.5.10
@@ -55,7 +57,7 @@ HAL_INSTANCE=laptop
 **Run before every push. No exceptions.**
 
 ```bash
-make test           # offline tests only (no Ollama needed) — 151 tests
+make test           # offline tests only (no Ollama needed) — 495 tests
 make test-full      # full suite including intent classifier (requires Ollama)
 ```
 
@@ -69,10 +71,11 @@ OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 .venv/bin/pytest tests/ --ignore=tests/test_intent.py -v
 ```
 
-186 tests total:
+530 tests total:
+
 - **35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
   reachable. Run these on the server if you can't reach Ollama from the laptop.
-- **151 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
+- **495 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
   trust_metrics, Telegram bot, parsers, harvest. Run anywhere with no external services.
 
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
@@ -84,9 +87,11 @@ If any test regresses, do not push. Fix it first.
 ## Linting and formatting
 
 Ruff (lint + format) is enforced via pre-commit hooks and CI. Hooks fire on every `git commit`.
+Markdown linting (`markdownlint-cli2`) also runs as a pre-commit hook. Rules are in `.markdownlint.jsonc`.
 
 ```bash
 make lint       # ruff check — catch errors and import issues
+make lint-md    # markdownlint-cli2 — markdown formatting
 make format     # ruff format — apply formatting
 make typecheck  # mypy — type check hal/ (warn-only; 10 errors in baseline)
 make coverage   # pytest-cov — show coverage report for hal/ (baseline: 34%)
@@ -102,14 +107,17 @@ Or directly:
 ```
 
 Three common lint failure patterns:
+
 - **I001** — stdlib imports not in alphabetical order
 - **E402** — import placed after module-level code (usually intentional `sys.path` manipulation — add to `per-file-ignores` in `pyproject.toml`)
 - **F401** — unused import (delete it)
 
 Commit readiness checklist:
+
 - `make lint` passes
+- `make lint-md` passes
 - `make format` produces no diffs
-- `make test` passes (all 151 offline tests)
+- `make test` passes (all 495 offline tests)
 
 ---
 
@@ -124,10 +132,12 @@ python -m eval.run_eval                     # drives 24 queries → eval/respons
 python -m eval.evaluate --skip-llm-eval    # scores → eval/results/eval_out.json
 ```
 
-Baselines (Feb 23, 2026):
+Baselines (Feb 26, 2026):
+
+- `intent_accuracy=100%` — all queries routed correctly
 - `hal_identity=100%` — never identifies as Qwen
 - `no_raw_json=100%` — no raw tool-call JSON in responses
-- `intent_accuracy=95.8%` — 23/24 queries routed correctly
+- `web_tool_accuracy=100%` — web_search called when required
 
 If any baseline regresses, investigate before merging.
 
@@ -141,7 +151,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/). Every commit m
 starts with a type prefix:
 
 | Prefix | When to use |
-|---|---|
+| --- | --- |
 | `feat:` | New capability or behaviour |
 | `fix:` | Bug fix — something was wrong |
 | `docs:` | Documentation only |
@@ -153,7 +163,7 @@ Subject line: imperative, lowercase, no period, ≤ 72 chars.
 Body (optional): explain *why*, not *what*. The diff shows what; the body explains the
 reasoning that isn't obvious from the code.
 
-```
+```plaintext
 # Good
 feat: add temporal awareness — snapshot diff across harvest runs
 fix: raise KB seeding threshold to 0.75 — prevents low-confidence docs biasing agent
@@ -167,8 +177,10 @@ fix stuff                             ← which stuff?
 ### Commit granularity
 
 **One logical change per commit.** A commit is ready when:
-- `make test` passes (151 offline tests)
+
+- `make test` passes (495 offline tests)
 - `make lint` passes
+- `make lint-md` passes
 - `make format` produces no diffs
 - One thing changed with a clear description
 
@@ -182,7 +194,7 @@ five changes, that's five commits.
 
 Any commit where Claude wrote substantial code gets:
 
-```
+```text
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
