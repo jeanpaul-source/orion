@@ -321,7 +321,7 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 ### Structural cleanup (1–2 week horizon)
 
 - [x] N1: Extract `get_system_prompt()` + `setup_clients()` → `hal/bootstrap.py` (~2 hr)
-- [ ] N2: Consolidate three tool-call stripping impls → `hal/sanitize.py` (~1.5 hr)
+- [x] N2: Consolidate three tool-call stripping impls → `hal/sanitize.py` (~1.5 hr)
 - [x] N3: Extract `dispatch_intent()` shared function (~1 hr)
 - [x] N6: Delete `_dispatch()` shim in `agent.py` (~10 min)
 - [x] N7: Delete legacy pipe-format parser in `trust_metrics.py` (~30 min)
