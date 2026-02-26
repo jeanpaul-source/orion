@@ -10,14 +10,17 @@ from pathlib import Path
 
 from hal.trust_metrics import aggregate_stats, get_action_stats, load_audit_log
 
+# Original sample log in legacy pipe format is now replaced with JSON equivalents.
+# The legacy parser (_parse_legacy_line) was deleted in N7 because the JSON format
+# is the only format written by hal/judge.py today.
 _SAMPLE_LOG = """
-2026-02-24T10:00:00 | tier=0 | auto     | search_kb     | prometheus port | quick lookup
-2026-02-24T10:05:00 | tier=1 | approved | run_command    | docker restart grafana | restart service
-2026-02-24T10:06:00 | tier=1 | denied   | run_command    | systemctl restart vllm | hold off
-2026-02-24T10:07:00 | tier=0 | auto     | get_metrics
-2026-02-24T10:08:00 | tier=2 | approved | write_file     | /etc/some.conf | apply config
-2026-02-24T10:09:00 | tier=1 | approved | run_command    | ufw allow 8080 | open port
-2026-02-24T10:10:00 | tier=3 | denied   | run_command    | rm -rf /tmp/something | dangerous
+{"ts": "2026-02-24T10:00:00", "tier": 0, "status": "auto", "action": "search_kb", "detail": "prometheus port", "reason": "quick lookup"}
+{"ts": "2026-02-24T10:05:00", "tier": 1, "status": "approved", "action": "run_command", "detail": "docker restart grafana", "reason": "restart service"}
+{"ts": "2026-02-24T10:06:00", "tier": 1, "status": "denied", "action": "run_command", "detail": "systemctl restart vllm", "reason": "hold off"}
+{"ts": "2026-02-24T10:07:00", "tier": 0, "status": "auto", "action": "get_metrics", "detail": ""}
+{"ts": "2026-02-24T10:08:00", "tier": 2, "status": "approved", "action": "write_file", "detail": "/etc/some.conf", "reason": "apply config"}
+{"ts": "2026-02-24T10:09:00", "tier": 1, "status": "approved", "action": "run_command", "detail": "ufw allow 8080", "reason": "open port"}
+{"ts": "2026-02-24T10:10:00", "tier": 3, "status": "denied", "action": "run_command", "detail": "rm -rf /tmp/something", "reason": "dangerous"}
 """.strip()
 
 _SAMPLE_JSON_LOG = """
@@ -216,8 +219,8 @@ def test_json_log_missing_fields_skipped(tmp_path):
     assert len(events) == 1
 
 
-def test_mixed_json_and_legacy_log(tmp_path):
-    """Parser handles a log file with both JSON and legacy pipe-format lines."""
+def test_mixed_json_and_legacy_log_legacy_lines_skipped(tmp_path):
+    """Legacy pipe-delimited lines are silently skipped (parser only handles JSON)."""
     p = tmp_path / "mixed.log"
     p.write_text(
         "2026-02-24T10:00:00 | tier=0 | auto     | search_kb     | test | reason\n"
@@ -225,6 +228,6 @@ def test_mixed_json_and_legacy_log(tmp_path):
         encoding="utf-8",
     )
     events = list(load_audit_log(p))
-    assert len(events) == 2
-    assert events[0].action_type.strip() == "search_kb"
-    assert events[1].action_type == "get_metrics"
+    # Legacy line is silently skipped; only the JSON line is parsed
+    assert len(events) == 1
+    assert events[0].action_type == "get_metrics"

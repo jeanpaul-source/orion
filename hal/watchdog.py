@@ -265,13 +265,26 @@ def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
 
 def run() -> None:
     config = cfg.load()
+
+    if not config.ntfy_url:
+        _log(
+            "INFO   NTFY_URL is not set — all alerts will be logged only, no push notifications."
+        )
+
     prom = PrometheusClient(config.prometheus_url)
 
     try:
         metrics = prom.health()
     except Exception as e:
-        _log(f"ERROR: could not reach Prometheus — {e}")
-        sys.exit(0)  # not an alert-worthy failure, just unavailable
+        _log(f"WARNING: Prometheus unreachable — metric alerts suspended: {e}")
+        _send_ntfy_simple(
+            config.ntfy_url,
+            ["Watchdog: Prometheus unreachable — metric alerts suspended."],
+            urgency="low",
+            title="Orion Watchdog Warning — the-lab",
+            tags="warning,server",
+        )
+        sys.exit(0)
 
     state = _load_state()
     alerts: list[

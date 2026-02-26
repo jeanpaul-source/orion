@@ -6,8 +6,7 @@ Provides:
 - get_action_stats(pattern, path=None): filter+aggregate by a substring/regex pattern
 
 Audit log format (from hal/judge.py::_log):
-  JSON lines (one JSON object per line) since safety-hardening rework.
-  Legacy pipe-delimited format is also supported for backward compatibility.
+  JSON lines (one JSON object per line).
 
 JSON fields:
   ts, tier, status (auto|approved|denied), action, detail, reason,
@@ -75,10 +74,8 @@ class CounterStats:
 
 _STATUS_NORMALIZE = {
     "auto": "auto",
-    "auto    ": "auto",
     "approved": "approved",
     "denied": "denied",
-    "denied  ": "denied",
 }
 
 
@@ -127,18 +124,11 @@ def _extract_action_class(action_type: str, detail: str) -> Optional[str]:
 
 
 def _parse_line(line: str) -> Optional[AuditEvent]:
-    """Parse a single audit log line.  Supports JSON lines and legacy pipe format."""
+    """Parse a single JSON audit log line."""
     stripped = line.strip()
-    if not stripped:
+    if not stripped or not stripped.startswith("{"):
         return None
-
-    # Try JSON first (new format)
-    if stripped.startswith("{"):
-        return _parse_json_line(stripped)
-
-    # Fall back to legacy pipe-delimited format — pass original line so
-    # trailing " | " delimiters are preserved for correct splitting.
-    return _parse_legacy_line(line)
+    return _parse_json_line(stripped)
 
 
 def _parse_json_line(line: str) -> Optional[AuditEvent]:
@@ -168,48 +158,6 @@ def _parse_json_line(line: str) -> Optional[AuditEvent]:
 
     detail = obj.get("detail", "")
     reason = obj.get("reason")
-    action_class = _extract_action_class(action_type, detail)
-
-    return AuditEvent(
-        ts=ts,
-        tier=tier,
-        status=status,
-        action_type=action_type,
-        detail=detail,
-        reason=reason,
-        action_class=action_class,
-    )
-
-
-def _parse_legacy_line(line: str) -> Optional[AuditEvent]:
-    """Parse a legacy pipe-delimited audit entry."""
-    # Expected segments separated by " | "; reason is optional at the end.
-    # Strip trailing " | " or " |" (linters/editors may strip trailing whitespace).
-    cleaned = line.rstrip("\n").rstrip().rstrip("|").rstrip()
-    parts = cleaned.split(" | ")
-    if len(parts) < 4:
-        return None
-    try:
-        ts = datetime.fromisoformat(parts[0])
-    except Exception:
-        return None
-
-    # tier=K
-    tier_part = parts[1]
-    if not tier_part.startswith("tier="):
-        return None
-    try:
-        tier = int(tier_part.replace("tier=", "", 1))
-    except ValueError:
-        return None
-
-    raw_status = parts[2].strip()
-    status = _STATUS_NORMALIZE.get(raw_status, raw_status.strip())
-
-    action_type = parts[3].strip()
-    detail = parts[4].strip() if len(parts) >= 5 else ""
-    reason = parts[5].strip() if len(parts) >= 6 else None
-
     action_class = _extract_action_class(action_type, detail)
 
     return AuditEvent(
