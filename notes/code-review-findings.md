@@ -11,10 +11,9 @@ backlog.*
 ### Grade: B+ / A−
 
 Architecture is clean. Security model (Judge) is production-quality. Documentation is
-unusually good. Main gaps: structural coupling between `server.py` and `main.py`,
-three separate implementations of the same tool-call stripping logic, duplicated
-intent-dispatch blocks across three callers, and the Planner/Critic sub-agents adding
-2× LLM latency with no measured quality benefit.
+unusually good. All structural coupling issues resolved Feb 26. Remaining open items
+are architecture-scale decisions (Planner/Critic eval, connection pooling) that
+require live server measurements before acting.
 
 ---
 
@@ -77,23 +76,15 @@ Both `main.py` and `server.py` import from there. `main.py` is a pure entrypoint
 
 ---
 
-### N2 — Three implementations of the same tool-call stripping logic
+### ~~N2 — Three implementations of the same tool-call stripping logic~~ ✅ DONE
 
-The same failure mode (LLM hallucinating a tool call in prose) is detected and stripped
-in three separate places with three different implementations:
-
-1. `agent.py:_strip_tool_artifacts()` — JSON decoder, strips bare `{"name":...,"arguments":...}` objects from final response text.
-2. `server.py:_strip_tool_call_blocks()` — regex fence, strips ` ```json {...} ``` ` fences, applied after handler returns.
-3. `memory.py:is_poison_response()` — hybrid, used as a save-gate before writing to SQLite.
-
-They use different detection paths, have different failure modes, and must all be updated
-if the pattern changes.
-
-**Fix:** One canonical function in `hal/sanitize.py` (or inline into `hal/patterns.py`):
-`strip_tool_call_artifacts(text) -> str` and `is_tool_call_artifact(text) -> bool`.
-All three callers use it. Delete the three local implementations.
-
-**Effort:** ~1.5 hr. Medium risk — add tests before touching `is_poison_response()`.
+`hal/sanitize.py` created with `is_tool_call_artifact(text) -> bool` and
+`strip_tool_call_artifacts(text) -> str`. `TOOL_CALL_FENCE_RE` defined once there.
+`agent.py:_strip_tool_artifacts()`, `server.py:_strip_tool_call_blocks()`, and the
+inline logic in `memory.py:is_poison_response()` all deleted; callers delegate to
+`sanitize.py`. Coverage improved: `agent.py` now strips fenced hallucinations
+(previously only bare objects); `server.py` now strips bare-object hallucinations
+(previously only fences). `is_poison_response()` kept as a one-liner wrapper.
 
 ---
 
@@ -105,74 +96,35 @@ is gone. Adding a new intent route is now a single edit in `bootstrap.py`.
 
 ---
 
-### N4 — `args.get()` returns `None` on `null` LLM argument (latent crash)
+### ~~N4 — `args.get()` returns `None` on `null` LLM argument (latent crash)~~ ✅ DONE
 
-`args.get("command", "")` only uses the default when the key is *absent*. When the LLM
-passes `{"command": null}`, `args.get("command", "")` returns `None`. This `None` flows
-into `judge.approve("run_command", None)` → `classify_command(None)` →
-`_normalize_command(None)` → `None.split()` → `AttributeError`.
-
-Same issue in `_handle_scan_lan` (subnet), `_handle_search_kb` (query), and any other
-handler with a required string argument.
-
-**Fix:** Replace `args.get("command", "")` with `args.get("command") or ""` in every
-tool handler.
-
-**Files touched:** `hal/tools.py` — all `_handle_*` functions.
-**Effort:** ~20 min. Do immediately.
+All `args.get("key", "")` patterns replaced with `args.get("key") or ""` in every
+`_handle_*` function in `hal/tools.py`.
 
 ---
 
-### N5 — SSH has no connect timeout (slow failure on dead host)
+### ~~N5 — SSH has no connect timeout (slow failure on dead host)~~ ✅ DONE
 
-`SSHExecutor._SSH_OPTS` has no `ConnectTimeout`. When the lab host is unreachable
-(powered off, network partition), SSH hangs until the subprocess 30-second timeout fires.
-The error raised is `subprocess.TimeoutExpired`, not "host unreachable" — unclear failure.
-
-**Fix:** Add `"-o", "ConnectTimeout=5"` to `_SSH_OPTS` in `hal/executor.py`.
-
-**Effort:** ~5 min.
+`"-o", "ConnectTimeout=5"` added to `SSHExecutor._SSH_OPTS` in `hal/executor.py`.
 
 ---
 
-### N6 — `_dispatch()` in `agent.py` labeled "legacy" but is the live call path
+### ~~N6 — `_dispatch()` in `agent.py` labeled "legacy" but is the live call path~~ ✅ DONE
 
-```python
-def _dispatch(...):
-    """Compatibility wrapper for legacy tests/imports."""
-    return dispatch_tool(...)
-```
-
-This 8-line wrapper calls `dispatch_tool()` with no logic. It is the only dispatch call
-in `run_agent()`. Labeling it "legacy" makes it look like dead code; it is not.
-
-**Fix:** Replace the `_dispatch()` call in `run_agent()` with a direct `dispatch_tool()`
-call. Delete `_dispatch()`.
-
-**Effort:** ~10 min.
+`_dispatch()` deleted. `run_agent()` calls `dispatch_tool()` directly.
 
 ---
 
-### N7 — Legacy pipe-format parser in `trust_metrics.py` is dead code
+### ~~N7 — Legacy pipe-format parser in `trust_metrics.py` is dead code~~ ✅ DONE
 
-`_parse_legacy_line()` handles a pipe-delimited audit log format that was replaced by
-JSON during safety hardening. The JSON format is all that is written today.
-
-**Fix:** Delete `_parse_legacy_line()` and the `_STATUS_NORMALIZE` entries that exist
-only for it. Verify no test generates the old format first.
-
-**Effort:** ~30 min.
+`_parse_legacy_line()` deleted. `_STATUS_NORMALIZE` whitespace-padded entries removed.
+`_parse_line()` now only processes `{`-prefixed lines. Test fixture updated to JSON format.
 
 ---
 
-### N8 — `import time` duplicated twice in `VLLMClient.chat_with_tools()`
+### ~~N8 — `import time` duplicated twice in `VLLMClient.chat_with_tools()`~~ ✅ DONE
 
-`time` is imported at function entry, then imported again as `import time as _t` at the
-end of the same span block. Classic copy-paste from `chat()`.
-
-**Fix:** Single `import time` at module level in `hal/llm.py`.
-
-**Effort:** 2 min.
+Single `import time` at module level in `hal/llm.py`. Four inline imports removed.
 
 ---
 
@@ -229,71 +181,47 @@ module-level pool, reuse it in `KnowledgeBase._connect()`.
 
 ---
 
-### N12 — `facts.py:remember()` duplicates `KnowledgeBase` DB connection pattern
+### ~~N12 — `facts.py:remember()` duplicates `KnowledgeBase` DB connection pattern~~ ✅ DONE
 
-`hal/facts.py` opens its own psycopg2 connection, calls `register_vector()`, and
-manages `conn.close()` in a try/finally — the same pattern as `hal/knowledge.py`, in
-a 40-line standalone function. It's `KnowledgeBase.remember()` in disguise.
-
-**Fix:** Move `remember()` into `KnowledgeBase` as a method. Delete `hal/facts.py`.
-Update `hal/main.py:cmd_remember()` to call `kb.remember()`.
-
-**Effort:** ~30 min.
+`KnowledgeBase.remember(fact)` added to `hal/knowledge.py`. `hal/facts.py` deleted.
+`cmd_remember()` in `main.py` calls `kb.remember()` — no more separate DSN/embed args.
+4 new tests in `test_knowledge.py`.
 
 ---
 
-### N13 — Tool handler 7-argument signature is a hidden context object
+### ~~N13 — Tool handler 7-argument signature is a hidden context object~~ ✅ DONE
 
-Every tool handler takes `(args, executor, judge, kb, prom, ntopng_url, tavily_api_key)`.
-Most handlers ignore 4–5 of those arguments (evidenced by `_` prefix on unused params).
-This is a context struct disguised as positional arguments.
-
-**Fix:** Define `class ToolContext(NamedTuple)` with these fields. `dispatch_tool()`
-constructs it once and passes `ctx`. Handlers become `(args: dict, ctx: ToolContext)`.
-Also fixes `run_agent()`'s 14-argument signature (same root cause).
-
-**Effort:** ~2 hr. Medium risk — touches every handler and all tests that mock them.
-Wrap existing handler tests first.
+`class ToolContext(NamedTuple)` added to `hal/tools.py` with fields `executor`, `judge`,
+`kb`, `prom`, `ntopng_url`, `tavily_api_key`. All 16 `_handle_*` functions now take
+`(args: dict, ctx: ToolContext)`. `dispatch_tool()` accepts `ctx: ToolContext`.
+`run_agent()` constructs one `ToolContext` per turn. Adding a new shared dependency is
+now one line in `ToolContext` + one line at the construction site.
 
 ---
 
-### N14 — Watchdog silently exits when Prometheus is unreachable
+### ~~N14 — Watchdog silently exits when Prometheus is unreachable~~ ✅ DONE
 
-`watchdog.py:run()` does `sys.exit(0)` when `prom.health()` fails: *"not an
-alert-worthy failure."* Since the watchdog is a timer, this means a Prometheus outage
-silently disables all metric alerts for each 5-minute window until Prometheus recovers.
-The operator learns about it only by noticing the absence of alerts.
-
-**Fix:** Change `sys.exit(0)` to log a WARNING to the watchdog log and, if `ntfy_url`
-is configured, send a low-urgency ntfy notification: *"Watchdog: Prometheus unreachable
-— metric alerts suspended."* Then exit. Recovery is automatic when Prometheus comes back.
-
-**Effort:** ~20 min.
+`sys.exit(0)` on Prometheus failure replaced with a WARNING log + low-urgency ntfy
+notification: *"Watchdog: Prometheus unreachable — metric alerts suspended."*
 
 ---
 
-### N15 — `NTFY_URL` empty gives no startup warning
+### ~~N15 — `NTFY_URL` empty gives no startup warning~~ ✅ DONE
 
-`ntfy_url` defaults to `""` with no validation or startup warning. An operator who
-forgets to set it receives zero push alerts — silently. Disk-full, GPU-temp, and Falco
-events all go nowhere.
-
-**Fix:** Add an `INFO` log at startup in `watchdog.py:run()` when `config.ntfy_url` is
-empty: *"NTFY_URL is not set — all alerts will be logged only, no push notifications."*
-
-**Effort:** 5 min.
+INFO log added at startup when `config.ntfy_url` is empty.
 
 ---
 
 ## Test Coverage
 
-486 offline tests passing (Feb 26). Gaps remaining:
+534 offline tests passing (Feb 26). Gaps remaining:
 
 | Module | Status |
-|---|---|
+|---|---------|
 | `hal/judge.py` | Strong — 716 lines in `test_judge_hardening.py` + `test_judge.py` |
 | `hal/web.py` | Strong — 495 lines |
-| `hal/memory.py` | Good — add boundary tests for `is_poison_response()` before N2 |
+| `hal/memory.py` | Good — poison filter, prune, session. `is_poison_response` delegates to `sanitize.py` |
+| `hal/sanitize.py` | Good — covered via `test_agent_loop.py`, `test_server.py`, `test_memory.py` |
 | `hal/agents.py` | Light — low priority if N10 Option B proceeds |
 | `harvest/collect.py` | Light — medium risk (nightly job) |
 | `hal/intent.py` | Requires live Ollama — freeze a labeled query set before changing examples or threshold |
