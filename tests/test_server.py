@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import hal.bootstrap as bootstrap
 import hal.server as server
+from hal.sanitize import strip_tool_call_artifacts
 
 _ns = SimpleNamespace  # short alias used by /chat routing tests
 
@@ -77,7 +78,7 @@ def test_chat_returns_503_when_server_uninitialized() -> None:
 
 
 def test_strip_tool_call_blocks_strips_hallucinated_tool_call_json_fences() -> None:
-    """This proves to the user that hallucinated tool-call JSON fences are removed."""
+    """Hallucinated tool-call JSON fences are removed by strip_tool_call_artifacts."""
     text = (
         "Before\n"
         "```json\n"
@@ -86,16 +87,16 @@ def test_strip_tool_call_blocks_strips_hallucinated_tool_call_json_fences() -> N
         "After"
     )
 
-    out = server._strip_tool_call_blocks(text)
+    out = strip_tool_call_artifacts(text)
 
     assert out == "Before\n\nAfter"
 
 
 def test_strip_tool_call_blocks_preserves_normal_json_fences() -> None:
-    """This proves to the user that ordinary JSON examples are preserved unchanged."""
+    """Ordinary JSON code fences are preserved unchanged by strip_tool_call_artifacts."""
     text = 'Payload:\n```json\n{"cpu_pct":35.5,"status":"ok"}\n```'
 
-    out = server._strip_tool_call_blocks(text)
+    out = strip_tool_call_artifacts(text)
 
     assert out == text
 

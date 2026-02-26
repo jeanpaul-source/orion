@@ -14,7 +14,8 @@ from unittest.mock import MagicMock
 
 from rich.console import Console
 
-from hal.agent import _strip_tool_artifacts, run_agent
+from hal.agent import run_agent
+from hal.sanitize import strip_tool_call_artifacts as _strip_tool_artifacts
 from hal.tools import dispatch_tool
 
 # ---------------------------------------------------------------------------

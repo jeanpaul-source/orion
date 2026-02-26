@@ -26,8 +26,6 @@ if _workspace_root not in sys.path:
 
 import argparse
 import asyncio
-import json as _json
-import re as _re
 from contextlib import asynccontextmanager
 from io import StringIO
 from typing import Any
@@ -40,6 +38,7 @@ from rich.console import Console
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
+from hal.sanitize import strip_tool_call_artifacts
 from hal.intent import IntentClassifier
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
@@ -48,10 +47,6 @@ from hal.logging_utils import setup_logging
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import setup_tracing
-
-# Matches ```json {...} ``` code fences containing JSON objects (inline — patterns.py deleted).
-TOOL_CALL_FENCE_RE = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL)
-
 
 # ---------------------------------------------------------------------------
 # Server-mode Judge: auto-deny tier 1+ (no TTY available over HTTP)
@@ -163,27 +158,6 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _strip_tool_call_blocks(text: str) -> str:
-    """Strip ```json {...} ``` fences that contain hallucinated tool-call objects.
-
-    The LLM occasionally narrates tool calls in prose (e.g. printing a raw
-    {"name": "web_search", "arguments": {...}} block) instead of invoking them
-    via the structured tool_calls field.  Remove these before they reach the
-    user — they are always an error, never intentional output.
-    """
-
-    def _replacer(m: _re.Match) -> str:
-        try:
-            data = _json.loads(m.group(1))
-        except (_json.JSONDecodeError, ValueError):
-            return m.group(0)  # not valid JSON — leave untouched
-        if isinstance(data, dict) and "name" in data and "arguments" in data:
-            return ""  # tool-call hallucination — strip
-        return m.group(0)  # real JSON — leave untouched
-
-    return TOOL_CALL_FENCE_RE.sub(_replacer, text).strip()
-
-
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
     """Send a message to HAL; returns the assistant response."""
@@ -244,7 +218,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             mem.close()
 
     response, session_id, intent = await asyncio.to_thread(_run)
-    response = _strip_tool_call_blocks(response)
+    response = strip_tool_call_artifacts(response)
     return ChatResponse(response=response, session_id=session_id, intent=intent)
 
 

@@ -14,6 +14,7 @@ from hal.llm import VLLMClient
 from hal.logging_utils import get_logger, set_context
 from hal.memory import MemoryStore
 from hal.prometheus import Counter, Histogram, PrometheusClient, flush_metrics
+from hal.sanitize import strip_tool_call_artifacts
 from hal.tools import dispatch_tool, get_tools
 from hal.tracing import get_tracer
 
@@ -68,44 +69,6 @@ TOOL_CALLS_TOTAL = Counter("hal_tool_calls_total", labels=("tool", "outcome"))
 
 # Logger
 log = get_logger(__name__)
-
-
-def _strip_tool_artifacts(text: str) -> str:
-    """Remove bare tool-call JSON objects leaked into prose response text.
-
-    The model occasionally appends a raw {"name": ..., "arguments": ...} object
-    to an otherwise clean prose response instead of issuing it via the structured
-    tool_calls field.  These objects are always a B1 error — strip them so they
-    never reach the user.
-
-    Uses json.JSONDecoder.raw_decode so nested JSON inside command strings is
-    handled correctly.  No-op on clean text.
-    """
-    decoder = json.JSONDecoder()
-    out: list[str] = []
-    pos = 0
-    while pos < len(text):
-        brace = text.find("{", pos)
-        if brace == -1:
-            out.append(text[pos:])
-            break
-        # Append verbatim everything before this opening brace.
-        out.append(text[pos:brace])
-        try:
-            obj, end = decoder.raw_decode(text, brace)
-        except (json.JSONDecodeError, ValueError):
-            # Not valid JSON at this position — keep the character and advance.
-            out.append("{")
-            pos = brace + 1
-            continue
-        if isinstance(obj, dict) and "name" in obj and "arguments" in obj:
-            # Tool-call artifact — drop it entirely, advance past the object.
-            pos = end
-        else:
-            # Real JSON literal that belongs in the response — keep verbatim.
-            out.append(text[brace:end])
-            pos = end
-    return "".join(out).strip()
 
 
 def _should_use_planner_critic(query: str) -> tuple[bool, str]:
@@ -403,7 +366,7 @@ def run_agent(
 
             if not tool_calls:
                 # Text-only response — agent is done
-                response_text = _strip_tool_artifacts(
+                response_text = strip_tool_call_artifacts(
                     (msg.get("content") or "").strip()
                 )
                 span.set_attribute("hal.iterations", iteration + 1)
