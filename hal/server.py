@@ -38,18 +38,19 @@ from pydantic import BaseModel
 from rich.console import Console
 
 import hal.config as cfg
-from hal.agent import run_agent, run_conversational, run_fact, run_health
+from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
 from hal.intent import IntentClassifier
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
 from hal.logging_utils import setup_logging
-from hal.main import get_system_prompt, setup_clients
 from hal.memory import MemoryStore
-from hal.patterns import TOOL_CALL_FENCE_RE
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import setup_tracing
+
+# Matches ```json {...} ``` code fences containing JSON objects (inline — patterns.py deleted).
+TOOL_CALL_FENCE_RE = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL)
 
 
 # ---------------------------------------------------------------------------
@@ -222,54 +223,22 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 session_id = mem.last_session_id() or mem.new_session()
             history = mem.load_turns(session_id)
 
-            if intent == "conversational":
-                response = run_conversational(
-                    req.message,
-                    history,
-                    llm,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                )
-            elif intent == "health":
-                response = run_health(
-                    req.message,
-                    history,
-                    llm,
-                    prom,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                )
-            elif intent == "fact":
-                response = run_fact(
-                    req.message,
-                    history,
-                    llm,
-                    kb,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                )
-            else:
-                response = run_agent(
-                    req.message,
-                    history,
-                    llm,
-                    kb,
-                    prom,
-                    executor,
-                    judge,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                    ntopng_url=config.ntopng_url,
-                    tavily_api_key=config.tavily_api_key,
-                )
+            response = dispatch_intent(
+                intent,
+                req.message,
+                history,
+                llm,
+                prom,
+                kb,
+                executor,
+                judge,
+                mem,
+                session_id,
+                get_system_prompt(),
+                console,
+                ntopng_url=config.ntopng_url,
+                tavily_api_key=config.tavily_api_key,
+            )
             return response, session_id, intent
         finally:
             mem.close()

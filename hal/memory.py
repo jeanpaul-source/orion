@@ -2,12 +2,14 @@
 
 import json
 import logging
+import re as _re
 import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-from hal.patterns import TOOL_CALL_FENCE_RE
+# Matches ```json {...} ``` code fences (inline — patterns.py deleted).
+TOOL_CALL_FENCE_RE = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL)
 
 log = logging.getLogger(__name__)
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+import hal.bootstrap as bootstrap
 import hal.server as server
 
 _ns = SimpleNamespace  # short alias used by /chat routing tests
@@ -131,7 +132,7 @@ def test_chat_happy_path_returns_response_session_and_intent(monkeypatch) -> Non
     monkeypatch.setattr(server.asyncio, "to_thread", _fake_to_thread)
     monkeypatch.setattr(server, "MemoryStore", _Mem)
     monkeypatch.setattr(
-        server,
+        bootstrap,
         "run_conversational",
         lambda *args, **kwargs: "final response",
     )
@@ -196,7 +197,7 @@ def test_chat_routes_agentic_intent_and_returns_response(monkeypatch) -> None:
     monkeypatch.setattr(server.asyncio, "to_thread", _fake_to_thread)
     monkeypatch.setattr(server, "MemoryStore", _Mem)
     monkeypatch.setattr(
-        server,
+        bootstrap,
         "run_agent",
         lambda *args, **kwargs: "agentic response text",
     )
@@ -259,7 +260,7 @@ def test_chat_routes_health_intent_and_returns_response(monkeypatch) -> None:
     monkeypatch.setattr(server.asyncio, "to_thread", _fake_to_thread)
     monkeypatch.setattr(server, "MemoryStore", _Mem)
     monkeypatch.setattr(
-        server,
+        bootstrap,
         "run_health",
         lambda *args, **kwargs: "health check response",
     )
@@ -330,7 +331,7 @@ def test_chat_strips_fenced_tool_call_blocks_from_agentic_response(monkeypatch) 
     monkeypatch.setattr(server.asyncio, "to_thread", _fake_to_thread)
     monkeypatch.setattr(server, "MemoryStore", _Mem)
     monkeypatch.setattr(
-        server,
+        bootstrap,
         "run_agent",
         lambda *args, **kwargs: fenced_artifact,
     )

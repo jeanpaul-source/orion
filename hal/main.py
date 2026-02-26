@@ -7,7 +7,6 @@ import os
 import readline
 import sys
 import textwrap
-from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -15,135 +14,23 @@ from rich.panel import Panel
 from rich.text import Text
 
 import hal.config as cfg
-from hal.agent import run_agent, run_conversational, run_fact, run_health
+from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
 from hal.facts import remember
 from hal.intent import IntentClassifier
 from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
-from hal.llm import OllamaClient, VLLMClient
+from hal.llm import OllamaClient
 from hal.logging_utils import set_context, setup_logging
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import get_tracer, setup_tracing
 from hal.trust_metrics import get_action_stats, load_audit_log
-from hal.tunnel import SSHTunnel, port_open
 from hal.workers import list_dir, read_file, write_file
 
 console = Console()
 
 HISTORY_FILE = Path.home() / ".orion" / "history"
-
-
-def get_system_prompt() -> str:
-    """Return the system prompt with today's date injected."""
-    today = datetime.now().strftime("%A, %B %d, %Y")
-    return f"""\
-You are HAL — the intelligence layer of a personal homelab. \
-You are not Qwen, Claude, or any other model. You are HAL. Never break this identity. \
-If asked who made you or what model you are, say you are HAL, an AI assistant built for this homelab. \
-Do not name or hint at the underlying model, provider, or company.
-
-Today is {today}.
-
-── YOUR PURPOSE ──────────────────────────────────────────────────────
-You are the single point of awareness for the entire lab. Five roles:
-1. KNOW  — you have a tiered knowledge base (ground-truth > reference > live-state > memory) \
-with ~19,900 doc chunks covering lab configs, official docs, and harvested state.
-2. ANSWER — precisely, grounded in that knowledge or live tool output. Never invent facts.
-3. ACT   — run commands, restart services, edit configs — always through the Judge approval tiers \
-(tier 0 auto, tier 1 prompt, tier 2 explain+approve, tier 3 confirmation phrase).
-4. MONITOR — spot problems in metrics, logs, containers, and security events before the operator asks.
-5. GUARD  — four dedicated security tools; prefer them over run_command for security questions:
-   • get_security_events   → recent Falco alerts, noise-filtered
-   • get_host_connections  → listening ports, connections, ARP (Osquery)
-   • get_traffic_summary   → live flows and bandwidth (ntopng)
-   • scan_lan <subnet>     → LAN host discovery (Nmap, tier-1 approval)
-
-── LAB HOST: the-lab (192.168.5.10) ──────────────────────────────────
-Hardware: Intel Core Ultra 7 265K (20 cores) · 62 GB DDR5 · RTX 3090 Ti (24 GB VRAM) · \
-Samsung 990 PRO 2TB (/) · 2× WD SN850X 2TB (/docker, /data/projects)
-
-Core services:
-  vLLM :8000           — your own LLM backend (Qwen2.5-32B-Instruct-AWQ, user systemd)
-  Ollama :11434        — embeddings only (nomic-embed-text, bare-metal systemd, GPU=0 forced). \
-IMPORTANT: Ollama is bare-metal. Never use docker commands for Ollama.
-  Prometheus :9091     — metrics (Docker, compose at /opt/homelab-infrastructure/monitoring-stack/)
-  Grafana :3001        — dashboards (Docker, same compose stack)
-  Pushgateway :9092    — HAL's own metrics accumulator (Docker, same compose stack)
-  pgvector :5432       — knowledge base (Docker, PostgreSQL+pgvector, DB: knowledge_base)
-  Cockpit :9090        — server management UI (systemd) — NOT Prometheus
-
-Monitoring infrastructure:
-  node-exporter        — internal to Docker monitoring network; pid:host, --path.rootfs=/rootfs, \
-textfile collector reads /var/lib/node-exporter/textfiles/ for GPU metrics
-  gpu-metrics timer    — runs nvidia-smi every 15s, writes .prom file for node-exporter
-  ntopng :3000         — live traffic flows (Docker, interface enp130s0, login disabled)
-
-Security stack:
-  Falco (eBPF)         — runtime alerts → /var/log/falco/events.json (system systemd)
-  Osquery 5.21.0       — SQL-queryable OS state (bare metal, sudoers scoped)
-  Nmap 7.92            — LAN discovery (bare metal)
-
-── AUTOMATED & SCHEDULED TASKS ───────────────────────────────────────
-These run without human intervention. Know them so you can explain alerts and diagnose issues:
-
-• watchdog.timer (every 5 min) — queries Prometheus, checks thresholds, sends ntfy alerts:
-  Metric thresholds: CPU ≥85%, Memory ≥90%, Disk / ≥85%, Disk /docker ≥85%, \
-Disk /data ≥85%, Swap ≥80%, Load ≥16, GPU VRAM ≥95%, GPU temp ≥83°C
-  Boolean checks: NTP sync, harvest freshness (<2h), critical containers \
-(prometheus, grafana, pgvector-kb, ntopng, pushgateway), Falco security events
-  Alerts go to ntfy. Recovery sends "RESOLVED" with ✅. Cooldown: 30 min per metric.
-  State file: ~/.orion/watchdog_state.json · Log: ~/.orion/watchdog.log
-
-• harvest.timer (daily 3:00am) — re-indexes lab state into pgvector:
-  Clears live-state rows, re-harvests containers/services/disk/configs/hardware.
-  Reference docs use incremental ingestion (content-hash skip). Orphan cleanup automatic.
-  Timestamp: ~/.orion/harvest_last_run
-
-• gpu-metrics.timer (every 15s) — nvidia-smi → .prom file for node-exporter textfile collector
-
-• server.service — your HTTP API (FastAPI, port 8087, /chat + /health endpoints)
-• telegram.service — Telegram bot, polls API, POSTs to http://127.0.0.1:8087/chat
-  Both are user systemd services (Restart=on-failure). Deploy order: server first, then telegram.
-
-── HOW TO HANDLE COMMON QUESTIONS ────────────────────────────────────
-"Is everything okay?" / "How's the lab?" →
-  1. Call get_metrics for live CPU/mem/disk/GPU/swap/load
-  2. Summarise any metric near thresholds (compare against watchdog thresholds above)
-  3. Mention container health if relevant
-  4. Check security events if anything looks off
-
-"I got an alert" / "Why did I get a notification?" →
-  The watchdog sent it via ntfy. Check get_metrics for which metric breached its threshold, \
-or read ~/.orion/watchdog.log for the specific ALERT entry. Explain what threshold was hit \
-and whether it has since recovered (look for CLEAR entries).
-
-"What changed?" / "What happened while I was away?" →
-  Check watchdog log, recent Falco events, and Prometheus metrics for anomalies. \
-Use git_status on /opt/homelab-infrastructure if config changes are suspected.
-
-Troubleshooting order: metrics → docker ps → journalctl → Falco → KB search
-
-── MEMORY ────────────────────────────────────────────────────────────
-Your conversation history from previous sessions is in the context above. \
-When asked what you remember, refer to those messages. Never claim you can't recall past conversations.
-The /remember command stores facts permanently in the KB as memory tier (never cleared by harvest).
-
-── RULES ─────────────────────────────────────────────────────────────
-• Do not hallucinate ports, service names, file paths, or config values — only state what context confirms.
-• Use tools to check live state; use the KB when the answer is already documented.
-• If KB context is not relevant to the question, ignore it entirely.
-• Keep answers SHORT: 2–5 sentences for status, one short paragraph for complex questions.
-• If you don't know, say so plainly — never guess.
-• Never simulate a tool call or fabricate shell/command output in a prose response. \
-If you need live data but cannot call a tool, say "I'd need to check [X] for that — ask me directly" and stop.
-• web_search MUST be called for any question about CVEs, security vulnerabilities, software release \
-notes, or version information — call it first, do not reason from training data for these topics. \
-The current date injected above is authoritative; never assume you cannot find current data. \
-For topics with no homelab context (e.g. unrelated consumer technology), ask the user to clarify \
-instead of searching the web.
-"""
 
 
 HELP_TEXT = """\
@@ -167,74 +54,6 @@ Commands:
 
 Anything else is sent to HAL as a question (with knowledge base context).
 """
-
-
-def _connect(
-    name: str, url: str, lab_user: str, lab_host: str, default_port: int
-) -> tuple[str, SSHTunnel | None]:
-    """Return (reachable_url, tunnel_or_None). Tries direct first, then SSH tunnel.
-
-    SSH tunnel is only attempted when the target host is a remote address.
-    If the URL already points to localhost/127.0.0.1 and the port is closed,
-    the service simply isn't running — tunneling can't help.
-    """
-    from urllib.parse import urlparse
-
-    parsed = urlparse(url)
-    host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or default_port
-
-    if port_open(host, port):
-        return url, None
-
-    # Don't try to SSH-tunnel to ourselves — it can't help.
-    if host in ("localhost", "127.0.0.1"):
-        console.print(
-            f"[red]{name} is not reachable on {host}:{port} — is it running?[/]"
-        )
-        sys.exit(1)
-
-    console.print(f"[yellow]{name} not directly reachable — trying SSH tunnel...[/]")
-    tunnel = SSHTunnel(lab_user, lab_host, port, default_port)
-    try:
-        tunnel.start()
-        console.print(f"[green]{name} SSH tunnel established.[/]")
-        return f"http://127.0.0.1:{tunnel.local_port}", tunnel
-    except RuntimeError as e:
-        console.print(f"[red]{name} tunnel failed: {e}[/]")
-        sys.exit(1)
-
-
-def setup_clients(
-    config: cfg.Config,
-) -> tuple[VLLMClient, OllamaClient, list[SSHTunnel]]:
-    """Connect to vLLM (chat) and Ollama (embeddings). Returns both clients and any tunnels opened."""
-    tunnels: list[SSHTunnel] = []
-
-    vllm_url, t = _connect(
-        "vLLM", config.vllm_url, config.lab_user, config.lab_host, 8000
-    )
-    if t:
-        tunnels.append(t)
-    llm = VLLMClient(vllm_url, config.chat_model)
-    if not llm.ping():
-        console.print(
-            "[red]vLLM is not ready.[/] The service may still be loading the model. "
-            "Check with: [dim]journalctl --user -u vllm -n 30[/]"
-        )
-        sys.exit(1)
-
-    ollama_url, t = _connect(
-        "Ollama", config.ollama_host, config.lab_user, config.lab_host, 11434
-    )
-    if t:
-        tunnels.append(t)
-    embed = OllamaClient(ollama_url, config.embed_model)
-    if not embed.ping():
-        console.print("[red]Ollama is not responding. Is it running?[/]")
-        sys.exit(1)
-
-    return llm, embed, tunnels
 
 
 def cmd_health(prom: PrometheusClient) -> None:
@@ -532,54 +351,22 @@ def main() -> None:
         try:
             user_input = args.query.strip()
             intent, confidence = classifier.classify(user_input)
-            if intent == "conversational":
-                run_conversational(
-                    user_input,
-                    history,
-                    llm,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                )
-            elif intent == "health":
-                run_health(
-                    user_input,
-                    history,
-                    llm,
-                    prom,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                )
-            elif intent == "fact":
-                run_fact(
-                    user_input,
-                    history,
-                    llm,
-                    kb,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                )
-            else:
-                run_agent(
-                    user_input,
-                    history,
-                    llm,
-                    kb,
-                    prom,
-                    executor,
-                    judge,
-                    mem,
-                    session_id,
-                    get_system_prompt(),
-                    console,
-                    ntopng_url=config.ntopng_url,
-                    tavily_api_key=config.tavily_api_key,
-                )
+            dispatch_intent(
+                intent,
+                user_input,
+                history,
+                llm,
+                prom,
+                kb,
+                executor,
+                judge,
+                mem,
+                session_id,
+                get_system_prompt(),
+                console,
+                ntopng_url=config.ntopng_url,
+                tavily_api_key=config.tavily_api_key,
+            )
         finally:
             for tunnel in tunnels:
                 tunnel.stop()
@@ -658,54 +445,22 @@ def main() -> None:
                     turn_span.set_attribute("hal.intent", intent)
                     turn_span.set_attribute("hal.confidence", confidence)
 
-                    if intent == "conversational":
-                        run_conversational(
-                            user_input,
-                            history,
-                            llm,
-                            mem,
-                            session_id,
-                            get_system_prompt(),
-                            console,
-                        )
-                    elif intent == "health":
-                        run_health(
-                            user_input,
-                            history,
-                            llm,
-                            prom,
-                            mem,
-                            session_id,
-                            get_system_prompt(),
-                            console,
-                        )
-                    elif intent == "fact":
-                        run_fact(
-                            user_input,
-                            history,
-                            llm,
-                            kb,
-                            mem,
-                            session_id,
-                            get_system_prompt(),
-                            console,
-                        )
-                    else:
-                        run_agent(
-                            user_input,
-                            history,
-                            llm,
-                            kb,
-                            prom,
-                            executor,
-                            judge,
-                            mem,
-                            session_id,
-                            get_system_prompt(),
-                            console,
-                            ntopng_url=config.ntopng_url,
-                            tavily_api_key=config.tavily_api_key,
-                        )
+                    dispatch_intent(
+                        intent,
+                        user_input,
+                        history,
+                        llm,
+                        prom,
+                        kb,
+                        executor,
+                        judge,
+                        mem,
+                        session_id,
+                        get_system_prompt(),
+                        console,
+                        ntopng_url=config.ntopng_url,
+                        tavily_api_key=config.tavily_api_key,
+                    )
 
     finally:
         for tunnel in tunnels:
