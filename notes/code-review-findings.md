@@ -27,33 +27,28 @@ import replaced by `TOOL_CALL_FENCE_RE` in `hal/patterns.py`.
 
 ---
 
-### C2 — `_extract_tool_calls_from_content()` is live dead code
+### ~~C2 — `_extract_tool_calls_from_content()` is live dead code~~ ✅ DONE (Feb 25, 2026)
 
 `hal/llm.py` contains a fallback parser that extracts `<tool_call>` / `<tools>` tags from
 model content. It was written for the Coder model and should never fire on the Instruct
 model. It has no tests. If the Instruct model ever emits those tags in free text (e.g. in
 a code example), it would silently inject phantom tool calls into the agent loop.
 
-**Fix:** Either remove it and monitor, or add a `HAL_EXTRACT_FALLBACK=0` env flag that
-disables it by default. Add a test for the none-shall-pass case.
-**Effort:** ~1 hr.
+`hal/llm.py` fallback extraction is now gated behind `HAL_EXTRACT_FALLBACK` and is
+disabled by default (`0`). Focused tests in `tests/test_llm.py` verify default-off
+pass-through behavior, opt-in extraction when set to `1`, and malformed tag safety.
 
 ---
 
-### C3 — `config.py` hardcoded IP defaults
+### ~~C3 — `config.py` hardcoded IP defaults~~ ✅ DONE (Feb 25, 2026)
 
 All three service defaults (`OLLAMA_HOST`, `PGVECTOR_DSN`, `PROMETHEUS_URL`) point to
 `192.168.5.10`. A fresh checkout without a `.env` will silently try to connect to a
 specific LAN address and fail in confusing ways.
 
-**Fix:** Remove the hardcoded defaults or replace with `None` and add a startup assertion:
-
-```python
-if not os.getenv("OLLAMA_HOST"):
-    raise RuntimeError("OLLAMA_HOST must be set in .env — copy .env.example")
-```
-
-**Effort:** ~30 min. **Tracked in ROADMAP.md Path C item 3.**
+`hal/config.py` now fails loud for missing required vars (`OLLAMA_HOST`,
+`PGVECTOR_DSN`, `PROMETHEUS_URL`) with a clear `.env.example` message, and no longer
+silently defaults to a specific LAN IP. Covered by `tests/test_config.py`.
 
 ---
 
@@ -132,7 +127,7 @@ Current coverage: 34%. Distribution is very uneven.
 | `hal/watchdog.py` | ~70% (7 tests) | Low — threshold + cooldown tested |
 | `hal/server.py` endpoints | ~60% (7 tests) | Low — TestClient coverage |
 | `harvest/collect.py` | Low | Medium — nightly job |
-| `hal/prometheus.py` accumulator | 0% | Medium |
+| `hal/prometheus.py` accumulator | Covered by `tests/test_prometheus.py` | Low |
 
 **Priority order for adding tests:**
 
@@ -178,10 +173,11 @@ requires running the full test suite first.
 - [x] H3: Add latency telemetry to `run_conversational` (~20 min)
 - [x] H4: Name the `5` as `MAX_TOOL_CALLS` next to `MAX_ITERATIONS` (~10 min)
 - [ ] Run eval re-run on server (no code changes needed)
-- [ ] C2: Gate or remove `_extract_tool_calls_from_content`
-- [ ] C3: Config fail-loud on missing `.env` required fields
+- [x] C2: Gate or remove `_extract_tool_calls_from_content`
+- [x] C3: Config fail-loud on missing `.env` required fields
 - [x] H1: Gate PlannerAgent on query complexity
 - [x] H2: Refactor tool schema + dispatch registry
 - [x] Tests: `hal/watchdog.py` threshold + cooldown logic
 - [x] Tests: `hal/server.py` endpoints via `TestClient`
 - [x] Tests: `hal/executor.py` subprocess mock
+- [x] Tests: `hal/prometheus.py` accumulator + heartbeat behavior

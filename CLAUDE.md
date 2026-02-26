@@ -103,6 +103,7 @@ Read these before working on the relevant area. They are the source of truth —
 HAL is fully operational on the-lab (192.168.5.10). All core components working:
 
 - **LLM**: vLLM serving Qwen2.5-32B-Instruct-AWQ (port 8000); Ollama embeddings-only on CPU
+- **LLM tool-call fallback parsing**: `<tool_call>/<tools>` content extraction is opt-in via `HAL_EXTRACT_FALLBACK=1`; default is disabled to prevent phantom tool-call injection from free-text examples
 - **Intent routing**: embedding classifier routes to conversational, health, fact, or agentic handlers
 - **Agent loop**: tool dispatch via registry (`hal/tools.py`); Planner/Critic sub-agents gated by query complexity
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path canonicalization, self-edit governance, default-deny; JSON audit log
@@ -113,6 +114,7 @@ HAL is fully operational on the-lab (192.168.5.10). All core components working:
 - **Monitoring**: watchdog (CPU, mem, disk x3, swap, load, GPU VRAM/temp, NTP, containers, Falco); ntfy alerts + recovery notifications
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
-- **Test suite**: 472 tests (judge, web, memory, trust, watchdog, server, executor, agents); executor at full branch coverage via mocked subprocess
+- **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
+- **Test suite**: 486 offline tests passing (`pytest tests/ -x -q --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.
