@@ -55,3 +55,63 @@ def test_dispatch_tool_uses_registry_handler():
 
     assert out == "registry-ok"
     handler.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# get_trend tool handler tests
+# ---------------------------------------------------------------------------
+
+
+def _ctx_with_trend(trend_return):
+    """Build a ToolContext whose prom.trend() returns the given value."""
+    prom_stub = MagicMock()
+    prom_stub.trend.return_value = trend_return
+    return ToolContext(
+        executor=MagicMock(),
+        judge=MagicMock(),
+        kb=MagicMock(),
+        prom=prom_stub,
+    )
+
+
+def test_get_trend_named_metric_rising():
+    """Handler returns a one-line summary containing the metric name and 'rising'."""
+    summary = {
+        "first": 32.5,
+        "last": 34.1,
+        "min": 31.2,
+        "max": 35.0,
+        "delta": 1.60,
+        "delta_per_hour": 1.60,
+        "direction": "rising",
+    }
+    ctx = _ctx_with_trend(summary)
+    out = TOOL_REGISTRY["get_trend"]["handler"](
+        {"metric": "cpu", "window": "1h", "reason": "test"},
+        ctx,
+    )
+    assert "cpu" in out
+    assert "rising" in out
+    assert "32.5" in out
+    assert "34.1" in out
+
+
+def test_get_trend_unknown_metric():
+    """Unknown metric name returns an error string."""
+    ctx = _ctx_with_trend(None)
+    out = TOOL_REGISTRY["get_trend"]["handler"](
+        {"metric": "not_a_real_metric", "reason": "test"},
+        ctx,
+    )
+    assert out.startswith("Error:")
+    assert "not_a_real_metric" in out
+
+
+def test_get_trend_no_data():
+    """When trend() returns None the handler reports no data available."""
+    ctx = _ctx_with_trend(None)
+    out = TOOL_REGISTRY["get_trend"]["handler"](
+        {"metric": "mem", "window": "6h", "reason": "test"},
+        ctx,
+    )
+    assert "No data" in out

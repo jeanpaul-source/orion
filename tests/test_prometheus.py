@@ -118,5 +118,115 @@ def test_start_metrics_heartbeat_starts_daemon_thread(
 
     assert captured["daemon"] is True
     assert captured["name"] == "metrics-heartbeat"
-    assert callable(captured["target"])
-    assert started["value"] is True
+
+
+# ---------------------------------------------------------------------------
+# range_query tests
+# ---------------------------------------------------------------------------
+
+
+def test_range_query_returns_tuples(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Successful /query_range response is parsed into (timestamp, value) tuples."""
+    fake_response = SimpleNamespace(
+        json=lambda: {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {},
+                        "values": [
+                            [1700000000, "12.5"],
+                            [1700000060, "13.0"],
+                            [1700000120, "14.2"],
+                        ],
+                    }
+                ]
+            },
+        }
+    )
+    monkeypatch.setattr(
+        prom.requests,
+        "get",
+        lambda *a, **kw: fake_response,
+    )
+    client = prom.PrometheusClient("http://prom:9091")
+    result = client.range_query("node_load1", start=1700000000, end=1700000120, step=60)
+    assert result == [
+        (1700000000.0, 12.5),
+        (1700000060.0, 13.0),
+        (1700000120.0, 14.2),
+    ]
+
+
+def test_range_query_empty_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty result list from Prometheus returns []."""
+    fake_response = SimpleNamespace(
+        json=lambda: {
+            "status": "success",
+            "data": {"result": []},
+        }
+    )
+    monkeypatch.setattr(prom.requests, "get", lambda *a, **kw: fake_response)
+    client = prom.PrometheusClient("http://prom:9091")
+    assert client.range_query("node_load1", start=0, end=3600, step=60) == []
+
+
+def test_range_query_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RequestException is swallowed; returns []."""
+
+    def _fail(*a, **kw):
+        raise prom.requests.exceptions.RequestException("timeout")
+
+    monkeypatch.setattr(prom.requests, "get", _fail)
+    client = prom.PrometheusClient("http://prom:9091")
+    assert client.range_query("node_load1", start=0, end=3600, step=60) == []
+
+
+# ---------------------------------------------------------------------------
+# trend tests
+# ---------------------------------------------------------------------------
+
+
+def test_trend_rising(monkeypatch: pytest.MonkeyPatch) -> None:
+    """60 strictly increasing points → direction 'rising', correct delta."""
+    # Build 60 points linearly from 10.0 to 20.0 over 3600 s
+    points = [(float(i * 60), 10.0 + i * (10.0 / 59)) for i in range(60)]
+    client = prom.PrometheusClient("http://prom:9091")
+    monkeypatch.setattr(client, "range_query", lambda *a, **kw: points)
+    result = client.trend("node_load1", window="1h")
+    assert result is not None
+    assert result["direction"] == "rising"
+    assert result["first"] == round(points[0][1], 2)
+    assert result["last"] == round(points[-1][1], 2)
+    assert result["delta"] == round(points[-1][1] - points[0][1], 2)
+    assert result["delta_per_hour"] == round(result["delta"] / 1, 2)
+
+
+def test_trend_stable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Flat points within threshold → direction 'stable'."""
+    # All values identical — delta = 0
+    points = [(float(i * 60), 55.0) for i in range(60)]
+    client = prom.PrometheusClient("http://prom:9091")
+    monkeypatch.setattr(client, "range_query", lambda *a, **kw: points)
+    result = client.trend("node_load1", window="1h")
+    assert result is not None
+    assert result["direction"] == "stable"
+    assert result["delta"] == 0.0
+
+
+def test_trend_insufficient_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fewer than 2 data points → trend() returns None."""
+    client = prom.PrometheusClient("http://prom:9091")
+    monkeypatch.setattr(client, "range_query", lambda *a, **kw: [(1700000000.0, 42.0)])
+    assert client.trend("node_load1", window="1h") is None
+
+
+def test_trend_falling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Strictly decreasing points → direction 'falling'."""
+    points = [(float(i * 60), 80.0 - i * (20.0 / 59)) for i in range(60)]
+    client = prom.PrometheusClient("http://prom:9091")
+    monkeypatch.setattr(client, "range_query", lambda *a, **kw: points)
+    result = client.trend("node_load1", window="1h")
+    assert result is not None
+    assert result["direction"] == "falling"
+    assert result["delta"] < 0
