@@ -153,6 +153,57 @@ def _handle_get_metrics(args: dict, ctx: ToolContext) -> str:
         return f"Metrics unavailable: {e}"
 
 
+# PromQL expressions for each named metric — mirrors health() exactly.
+_METRIC_PROMQL: dict[str, str] = {
+    "cpu": '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)',
+    "mem": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+    "disk_root": (
+        '(1 - node_filesystem_avail_bytes{mountpoint="/"}'
+        ' / node_filesystem_size_bytes{mountpoint="/"}) * 100'
+    ),
+    "disk_docker": (
+        '(1 - node_filesystem_avail_bytes{mountpoint="/docker"}'
+        ' / node_filesystem_size_bytes{mountpoint="/docker"}) * 100'
+    ),
+    "disk_data": (
+        '(1 - node_filesystem_avail_bytes{mountpoint="/data/projects"}'
+        ' / node_filesystem_size_bytes{mountpoint="/data/projects"}) * 100'
+    ),
+    "swap": "(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) * 100",
+    "load": "node_load1",
+    "gpu_vram": 'node_gpu_vram_usage_percent{gpu="0"}',
+    "gpu_temp": 'node_gpu_temperature_celsius{gpu="0"}',
+}
+
+
+def _handle_get_trend(args: dict, ctx: ToolContext) -> str:
+    metric = args.get("metric") or ""
+    window = args.get("window") or "1h"
+    if metric == "custom":
+        promql = args.get("promql") or ""
+        if not promql:
+            return 'Error: promql is required when metric="custom".'
+    else:
+        promql = _METRIC_PROMQL.get(metric, "")
+        if not promql:
+            valid = ", ".join(sorted(_METRIC_PROMQL)) + ", custom"
+            return f"Error: unknown metric '{metric}'. Valid values: {valid}"
+    try:
+        summary = ctx.prom.trend(promql, window)
+    except Exception as e:
+        return f"Trend query failed: {e}"
+    if summary is None:
+        return f"No data returned for '{metric}' over window '{window}'."
+    return (
+        f"{metric} over {window}: "
+        f"{summary['first']} → {summary['last']} "
+        f"(min={summary['min']}, max={summary['max']}, "
+        f"delta={summary['delta']:+.2f}, "
+        f"{summary['delta_per_hour']:+.2f}/h, "
+        f"{summary['direction']})"
+    )
+
+
 def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
     pattern = args.get("action_pattern") or ""
     if not pattern:
@@ -282,6 +333,63 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
         "handler": _handle_get_metrics,
+        "enabled": _always_enabled,
+    },
+    "get_trend": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_trend",
+                "description": (
+                    "Analyse how a Prometheus metric has changed over a recent time window. "
+                    "Use this when asked whether a metric is growing, stable, or shrinking — "
+                    "e.g. 'is /docker disk filling up?', 'show me CPU trend over 6h'. "
+                    "Returns first/last/min/max values, delta, rate per hour, and direction "
+                    "(rising/falling/stable). Prefer this over get_metrics for trend questions."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "metric": {
+                            "type": "string",
+                            "enum": [
+                                "cpu",
+                                "mem",
+                                "disk_root",
+                                "disk_docker",
+                                "disk_data",
+                                "swap",
+                                "load",
+                                "gpu_vram",
+                                "gpu_temp",
+                                "custom",
+                            ],
+                            "description": (
+                                "Which metric to trend. Use 'custom' with the 'promql' field "
+                                "for an arbitrary PromQL expression."
+                            ),
+                        },
+                        "window": {
+                            "type": "string",
+                            "description": (
+                                "Lookback window, e.g. '1h', '6h', '24h'. Defaults to '1h'. "
+                                "Maximum is '24h'."
+                            ),
+                        },
+                        "promql": {
+                            "type": "string",
+                            "description": "Raw PromQL expression — only used when metric='custom'.",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this trend.",
+                        },
+                    },
+                    "required": ["metric", "reason"],
+                },
+            },
+        },
+        "handler": _handle_get_trend,
         "enabled": _always_enabled,
     },
     "get_action_stats": {

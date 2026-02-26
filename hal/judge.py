@@ -198,6 +198,7 @@ _SAFE_COMPOUND: frozenset[tuple[str, str]] = frozenset(
 _ACTION_TIERS: dict[str, int] = {
     "search_kb": 0,
     "get_metrics": 0,
+    "get_trend": 0,
     "remember_fact": 0,
     "get_action_stats": 0,
     # Security workers — reads are tier 0, active LAN scan is tier 1
