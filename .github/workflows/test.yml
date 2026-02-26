@@ -16,21 +16,31 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install dependencies
-        # azure-ai-evaluation is excluded — it's only needed for eval/ (run manually on server)
-        # intent tests (test_intent.py) are excluded — they require a live Ollama instance
-        run: pip install -r requirements.txt pytest ruff mypy
+        # Creates .venv so all Makefile targets (which use .venv/bin/) work unchanged.
+        # azure-ai-evaluation is excluded — eval-only, heavy, run manually on server.
+        # intent tests (test_intent.py) are excluded — require a live Ollama instance.
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+          grep -v "azure-ai-evaluation" requirements-dev.txt | .venv/bin/pip install -r /dev/stdin
 
       - name: Lint
-        run: ruff check .
+        run: make lint
 
       - name: Format check
-        run: ruff format --check .
+        run: .venv/bin/ruff format --check .
 
       - name: Type check (warn-only)
-        run: mypy hal/
+        run: make typecheck
         continue-on-error: true
 
-      - name: Test (offline)
-        run: pytest tests/test_judge.py tests/test_memory.py tests/test_agent_loop.py -v
+      - name: Markdown lint (warn-only until backlog item 6 is resolved)
+        run: make lint-md
+        continue-on-error: true
+
+      - name: Test (offline — all 530 tests)
+        run: make test
