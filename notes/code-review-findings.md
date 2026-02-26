@@ -68,22 +68,12 @@ the other three handlers.
 
 ## Open — Feb 26, 2026
 
-### N1 — `server.py` imports from `main.py` (architectural inversion)
+### ~~N1 — `server.py` imports from `main.py` (architectural inversion)~~ ✅ DONE
 
-`hal/server.py` imports `get_system_prompt()` and `setup_clients()` from
-`hal/main.py`, the REPL entrypoint. A server should never depend on a script.
-Any linter or packaging step that treats `main.py` as an entrypoint breaks because
-it is also acting as a library.
-
-**Fix:** Extract `get_system_prompt()` and `setup_clients()` into a shared module
-(e.g. `hal/bootstrap.py`). Both `main.py` and `server.py` import from there. `main.py`
-stops being a library. `hal/patterns.py` (one regex in one file, created only to break
-the circular import that this coupling caused) can then be inlined into its two callers
-and deleted.
-
-**Files touched:** `hal/main.py`, `hal/server.py`, new `hal/bootstrap.py`, remove
-`hal/patterns.py`.
-**Effort:** ~2 hr. Low risk, high clarity gain.
+`hal/bootstrap.py` created with `get_system_prompt()`, `setup_clients()`, `dispatch_intent()`.
+Both `main.py` and `server.py` import from there. `main.py` is a pure entrypoint again.
+`hal/patterns.py` deleted — existed only to break the circular import;  
+`TOOL_CALL_FENCE_RE` inlined into `memory.py` and `server.py`.
 
 ---
 
@@ -107,20 +97,11 @@ All three callers use it. Delete the three local implementations.
 
 ---
 
-### N3 — Intent dispatch block copy-pasted three times
+### ~~N3 — Intent dispatch block copy-pasted three times~~ ✅ DONE
 
-The `if intent == "conversational": ... elif intent == "health": ... elif intent == "fact": ... else: run_agent(...)` block appears identically in:
-
-- `hal/main.py` REPL loop
-- `hal/main.py` `--print` mode
-- `hal/server.py` `_run()`
-
-~30 lines × 3 = 90 lines of duplication. Any new intent category requires three edits.
-
-**Fix:** Extract into `dispatch_intent(intent, user_input, ctx)` in `hal/bootstrap.py`
-(or wherever N1 lands). All three callers reduce to one line.
-
-**Effort:** ~1 hr.
+`dispatch_intent()` added to `hal/bootstrap.py`. All three call sites (`main.py` REPL,
+`main.py` `--print` mode, `server.py` `_run()`) now call it. The 90-line duplication
+is gone. Adding a new intent route is now a single edit in `bootstrap.py`.
 
 ---
 
@@ -339,9 +320,9 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 
 ### Structural cleanup (1–2 week horizon)
 
-- [ ] N1: Extract `get_system_prompt()` + `setup_clients()` → `hal/bootstrap.py` (~2 hr)
+- [x] N1: Extract `get_system_prompt()` + `setup_clients()` → `hal/bootstrap.py` (~2 hr)
 - [ ] N2: Consolidate three tool-call stripping impls → `hal/sanitize.py` (~1.5 hr)
-- [ ] N3: Extract `dispatch_intent()` shared function (~1 hr)
+- [x] N3: Extract `dispatch_intent()` shared function (~1 hr)
 - [ ] N6: Delete `_dispatch()` shim in `agent.py` (~10 min)
 - [ ] N7: Delete legacy pipe-format parser in `trust_metrics.py` (~30 min)
 - [ ] N8: Fix double `import time` in `llm.py` (~2 min)
