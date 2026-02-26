@@ -350,8 +350,10 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Observability init: logs then tracing
-    setup_logging()
+    # Observability init: logs then tracing.
+    # Pass the Rich console so log output is routed through it rather than
+    # written raw to stderr, which would interleave with the readline prompt.
+    setup_logging(console=console)
     setup_tracing()
     start_metrics_heartbeat()
 

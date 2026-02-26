@@ -12,8 +12,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from contextvars import ContextVar
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 # Context vars for correlation
 _ctx_session_id: ContextVar[str | None] = ContextVar("session_id", default=None)
@@ -53,20 +57,46 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
-def setup_logging(level: str | int | None = None) -> None:
+def setup_logging(
+    level: str | int | None = None,
+    console: "Console | None" = None,
+) -> None:
+    """Configure the root logger.
+
+    When *console* is provided (REPL mode) a ``RichHandler`` is installed so
+    that all log output flows through the same Rich ``Console`` instance used
+    for the UI.  Rich then manages cursor state for both logs and the status
+    spinner, preventing log lines from appearing at the readline input prompt.
+
+    When *console* is absent (server, watchdog, harvest) a plain
+    ``StreamHandler(sys.stderr)`` is used — identical to the previous
+    behaviour, now with an explicit stream argument.
+    """
     lvl = level or os.getenv("HAL_LOG_LEVEL", "INFO")
     if isinstance(lvl, str):
         lvl = getattr(logging, lvl.upper(), logging.INFO)
-    handler = logging.StreamHandler()
-    use_json = os.getenv("HAL_LOG_JSON", "1").lower() not in ("0", "false", "no")
-    if use_json:
-        formatter = JsonFormatter()
-    else:
-        formatter = logging.Formatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
-            datefmt="%H:%M:%S",
+
+    if console is not None:
+        from rich.logging import RichHandler  # imported lazily — not a hard dep
+
+        handler: logging.Handler = RichHandler(
+            console=console,
+            show_path=False,
+            show_time=False,
+            rich_tracebacks=False,
         )
-    handler.setFormatter(formatter)
+    else:
+        handler = logging.StreamHandler(sys.stderr)
+        use_json = os.getenv("HAL_LOG_JSON", "1").lower() not in ("0", "false", "no")
+        if use_json:
+            formatter: logging.Formatter = JsonFormatter()
+        else:
+            formatter = logging.Formatter(
+                fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        handler.setFormatter(formatter)
+
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
