@@ -61,41 +61,8 @@ the other three handlers.
 
 ### ~~Tests — executor / server / watchdog / prometheus~~ ✅ DONE
 
-530 offline tests passing. `test_executor.py`, `test_server.py`, `test_watchdog.py`,
-`test_prometheus.py` all added (Feb 25). Integration tests for pgvector KB, security
-workers, `_strip_tool_artifacts`, and server routing added Feb 26.
-
----
-
-## Completed — Feb 26, 2026
-
-### ~~Eval failures — all four metrics to 100%~~ ✅ DONE
-
-- `hal/agent.py`: `_strip_tool_artifacts()` — strips bare `{"name":...}` JSON leaked into prose after tool-loop exhaustion; fixes no_raw_json failures B1 + B4
-- `hal/main.py`: identity rule extended to forbid naming provider/company (not just first-person claims); fixes hal_identity failure
-- `hal/main.py`: `web_search` permission changed to mandatory MUST directive for CVEs/vulnerabilities/release notes; fixes web_tool_accuracy failure
-- Eval re-run: `intent_accuracy=100%`, `no_raw_json=100%`, `hal_identity=100%`, `web_tool_accuracy=100%` (32/32 queries)
-
-### ~~Integration tests — KB, security workers, agent loop, server routing~~ ✅ DONE
-
-- `tests/test_knowledge.py` (13 tests) — pgvector `KnowledgeBase.search()` with mocked psycopg2
-- `tests/test_security.py` (17 tests) — Falco/Osquery workers, noise filter, judge denial
-- `tests/test_executor.py` (+3) — SSH connect-refused, `_MockExecutor` contract
-- `tests/test_agent_loop.py` (+10) — `_strip_tool_artifacts` edge cases + end-to-end
-- `tests/test_server.py` (+3) — agentic/health routing, fenced-block stripping
-- Test count: 486 → 530 (all offline)
-
-### ~~Markdownlint toolchain~~ ✅ DONE
-
-- `.markdownlint.jsonc` — explicit rule config in version control (MD013 off, MD024 off, MD046 fenced, MD060 spaced)
-- `markdownlint-cli2 v0.17.2` added as pre-commit hook
-- `make lint-md` target added
-- `CONTRIBUTING.md` updated: lint-md in checklists, test counts 151/186→495/530, eval baselines to 100%
-
-### ~~Swap investigation~~ ✅ DONE
-
-`/dev/zram0` is compressed in-RAM swap, not a disk partition. 75 Mi used is normal.
-`vm.swappiness=10`. No remediation needed. Documented in `OPERATIONS.md` Known traps.
+486 offline tests passing. `test_executor.py`, `test_server.py`, `test_watchdog.py`,
+`test_prometheus.py` all added.
 
 ---
 
@@ -339,10 +306,10 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 
 ## Test Coverage
 
-530 offline tests passing (Feb 26). Gaps remaining:
+486 offline tests passing (Feb 26). Gaps remaining:
 
 | Module | Status |
-| --- | --- |
+|---|---|
 | `hal/judge.py` | Strong — 716 lines in `test_judge_hardening.py` + `test_judge.py` |
 | `hal/web.py` | Strong — 495 lines |
 | `hal/memory.py` | Good — add boundary tests for `is_poison_response()` before N2 |
@@ -370,10 +337,6 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 - [ ] N14: Watchdog ntfy notification on Prometheus unreachable (~20 min)
 - [ ] N15: Warn on empty `NTFY_URL` at startup (~5 min)
 
-### Dev infrastructure
-
-- [ ] CI: Add `.github/workflows/ci.yml` — run `make lint`, `make lint-md`, `make test` on every push/PR; currently only gated by the custom server-side push hook which gives no protection against direct pushes or a second contributor (~20 lines, low effort, largest remaining gap)
-
 ### Structural cleanup (1–2 week horizon)
 
 - [ ] N1: Extract `get_system_prompt()` + `setup_clients()` → `hal/bootstrap.py` (~2 hr)
@@ -400,10 +363,4 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 - [x] H2: Extract tool registry into `hal/tools.py`
 - [x] H3: Add latency telemetry to `run_conversational`
 - [x] H4: Name `MAX_TOOL_CALLS = 5` constant
-- [x] Tests: executor, server, watchdog, prometheus (Feb 25); KB, security, agent loop, server routing (Feb 26) — 530 total
-
-### Previously completed (Feb 26)
-
-- [x] Eval fixes: _strip_tool_artifacts, identity rule, web_search mandate — all four metrics 100%
-- [x] Swap investigation — zram0 documented in OPERATIONS.md, no remediation
-- [x] Markdownlint toolchain: `.markdownlint.jsonc`, pre-commit hook, `make lint-md`
+- [x] Tests: executor, server, watchdog, prometheus
