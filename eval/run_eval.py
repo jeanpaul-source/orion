@@ -260,11 +260,6 @@ def main(argv: list[str] | None = None) -> None:
                 out_f.write(json.dumps(row) + "\n")
                 out_f.flush()
                 results.append(row)
-                console.print(
-                    f"  intent={intent} ({confidence:.2f})  "
-                    f"tools={tools_called}  "
-                    f"response={len(response)}c  preview: {response[:60].replace(chr(10), ' ')!r}"
-                )
             except Exception as exc:
                 errors += 1
                 console.print(f"  [red]ERROR: {exc}[/]")
@@ -284,6 +279,12 @@ def main(argv: list[str] | None = None) -> None:
                 }
                 out_f.write(json.dumps(row) + "\n")
                 out_f.flush()
+            else:
+                console.print(
+                    f"  intent={intent} ({confidence:.2f})  "
+                    f"tools={tools_called}  "
+                    f"response={len(response)}c  preview: {response[:60].replace(chr(10), ' ')!r}"
+                )
 
     mem.close()
 
