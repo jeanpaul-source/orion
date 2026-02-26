@@ -22,14 +22,23 @@ class Config:
     tavily_api_key: str  # Tavily web search — empty string disables web_search tool
 
 
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(
+            f"{name} must be set in .env — copy .env.example and fill required values"
+        )
+    return value
+
+
 def load() -> Config:
     load_dotenv()
     return Config(
-        ollama_host=os.getenv("OLLAMA_HOST", "http://192.168.5.10:11434"),
+        ollama_host=_required_env("OLLAMA_HOST"),
         chat_model=os.getenv("CHAT_MODEL", "Qwen/Qwen2.5-32B-Instruct-AWQ"),
         embed_model=os.getenv("EMBED_MODEL", "nomic-embed-text:latest"),
-        pgvector_dsn=os.getenv("PGVECTOR_DSN", ""),
-        prometheus_url=os.getenv("PROMETHEUS_URL", "http://192.168.5.10:9091"),
+        pgvector_dsn=_required_env("PGVECTOR_DSN"),
+        prometheus_url=_required_env("PROMETHEUS_URL"),
         lab_host=os.getenv("LAB_HOST", "192.168.5.10"),
         lab_user=os.getenv("LAB_USER", "jp"),
         use_ssh_tunnel=os.getenv("USE_SSH_TUNNEL", "false").lower() == "true",
