@@ -9,6 +9,7 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import requests
 
@@ -77,6 +78,117 @@ class PrometheusClient:
             "load1": round(load, 2) if load is not None else None,
             "gpu_vram_pct": round(gpu_vram, 1) if gpu_vram is not None else None,
             "gpu_temp_c": round(gpu_temp, 1) if gpu_temp is not None else None,
+        }
+
+    def range_query(
+        self,
+        promql: str,
+        start: float,
+        end: float,
+        step: float,
+    ) -> list[tuple[float, float]]:
+        """Query /api/v1/query_range and return the first series as (timestamp, value) tuples.
+
+        Returns an empty list on any error, HTTP failure, or empty result — same
+        defensive pattern as query().
+        """
+        try:
+            r = requests.get(
+                f"{self.base_url}/api/v1/query_range",
+                params={
+                    "query": promql,
+                    "start": start,
+                    "end": end,
+                    "step": step,
+                },
+                timeout=10,
+            )
+            data: Any = r.json()
+            if data.get("status") == "success":
+                result = data["data"]["result"]
+                if result:
+                    return [(float(ts), float(val)) for ts, val in result[0]["values"]]
+        except (
+            requests.exceptions.RequestException,
+            KeyError,
+            ValueError,
+            IndexError,
+            TypeError,
+        ):
+            pass
+        return []
+
+    def trend(
+        self,
+        promql: str,
+        window: str = "1h",
+    ) -> dict[str, Any] | None:
+        """Return a summary dict describing how a metric moved over the given window.
+
+        Parameters
+        ----------
+        promql:
+            Any valid PromQL instant expression (the same strings used in health()).
+        window:
+            Lookback duration string — "1h", "6h", or "24h".  Any string ending in
+            "h" with an integer prefix is accepted; anything else is treated as 1h.
+
+        Returns
+        -------
+        dict with keys: first, last, min, max, delta, delta_per_hour, direction
+            direction is "rising", "falling", or "stable".
+        None if fewer than 2 data points are returned (metric unavailable or too
+            short a window for the scrape interval).
+        """
+        # Parse window string → seconds
+        window_seconds = 3600  # default 1h
+        try:
+            if window.endswith("h"):
+                window_seconds = int(window[:-1]) * 3600
+            elif window.endswith("m"):
+                window_seconds = int(window[:-1]) * 60
+        except ValueError:
+            pass
+        # Cap at 24h; ensure at least 5 minutes
+        window_seconds = max(300, min(window_seconds, 86400))
+
+        now = time.time()
+        start = now - window_seconds
+        # Target ~60 data points regardless of window length
+        step = max(15, window_seconds // 60)
+
+        points = self.range_query(promql, start=start, end=now, step=step)
+        if len(points) < 2:
+            return None
+
+        values = [v for _, v in points]
+        first = values[0]
+        last = values[-1]
+        mn = min(values)
+        mx = max(values)
+        delta = last - first
+        hours = window_seconds / 3600
+        delta_per_hour = delta / hours if hours > 0 else 0.0
+
+        # Stable band: delta must exceed 0.5% of the observed range (or 0.1 absolute)
+        # to count as rising/falling — avoids noise calling flat metrics as trending.
+        value_range = mx - mn
+        threshold = max(value_range * 0.005, 0.1)
+        if delta > threshold:
+            direction = "rising"
+        elif delta < -threshold:
+            direction = "falling"
+        else:
+            direction = "stable"
+
+        return {
+            "first": round(first, 2),
+            "last": round(last, 2),
+            "min": round(mn, 2),
+            "max": round(mx, 2),
+            "delta": round(delta, 2),
+            "delta_per_hour": round(delta_per_hour, 2),
+            "direction": direction,
         }
 
 
