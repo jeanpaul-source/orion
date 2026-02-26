@@ -333,7 +333,7 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 - [ ] N9: Narrow Planner/Critic gate (raise word threshold, tighten verb set)
 - [ ] N10: Eval Planner/Critic with/without; decide keep or remove
 - [ ] N11: Add psycopg2 `ThreadedConnectionPool` to `KnowledgeBase` (~1 hr)
-- [ ] N13: Replace 7-arg tool handler signature with `ToolContext` namedtuple (~2 hr)
+- [x] N13: Replace 7-arg tool handler signature with `ToolContext` namedtuple (~2 hr)
 
 ### Previously completed (Feb 25)
 
