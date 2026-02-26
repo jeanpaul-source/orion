@@ -143,6 +143,30 @@ What's built, what's next, and where this is going.
 - `CONTRIBUTING.md` updated: document markdown linting + `make lint-md`; add `lint-md` to both commit-readiness checklists; fix stale test counts (151/186 → 495/530); update eval baselines to Feb 26 100% figures; fix all MD031/MD032/MD040/MD060 violations surfaced by the new config
 - Fixed all pre-existing MD022/MD031/MD032/MD060 violations in `ROADMAP.md` and `OPERATIONS.md`
 
+### Feb 26, 2026 — Code review and structural refactor
+
+Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, C-series):
+
+- `hal/bootstrap.py` created — extracted `get_system_prompt()`, `setup_clients()`,
+  `dispatch_intent()` from `main.py`; resolves `server.py → main.py` architectural inversion;
+  intent dispatch no longer copy-pasted across three call sites
+- `hal/sanitize.py` created — single implementation of tool-call stripping (`is_tool_call_artifact()`,
+  `strip_tool_call_artifacts()`); deleted `_strip_tool_artifacts()` in `agent.py`,
+  `_strip_tool_call_blocks()` in `server.py`, and inline logic in `memory.py`
+- `hal/patterns.py` deleted — existed only to break a circular import; `TOOL_CALL_FENCE_RE`
+  inlined where used
+- `remember()` moved into `KnowledgeBase`; `hal/facts.py` deleted
+- `ToolContext` NamedTuple introduced — tool handler context no longer passed as positional args
+- Legacy pipe-format parser in `trust_metrics.py` deleted (N7)
+- Bug fixes: null LLM args no longer crash `args.get()` (N4); SSH executor timeout set (N5);
+  `_dispatch` shim removed (N6); import-time side-effects eliminated (N8)
+- `_should_use_planner_critic()` added — short non-action queries skip two extra LLM calls
+- `run_conversational` gains OTel span + latency telemetry to match other three handlers
+- `MAX_TOOL_CALLS = 5` defined as module constant next to `MAX_ITERATIONS = 8`
+- `config.py`: `OLLAMA_HOST`, `PGVECTOR_DSN`, `PROMETHEUS_URL` now raise `RuntimeError` on
+  missing values — no more silent LAN-IP fallbacks
+- Test count: 530 → 534 (all offline, ruff clean)
+
 ---
 
 ## Backlog (immediate)
