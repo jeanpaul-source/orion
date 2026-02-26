@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -169,7 +170,16 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
+    # Eval output should stay readable even when no OTLP collector is running.
+    # Allow explicit operator override by honoring pre-set OTEL_SDK_DISABLED.
+    os.environ.setdefault("OTEL_SDK_DISABLED", "true")
     setup_tracing()
+    _tracing_disabled = os.environ.get("OTEL_SDK_DISABLED", "").lower() == "true"
+    if _tracing_disabled:
+        console.print("[dim]Tracing: disabled (OTEL_SDK_DISABLED=true)[/]")
+    else:
+        _otlp = os.environ.get("OTLP_ENDPOINT", "http://localhost:4318")
+        console.print(f"[dim]Tracing: enabled → {_otlp}[/]")
 
     queries = _load_queries(args.queries)
     if not queries:
