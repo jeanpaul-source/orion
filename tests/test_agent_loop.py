@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 from rich.console import Console
 
-from hal.agent import _dispatch, run_agent
+from hal.agent import _dispatch, _strip_tool_artifacts, run_agent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -453,3 +453,90 @@ def test_planner_critic_used_for_action_query():
     user_msg = next(m for m in working_history if m.get("role") == "user")
     assert "Planner's plan:" in user_msg["content"]
     assert "Critic's review:" in user_msg["content"]
+
+
+# ---------------------------------------------------------------------------
+# _strip_tool_artifacts — B1 sanitiser
+# ---------------------------------------------------------------------------
+
+
+def test_strip_bare_tool_call_removed():
+    """A bare {\"name\":...,\"arguments\":...} appended to prose must be stripped."""
+    text = (
+        "Prose before.\n\n"
+        '{"name": "run_command", "arguments": {"command": "ls", "reason": "check"}}'
+    )
+    out = _strip_tool_artifacts(text)
+    assert '{"name"' not in out
+    assert out == "Prose before."
+
+
+def test_strip_clean_text_unchanged():
+    """Clean prose with no JSON must pass through unmodified."""
+    text = "Everything is fine, no tool calls here."
+    assert _strip_tool_artifacts(text) == text
+
+
+def test_strip_preserves_non_tool_json():
+    """A JSON dict that is NOT a tool call (no 'name'+'arguments') must be preserved."""
+    text = 'Config: {"port": 9090, "host": "localhost"}'
+    out = _strip_tool_artifacts(text)
+    assert '"port"' in out
+    assert '"host"' in out
+
+
+def test_strip_multiple_tool_calls():
+    """Multiple consecutive tool-call objects must all be removed."""
+    text = (
+        'First step.\n{"name": "cmd_a", "arguments": {}}\n'
+        'Second step.\n{"name": "cmd_b", "arguments": {"x": 1}}\nDone.'
+    )
+    out = _strip_tool_artifacts(text)
+    assert '{"name"' not in out
+    assert "First step." in out
+    assert "Done." in out
+
+
+def test_strip_nested_json_in_arguments():
+    """A tool call whose argument value contains a nested JSON string must still be stripped."""
+    text = '{"name": "run_command", "arguments": {"command": "echo \'{}\'", "reason": "test"}}'
+    out = _strip_tool_artifacts(text)
+    assert "run_command" not in out
+
+
+def test_strip_invalid_json_fragment_preserved():
+    """An unmatched opening brace (not valid JSON) must survive unchanged."""
+    text = "Use { as an escape char in the template."
+    out = _strip_tool_artifacts(text)
+    assert "{" in out
+
+
+def test_strip_empty_string():
+    """Empty string input must return empty string."""
+    assert _strip_tool_artifacts("") == ""
+
+
+def test_strip_only_whitespace():
+    """Whitespace-only input must return empty string (strip behaviour)."""
+    assert _strip_tool_artifacts("   \n  ") == ""
+
+
+def test_strip_tool_artifact_leaves_plain_list_json():
+    """A JSON array (not a dict) must not be stripped."""
+    text = "Valid output: [1, 2, 3]"
+    out = _strip_tool_artifacts(text)
+    assert "[1, 2, 3]" in out
+
+
+def test_run_agent_strips_tool_artifact_from_final_response():
+    """run_agent must return clean text even when the LLM appends a tool-call JSON object."""
+    artifact = '{"name": "run_command", "arguments": {"command": "ls"}}'
+    response_with_artifact = f"Here is the answer.\n\n{artifact}"
+
+    llm, kb, prom, executor, judge, mem = _make_mocks(
+        [_make_text_msg(response_with_artifact)]
+    )
+    result = _call_run_agent(llm, kb, prom, executor, judge, mem)
+
+    assert "run_command" not in result
+    assert "Here is the answer." in result

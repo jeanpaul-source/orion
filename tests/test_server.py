@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 
 import hal.server as server
 
+_ns = SimpleNamespace  # short alias used by /chat routing tests
+
 
 def test_health_ok_when_startup_healthy() -> None:
     """This proves to the user that /health reports healthy startup state."""
@@ -160,3 +162,202 @@ def test_chat_happy_path_returns_response_session_and_intent(monkeypatch) -> Non
         "session_id": "sess-1",
         "intent": "conversational",
     }
+
+
+def test_chat_routes_agentic_intent_and_returns_response(monkeypatch) -> None:
+    """This proves to the user that /chat calls run_agent when intent is agentic."""
+
+    class _Mem:
+        def session_exists(self, _sid: str) -> bool:
+            return False
+
+        def create_session(self, _sid: str) -> None:
+            return None
+
+        def last_session_id(self) -> str:
+            return "sess-a"
+
+        def new_session(self) -> str:
+            return "sess-a"
+
+        def load_turns(self, _sid: str) -> list[dict[str, str]]:
+            return []
+
+        def close(self) -> None:
+            return None
+
+    class _Classifier:
+        def classify(self, _msg: str) -> tuple[str, float]:
+            return "agentic", 0.78
+
+    async def _fake_to_thread(fn):
+        return fn()
+
+    monkeypatch.setattr(server.asyncio, "to_thread", _fake_to_thread)
+    monkeypatch.setattr(server, "MemoryStore", _Mem)
+    monkeypatch.setattr(
+        server,
+        "run_agent",
+        lambda *args, **kwargs: "agentic response text",
+    )
+
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": _ns(ntopng_url="http://ntopng", tavily_api_key="k"),
+            "classifier": _Classifier(),
+            "llm": object(),
+            "kb": object(),
+            "prom": object(),
+            "executor": object(),
+            "judge": object(),
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/chat", json={"message": "check lab for issues"})
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["response"] == "agentic response text"
+    assert body["intent"] == "agentic"
+
+
+def test_chat_routes_health_intent_and_returns_response(monkeypatch) -> None:
+    """This proves to the user that /chat calls run_health when intent is health."""
+
+    class _Mem:
+        def session_exists(self, _sid: str) -> bool:
+            return False
+
+        def create_session(self, _sid: str) -> None:
+            return None
+
+        def last_session_id(self) -> str:
+            return "sess-h"
+
+        def new_session(self) -> str:
+            return "sess-h"
+
+        def load_turns(self, _sid: str) -> list[dict[str, str]]:
+            return []
+
+        def close(self) -> None:
+            return None
+
+    class _Classifier:
+        def classify(self, _msg: str) -> tuple[str, float]:
+            return "health", 0.91
+
+    async def _fake_to_thread(fn):
+        return fn()
+
+    monkeypatch.setattr(server.asyncio, "to_thread", _fake_to_thread)
+    monkeypatch.setattr(server, "MemoryStore", _Mem)
+    monkeypatch.setattr(
+        server,
+        "run_health",
+        lambda *args, **kwargs: "health check response",
+    )
+
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": _ns(ntopng_url="http://ntopng", tavily_api_key=""),
+            "classifier": _Classifier(),
+            "llm": object(),
+            "kb": object(),
+            "prom": object(),
+            "executor": object(),
+            "judge": object(),
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/chat", json={"message": "how is the server?"})
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["response"] == "health check response"
+    assert body["intent"] == "health"
+
+
+def test_chat_strips_fenced_tool_call_blocks_from_agentic_response(monkeypatch) -> None:
+    """This proves that the server strips fenced ```json tool-call blocks from run_agent output."""
+
+    class _Mem:
+        def session_exists(self, _sid: str) -> bool:
+            return False
+
+        def create_session(self, _sid: str) -> None:
+            return None
+
+        def last_session_id(self) -> str:
+            return "sess-strip"
+
+        def new_session(self) -> str:
+            return "sess-strip"
+
+        def load_turns(self, _sid: str) -> list[dict[str, str]]:
+            return []
+
+        def close(self) -> None:
+            return None
+
+    class _Classifier:
+        def classify(self, _msg: str) -> tuple[str, float]:
+            return "agentic", 0.80
+
+    # Fenced tool-call block — handled by server._strip_tool_call_blocks
+    fenced_artifact = (
+        "Clean prose.\n"
+        "```json\n"
+        '{"name": "run_command", "arguments": {"command": "ls"}}\n'
+        "```"
+    )
+
+    async def _fake_to_thread(fn):
+        return fn()
+
+    monkeypatch.setattr(server.asyncio, "to_thread", _fake_to_thread)
+    monkeypatch.setattr(server, "MemoryStore", _Mem)
+    monkeypatch.setattr(
+        server,
+        "run_agent",
+        lambda *args, **kwargs: fenced_artifact,
+    )
+
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": _ns(ntopng_url="http://ntopng", tavily_api_key="k"),
+            "classifier": _Classifier(),
+            "llm": object(),
+            "kb": object(),
+            "prom": object(),
+            "executor": object(),
+            "judge": object(),
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/chat", json={"message": "run a health check"})
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+    assert resp.status_code == 200
+    response_text = resp.json()["response"]
+    # The fenced block must be stripped by the server
+    assert "```json" not in response_text
+    assert "run_command" not in response_text
+    assert "Clean prose." in response_text
