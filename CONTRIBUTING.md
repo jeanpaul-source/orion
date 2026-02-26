@@ -71,7 +71,7 @@ HAL_INSTANCE=laptop
 **Run before every push. No exceptions.**
 
 ```bash
-make test           # offline tests only (no Ollama needed) — 530 tests
+make test           # offline tests only (no Ollama needed) — 544 tests
 make test-full      # full suite including intent classifier (requires Ollama)
 ```
 
@@ -85,12 +85,12 @@ OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 .venv/bin/pytest tests/ --ignore=tests/test_intent.py -v
 ```
 
-530 tests total:
+544 tests total:
 
 - **35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
   reachable. Run these on the server if you can't reach Ollama from the laptop.
-- **530 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
-  trust_metrics, Telegram bot, parsers, harvest. Run anywhere with no external services.
+- **544 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
+  trust_metrics, Telegram bot, parsers, harvest, prometheus trend. Run anywhere with no external services.
 
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
 
@@ -131,7 +131,7 @@ Commit readiness checklist:
 - `make lint` passes
 - `make lint-md` passes
 - `make format` produces no diffs
-- `make test` passes (all 530 offline tests)
+- `make test` passes (all 544 offline tests)
 
 ---
 
@@ -195,7 +195,7 @@ fix stuff                             ← which stuff?
 
 **One logical change per commit.** A commit is ready when:
 
-- `make test` passes (all 530 offline tests)
+- `make test` passes (all 544 offline tests)
 - `make lint` passes
 - `make lint-md` passes
 - `make format` produces no diffs

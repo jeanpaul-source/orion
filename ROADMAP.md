@@ -167,6 +167,20 @@ Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, 
   missing values — no more silent LAN-IP fallbacks
 - Test count: 530 → 534 (all offline, ruff clean)
 
+### Feb 26, 2026 — `get_trend` tool (end-state capability #3)
+
+- `range_query()` added to `PrometheusClient` — wraps `/api/v1/query_range`; returns
+  `(timestamp, value)` tuples; same defensive pattern as `query()`
+- `trend()` added — takes a PromQL expression + window (`1h`/`6h`/`24h`); returns
+  `{first, last, min, max, delta, delta_per_hour, direction}` over ~60 sampled points;
+  direction is `rising`/`falling`/`stable` using 0.5%-of-range threshold
+- `get_trend` tool added to `TOOL_REGISTRY` — 9 named metric shortcuts + `custom` PromQL
+  mode; `_METRIC_PROMQL` dict is the single source of truth for metric→PromQL mapping;
+  Judge tier 0 (read-only, same as `get_metrics`)
+- 5 trend intent examples added to `agentic` classifier bucket — ensures trend questions
+  route to the tool loop, not the health fast-path
+- Test count: 534 → 544 (all offline, ruff clean)
+
 ---
 
 ## Backlog (immediate)
@@ -231,8 +245,10 @@ KB snapshot against the previous one and surfaces meaningful changes.
 The watchdog fires on thresholds. A better version: HAL notices that disk on /docker is
 growing at the same rate it was before the last runout, and tells you before the alert fires.
 
-This is trend detection over Prometheus data — not ML, just range queries and rate
-calculations. A `get_trend` tool wrapping PromQL range queries would cover most cases.
+`get_trend` tool delivered (Feb 26, 2026) — wraps PromQL range queries, returns
+rising/falling/stable summaries with delta and rate-per-hour. Covers the reactive side:
+"is /docker disk growing fast?" answered on demand. Remaining proactive piece: a background
+loop that watches key trends automatically and fires ntfy before thresholds hit.
 
 ### 4. Post-incident synthesis
 
