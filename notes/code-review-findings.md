@@ -326,7 +326,7 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 - [x] N6: Delete `_dispatch()` shim in `agent.py` (~10 min)
 - [x] N7: Delete legacy pipe-format parser in `trust_metrics.py` (~30 min)
 - [x] N8: Fix double `import time` in `llm.py` (~2 min)
-- [ ] N12: Move `facts.py:remember()` into `KnowledgeBase`, delete `facts.py` (~30 min)
+- [x] N12: Move `facts.py:remember()` into `KnowledgeBase`, delete `facts.py` (~30 min)
 
 ### Architecture (month scale, data-driven)
 
