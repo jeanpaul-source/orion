@@ -155,6 +155,7 @@ Adding 1 to the current tier preserves the relative risk ordering.
 **Loop constraints:**
 
 - `MAX_ITERATIONS=8` — prevents infinite loops when the model keeps calling tools
+- `MAX_TOOL_CALLS=5` — caps unique tool dispatches per turn; the loop stops when either limit is reached
 - `8000 char` output cap per tool result — prevents context explosion from verbose tools
 - Dedup guard — if the model calls the same `(tool, args)` twice in one turn, the second
   call is skipped and a synthetic message is injected ("you already have this data")

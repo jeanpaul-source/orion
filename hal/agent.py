@@ -33,6 +33,8 @@ from hal.workers import (
 )
 
 MAX_ITERATIONS = 8
+# Max unique tool calls per turn — loop also stops at MAX_ITERATIONS.
+MAX_TOOL_CALLS = 5
 
 # Metrics (no-op unless PROM_PUSHGATEWAY is configured)
 REQ_TOTAL = Counter("hal_requests_total", labels=("intent", "outcome"))
@@ -880,11 +882,11 @@ def run_agent(
 
         for iteration in range(MAX_ITERATIONS):
             label = f" (step {iteration + 1})" if iteration > 0 else ""
-            # If we've already dispatched 5 unique tool calls, stop collecting data
+            # If we've already dispatched max unique tool calls, stop collecting data
             # and force a text-only response regardless of iteration count
             effective_tools = (
                 available_tools
-                if (iteration < MAX_ITERATIONS - 1 and total_calls < 5)
+                if (iteration < MAX_ITERATIONS - 1 and total_calls < MAX_TOOL_CALLS)
                 else []
             )
             with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
@@ -1020,8 +1022,16 @@ def run_conversational(
     console: Console,
 ) -> str:
     """Fast path for greetings and small talk — one LLM call, no tools, no KB lookup."""
+    import time
+
+    t0 = time.perf_counter()
+    outcome = "ok"
     messages = list(history) + [{"role": "user", "content": user_input}]
-    response = llm.chat(messages, system=system).strip()
+    try:
+        response = llm.chat(messages, system=system).strip()
+    except Exception as e:
+        outcome = "llm_error"
+        response = f"Error calling model: {e}"
     console.print(f"\n[bold cyan]hal>[/] {response}")
     history.append({"role": "user", "content": user_input})
     history.append({"role": "assistant", "content": response})
@@ -1029,7 +1039,9 @@ def run_conversational(
     mem.save_turn(session_id, "assistant", response)
     if len(history) > 40:
         history[:] = history[-40:]
-    REQ_TOTAL.inc(intent="conversational", outcome="ok")
+    dur = time.perf_counter() - t0
+    REQ_LATENCY.observe(dur, intent="conversational")
+    REQ_TOTAL.inc(intent="conversational", outcome=outcome)
     flush_metrics()
     return response
 
