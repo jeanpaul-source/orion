@@ -313,8 +313,8 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 
 ### Correctness / safety (do first)
 
-- [ ] N4: Fix `args.get() or ""` in all tool handlers (~20 min)
-- [ ] N5: Add `ConnectTimeout=5` to `SSHExecutor._SSH_OPTS` (~5 min)
+- [x] N4: Fix `args.get() or ""` in all tool handlers (~20 min)
+- [x] N5: Add `ConnectTimeout=5` to `SSHExecutor._SSH_OPTS` (~5 min)
 - [ ] N14: Watchdog ntfy notification on Prometheus unreachable (~20 min)
 - [ ] N15: Warn on empty `NTFY_URL` at startup (~5 min)
 
@@ -323,9 +323,9 @@ empty: *"NTFY_URL is not set — all alerts will be logged only, no push notific
 - [x] N1: Extract `get_system_prompt()` + `setup_clients()` → `hal/bootstrap.py` (~2 hr)
 - [ ] N2: Consolidate three tool-call stripping impls → `hal/sanitize.py` (~1.5 hr)
 - [x] N3: Extract `dispatch_intent()` shared function (~1 hr)
-- [ ] N6: Delete `_dispatch()` shim in `agent.py` (~10 min)
+- [x] N6: Delete `_dispatch()` shim in `agent.py` (~10 min)
 - [ ] N7: Delete legacy pipe-format parser in `trust_metrics.py` (~30 min)
-- [ ] N8: Fix double `import time` in `llm.py` (~2 min)
+- [x] N8: Fix double `import time` in `llm.py` (~2 min)
 - [ ] N12: Move `facts.py:remember()` into `KnowledgeBase`, delete `facts.py` (~30 min)
 
 ### Architecture (month scale, data-driven)
