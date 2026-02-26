@@ -195,6 +195,11 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     try:
+        # PF_LOGGING_LEVEL must be set before this import: promptflow creates
+        # bulk_logger = get_logger("execution.bulk") at module level and reads
+        # PF_LOGGING_LEVEL at logger-construction time. Setting it afterward has
+        # no effect. setdefault so operator can override with PF_LOGGING_LEVEL=DEBUG.
+        os.environ.setdefault("PF_LOGGING_LEVEL", "WARNING")
         from azure.ai.evaluation import evaluate
     except ImportError:
         console.print(
