@@ -263,6 +263,9 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # ── Summary table ─────────────────────────────────────────────────────────
+    # azure.ai.evaluation returns rows as flat dicts with dotted keys, e.g.:
+    #   "inputs.query", "inputs.failure_case", "outputs.no_raw_json.no_raw_json"
+    # Do NOT use row.get("outputs", {}) — that always returns {} on these rows.
     rows = results.get("rows", [])
     metrics = results.get("metrics", {})
 
@@ -281,20 +284,23 @@ def main(argv: list[str] | None = None) -> None:
     console.print(agg_table)
 
     # ── Per-failure-case breakdown ─────────────────────────────────────────────
-    # Group rows by failure_case and show which ones have score < 1
+    # Rows use flat dotted keys: "inputs.failure_case", "outputs.X.metric_name"
     failures_by_case: dict[str, list[dict]] = {}
     for row in rows:
-        outputs = row.get("outputs", {})
-        fc = row.get("inputs", {}).get("failure_case", "unknown")
-        query = row.get("inputs", {}).get("query", "")
-        response = row.get("inputs", {}).get("response", "")
+        fc = row.get("inputs.failure_case") or "unknown"
+        query = row.get("inputs.query") or ""
+        response = row.get("inputs.response") or ""
 
         failed_metrics = []
-        for k, v in outputs.items():
+        for k, v in row.items():
+            if not k.startswith("outputs."):
+                continue
             if k.endswith("_reason"):
                 continue
             if isinstance(v, (int, float)) and v < 1.0:
-                failed_metrics.append(f"{k}={v:.2f}")
+                # Strip "outputs.<evaluator>." prefix → short name, e.g. "no_raw_json"
+                short = k.split(".", 2)[-1] if k.count(".") >= 2 else k
+                failed_metrics.append(f"{short}={v:.2f}")
 
         if failed_metrics:
             failures_by_case.setdefault(fc, []).append(
@@ -305,16 +311,20 @@ def main(argv: list[str] | None = None) -> None:
                 }
             )
 
-    if failures_by_case:
-        console.print("\n[bold red]── Failures by failure case ──[/]")
+    # ── Unambiguous run status ────────────────────────────────────────────────
+    total_scoring_failures = sum(len(v) for v in failures_by_case.values())
+    if total_scoring_failures == 0:
+        console.print(f"\n[bold green]✓ Scoring failures: 0 / {len(rows)} queries[/]")
+    else:
+        console.print(
+            f"\n[bold red]✗ Scoring failures: {total_scoring_failures} / {len(rows)} queries[/]"
+        )
         for fc, items in sorted(failures_by_case.items()):
             console.print(f"\n  [bold]{fc}[/] ({len(items)} failed)")
             for item in items:
                 console.print(f"    [dim]Q:[/] {item['query']}")
                 console.print(f"    [dim]R:[/] {item['response_preview']}")
                 console.print(f"    [red]{item['failed']}[/]")
-    else:
-        console.print("\n[bold green]No failures detected.[/]")
 
     console.print(f"\nFull results → [bold]{args.out}[/]")
 
