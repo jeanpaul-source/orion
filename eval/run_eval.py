@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(1)
 
-    embed = OllamaClient(config.ollama_host, "", config.embed_model)
+    embed = OllamaClient(config.ollama_host, config.embed_model)
     if not embed.ping():
         console.print(f"[red]Ollama not responding at {config.ollama_host}.[/]")
         sys.exit(1)
