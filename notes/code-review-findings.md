@@ -182,6 +182,6 @@ requires running the full test suite first.
 - [ ] C3: Config fail-loud on missing `.env` required fields
 - [x] H1: Gate PlannerAgent on query complexity
 - [x] H2: Refactor tool schema + dispatch registry
-- [ ] Tests: `hal/watchdog.py` threshold + cooldown logic
-- [ ] Tests: `hal/server.py` endpoints via `TestClient`
+- [x] Tests: `hal/watchdog.py` threshold + cooldown logic
+- [x] Tests: `hal/server.py` endpoints via `TestClient`
 - [ ] Tests: `hal/executor.py` subprocess mock

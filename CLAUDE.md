@@ -471,6 +471,12 @@ Laptop (edit code)
 - **H2 completed**: tool schema + dispatch refactored into `hal/tools.py` with `TOOL_REGISTRY` entries pairing schema + handler + availability predicate; `get_tools()` now iterates registry; dispatch now registry lookup (`dispatch_tool`) with legacy unknown-tool error shape preserved; `hal/agent.py` keeps a thin `_dispatch` compatibility wrapper for existing tests/imports.
 - **Validation**: `.venv/bin/ruff check hal/ tests/` clean; `.venv/bin/pytest tests/ -x -q --ignore=tests/test_intent.py` passed (`437`).
 
+**Done (as of Feb 25, 2026 — reliability tests for watchdog + server API):**
+
+- **Watchdog reliability tests added**: `tests/test_watchdog.py` covers metric threshold firing, cooldown suppression, recovery + RESOLVED notifications, boolean checks (`ntp`, `harvest_lag`, `containers`, `falco`) with the same cooldown/clear contract, and fired-key timestamp persistence.
+- **Server API reliability tests added**: `tests/test_server.py` covers `/health` healthy/degraded behavior, `/chat` 503 paths (startup error + uninitialized state), tool-call JSON-fence stripping contract, and happy-path `/chat` response/session_id/intent contract.
+- **Validation**: `.venv/bin/ruff check hal/ tests/` clean; `.venv/bin/pytest tests/ -x -q --ignore=tests/test_intent.py` passed (`451`).
+
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
