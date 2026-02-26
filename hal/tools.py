@@ -69,8 +69,8 @@ def _handle_run_command(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    command = args.get("command", "")
-    reason = args.get("reason", "")
+    command = args.get("command") or ""
+    reason = args.get("reason") or ""
     if not judge.approve("run_command", command, reason=reason):
         return "Action denied by user."
     result = executor.run(command)
@@ -93,8 +93,8 @@ def _handle_read_file(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    path = args.get("path", "")
-    reason = args.get("reason", "")
+    path = args.get("path") or ""
+    reason = args.get("reason") or ""
     content = read_file(path, executor, judge, reason=reason)
     return content if content is not None else f"Could not read {path}"
 
@@ -108,8 +108,8 @@ def _handle_list_dir(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    path = args.get("path", "")
-    reason = args.get("reason", "")
+    path = args.get("path") or ""
+    reason = args.get("reason") or ""
     output = list_dir(path, executor, judge, reason=reason)
     return output if output is not None else f"Could not list {path}"
 
@@ -123,9 +123,9 @@ def _handle_write_file(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    path = args.get("path", "")
-    content = args.get("content", "")
-    reason = args.get("reason", "")
+    path = args.get("path") or ""
+    content = args.get("content") or ""
+    reason = args.get("reason") or ""
     ok = write_file(path, content, executor, judge, reason=reason)
     return (
         f"Written {len(content)} bytes to {path}"
@@ -143,7 +143,7 @@ def _handle_search_kb(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    query = args.get("query", "")
+    query = args.get("query") or ""
     try:
         chunks = kb.search(query, top_k=8)
         lines = []
@@ -167,10 +167,10 @@ def _handle_patch_file(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    path = args.get("path", "")
-    old_str = args.get("old_str", "")
-    new_str = args.get("new_str", "")
-    reason = args.get("reason", "")
+    path = args.get("path") or ""
+    old_str = args.get("old_str") or ""
+    new_str = args.get("new_str") or ""
+    reason = args.get("reason") or ""
     return patch_file(path, old_str, new_str, executor, judge, reason=reason)
 
 
@@ -183,8 +183,8 @@ def _handle_git_status(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    repo_path = args.get("repo_path", "")
-    reason = args.get("reason", "")
+    repo_path = args.get("repo_path") or ""
+    reason = args.get("reason") or ""
     return git_status(repo_path, executor, judge, reason=reason)
 
 
@@ -197,9 +197,9 @@ def _handle_git_diff(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    repo_path = args.get("repo_path", "")
-    ref = args.get("ref", "HEAD")
-    reason = args.get("reason", "")
+    repo_path = args.get("repo_path") or ""
+    ref = args.get("ref") or "HEAD"
+    reason = args.get("reason") or ""
     return git_diff(repo_path, executor, judge, ref=ref, reason=reason)
 
 
@@ -229,7 +229,7 @@ def _handle_get_action_stats(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    pattern = args.get("action_pattern", "")
+    pattern = args.get("action_pattern") or ""
     if not pattern:
         return "Error: action_pattern is required."
     try:
@@ -249,7 +249,7 @@ def _handle_get_security_events(
     _tavily_api_key: str,
 ) -> str:
     n = int(args.get("n", 50))
-    reason = args.get("reason", "")
+    reason = args.get("reason") or ""
     events = get_security_events(executor, judge, n=n, reason=reason)
     return json.dumps(events, indent=2)
 
@@ -263,7 +263,7 @@ def _handle_get_host_connections(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    reason = args.get("reason", "")
+    reason = args.get("reason") or ""
     data = get_host_connections(executor, judge, reason=reason)
     return json.dumps(data, indent=2) if data else "Denied."
 
@@ -278,7 +278,7 @@ def _handle_get_traffic_summary(
     _tavily_api_key: str,
 ) -> str:
     top_flows = int(args.get("top_flows", 20))
-    reason = args.get("reason", "")
+    reason = args.get("reason") or ""
     data = get_traffic_summary(
         executor, judge, ntopng_url=ntopng_url, top_flows=top_flows, reason=reason
     )
@@ -294,8 +294,8 @@ def _handle_scan_lan(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    subnet = args.get("subnet", "")
-    reason = args.get("reason", "")
+    subnet = args.get("subnet") or ""
+    reason = args.get("reason") or ""
     if not subnet:
         return "Error: subnet is required."
     hosts = scan_lan(subnet, executor, judge, reason=reason)
@@ -311,8 +311,8 @@ def _handle_web_search(
     _ntopng_url: str,
     tavily_api_key: str,
 ) -> str:
-    query = args.get("query", "")
-    reason = args.get("reason", "")
+    query = args.get("query") or ""
+    reason = args.get("reason") or ""
     if not judge.approve("web_search", query, reason=reason):
         return "Web search denied by policy."
     if not tavily_api_key:
@@ -341,8 +341,8 @@ def _handle_fetch_url(
     _ntopng_url: str,
     _tavily_api_key: str,
 ) -> str:
-    url = args.get("url", "")
-    reason = args.get("reason", "")
+    url = args.get("url") or ""
+    reason = args.get("reason") or ""
     if not judge.approve("fetch_url", url, reason=reason):
         return "URL fetch denied by policy."
     try:

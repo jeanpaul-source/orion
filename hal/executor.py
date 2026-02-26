@@ -17,7 +17,14 @@ class SSHExecutor:
         self.user = user
         self._local = host in _LOCAL_HOSTS
 
-    _SSH_OPTS = ["-o", "StrictHostKeyChecking=accept-new", "-o", "BatchMode=yes"]
+    _SSH_OPTS = [
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+    ]
 
     def run(self, command: str, timeout: int = 30) -> dict:
         """Run a shell command on the server. No approval — caller must gate."""

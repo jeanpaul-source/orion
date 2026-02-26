@@ -14,7 +14,8 @@ from unittest.mock import MagicMock
 
 from rich.console import Console
 
-from hal.agent import _dispatch, _strip_tool_artifacts, run_agent
+from hal.agent import _strip_tool_artifacts, run_agent
+from hal.tools import dispatch_tool
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -248,7 +249,7 @@ def test_search_kb_returns_no_results_when_empty():
     judge = MagicMock()
     prom = MagicMock()
 
-    result = _dispatch(
+    result = dispatch_tool(
         "search_kb", {"query": "nonexistent thing"}, executor, judge, kb, prom
     )
     assert "No relevant results" in result
@@ -266,7 +267,7 @@ def test_unknown_tool_returns_graceful_error():
     judge = MagicMock()
     prom = MagicMock()
 
-    result = _dispatch("totally_unknown_tool_xyz", {}, executor, judge, kb, prom)
+    result = dispatch_tool("totally_unknown_tool_xyz", {}, executor, judge, kb, prom)
     assert (
         "unknown tool" in result.lower() or result
     )  # must return something, not throw
@@ -285,7 +286,7 @@ def test_get_metrics_prometheus_unavailable():
     prom = MagicMock()
     prom.health.side_effect = ConnectionError("Prometheus unreachable")
 
-    result = _dispatch("get_metrics", {}, executor, judge, kb, prom)
+    result = dispatch_tool("get_metrics", {}, executor, judge, kb, prom)
     assert "unavailable" in result.lower() or "error" in result.lower(), (
         f"Expected fallback error message, got: {result!r}"
     )

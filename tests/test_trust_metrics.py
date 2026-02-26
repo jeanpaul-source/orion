@@ -108,17 +108,17 @@ def test_dispatch_integration_via_agent_tool(tmp_path, monkeypatch):
     p = _write_temp_audit(tmp_path)
     monkeypatch.setenv("ORION_AUDIT_LOG", str(p))
 
-    # Minimal dispatcher path using hal.agent._dispatch
+    # Minimal dispatcher path using hal.tools.dispatch_tool
     from unittest.mock import MagicMock
 
-    from hal.agent import _dispatch
+    from hal.tools import dispatch_tool
 
     kb = MagicMock()
     prom = MagicMock()
     executor = MagicMock()
     judge = MagicMock()
 
-    out = _dispatch(
+    out = dispatch_tool(
         "get_action_stats",
         {"action_pattern": "docker restart"},
         executor,

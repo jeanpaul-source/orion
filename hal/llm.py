@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 import uuid
 
 import requests
@@ -116,8 +117,6 @@ class VLLMClient:
         self, messages: list[dict], tools: list[dict], system: str | None = None
     ) -> dict:
         """Non-streaming chat with tool schemas. Returns the full message dict."""
-        import time
-
         t0 = time.perf_counter()
         outcome = "ok"
         with get_tracer().start_as_current_span("hal.llm.chat_with_tools") as span:
@@ -180,18 +179,16 @@ class VLLMClient:
                 span.set_attribute(
                     "llm.completion_tokens", usage.get("completion_tokens", 0)
                 )
-            import time as _t
-
             LLM_REQ_TOTAL.inc(endpoint="chat_with_tools", outcome=outcome)
-            LLM_REQ_LATENCY.observe(_t.perf_counter() - t0, endpoint="chat_with_tools")
+            LLM_REQ_LATENCY.observe(
+                time.perf_counter() - t0, endpoint="chat_with_tools"
+            )
             return result
 
     def chat(
         self, messages: list[dict], system: str | None = None, timeout: int = 120
     ) -> str:
         """Non-streaming chat — returns full response string."""
-        import time
-
         t0 = time.perf_counter()
         outcome = "ok"
         with get_tracer().start_as_current_span("hal.llm.chat") as span:
@@ -229,8 +226,6 @@ class VLLMClient:
                 span.set_attribute(
                     "llm.completion_tokens", usage.get("completion_tokens", 0)
                 )
-            import time as _t
-
             LLM_REQ_TOTAL.inc(endpoint="chat", outcome=outcome)
-            LLM_REQ_LATENCY.observe(_t.perf_counter() - t0, endpoint="chat")
+            LLM_REQ_LATENCY.observe(time.perf_counter() - t0, endpoint="chat")
             return content

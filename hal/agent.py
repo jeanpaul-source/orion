@@ -124,29 +124,6 @@ def _should_use_planner_critic(query: str) -> tuple[bool, str]:
     return False, "short_non_action"
 
 
-def _dispatch(
-    name: str,
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    kb: KnowledgeBase,
-    prom: PrometheusClient,
-    ntopng_url: str = "http://localhost:3000",
-    tavily_api_key: str = "",
-) -> str:
-    """Compatibility wrapper for legacy tests/imports."""
-    return dispatch_tool(
-        name,
-        args,
-        executor,
-        judge,
-        kb,
-        prom,
-        ntopng_url,
-        tavily_api_key,
-    )
-
-
 def run_health(
     user_input: str,
     history: list[dict],
@@ -473,7 +450,7 @@ def run_agent(
                         "tool.args", json.dumps(raw_args, sort_keys=True)[:500]
                     )
                     try:
-                        result = _dispatch(
+                        result = dispatch_tool(
                             name,
                             raw_args,
                             executor,
