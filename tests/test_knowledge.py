@@ -253,3 +253,69 @@ def test_categories_closes_connection(mock_connect, mock_reg):
     kb.categories()
 
     conn.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Proof 6 — remember()
+# ---------------------------------------------------------------------------
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_remember_embeds_the_fact(mock_connect, mock_reg):
+    """remember() must call llm.embed() with the fact string."""
+    conn, _ = _make_conn([])
+    mock_connect.return_value = conn
+    llm = _make_llm()
+    kb = KnowledgeBase(_DSN, llm)
+
+    kb.remember("Grafana runs on port 3000")
+
+    llm.embed.assert_called_once_with("Grafana runs on port 3000")
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_remember_inserts_with_memory_category(mock_connect, mock_reg):
+    """remember() must INSERT a row with category='memory' and doc_tier='memory'."""
+    conn, cur = _make_conn([])
+    mock_connect.return_value = conn
+    kb = KnowledgeBase(_DSN, _make_llm())
+
+    kb.remember("test fact")
+
+    cur.execute.assert_called_once()
+    sql, params = cur.execute.call_args[0]
+    assert "INSERT INTO documents" in sql
+    # params: file_path, file_name, category, file_type, chunk_index, content, embedding, metadata, doc_tier
+    assert params[2] == "memory"  # category
+    assert params[5] == "test fact"  # content
+    assert params[8] == "memory"  # doc_tier
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_remember_file_path_uses_memory_scheme(mock_connect, mock_reg):
+    """remember() must use a memory://facts/... path so harvest does not clear it."""
+    conn, cur = _make_conn([])
+    mock_connect.return_value = conn
+    kb = KnowledgeBase(_DSN, _make_llm())
+
+    kb.remember("some fact")
+
+    _, params = cur.execute.call_args[0]
+    assert params[0].startswith("memory://facts/")
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_remember_commits_and_closes(mock_connect, mock_reg):
+    """remember() must commit the transaction and close the connection."""
+    conn, _ = _make_conn([])
+    mock_connect.return_value = conn
+    kb = KnowledgeBase(_DSN, _make_llm())
+
+    kb.remember("fact")
+
+    conn.commit.assert_called_once()
+    conn.close.assert_called_once()

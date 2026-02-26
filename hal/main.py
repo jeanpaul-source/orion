@@ -16,11 +16,9 @@ from rich.text import Text
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
-from hal.facts import remember
 from hal.intent import IntentClassifier
 from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
-from hal.llm import OllamaClient
 from hal.logging_utils import set_context, setup_logging
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
@@ -256,12 +254,12 @@ def cmd_sessions(mem: MemoryStore) -> None:
         )
 
 
-def cmd_remember(fact: str, dsn: str, embed: OllamaClient) -> None:
+def cmd_remember(fact: str, kb: KnowledgeBase) -> None:
     if not fact:
         console.print("[yellow]Usage: /remember <fact>[/]")
         return
     with console.status("storing fact...", spinner="dots"):
-        remember(fact, dsn, embed)
+        kb.remember(fact)
     console.print(f"[green]remembered:[/] {fact}")
 
 
@@ -409,7 +407,7 @@ def main() -> None:
             elif user_input == "/kb":
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):
-                cmd_remember(user_input[10:].strip(), config.pgvector_dsn, embed)
+                cmd_remember(user_input[10:].strip(), kb)
             elif user_input.startswith("/search_memory "):
                 cmd_search_memory(user_input[15:].strip(), mem)
             elif user_input == "/sessions":
