@@ -6,11 +6,12 @@ Writes: eval/results/eval_out.json
 
 Evaluators
 ----------
-no_raw_json      Custom code  — B1: response must not contain raw tool-call JSON
-hal_identity     Custom code  — B2: response must not contain "Qwen"/"Alibaba"
-intent_accuracy  Custom code  — routing: intent matched expected_intent
-relevance        Built-in LLM — B3/B6: response relevant to query (needs vLLM)
-coherence        Built-in LLM — general: response is coherent natural language
+no_raw_json       Custom code  — B1: response must not contain raw tool-call JSON
+hal_identity      Custom code  — B2: response must not contain "Qwen"/"Alibaba"
+intent_accuracy   Custom code  — routing: intent matched expected_intent
+web_tool_accuracy Custom code  — web: web_search called iff web_search_expected==True
+relevance         Built-in LLM — B3/B6: response relevant to query (needs vLLM)
+coherence         Built-in LLM — general: response is coherent natural language
 
 Usage:
     .venv/bin/python -m eval.evaluate
@@ -101,6 +102,45 @@ class IntentAccuracyEvaluator:
         }
 
 
+class WebToolAccuracyEvaluator:
+    """Checks web_search tool-routing decisions.
+
+    For rows that carry a ``web_search_expected`` ground-truth:
+      - True  → score 1.0 when 'web_search' appears in tools_called, else 0.0
+      - False → score 1.0 when 'web_search' is absent from tools_called, else 0.0
+    Rows without ``web_search_expected`` (legacy rows) are skipped (score=1.0).
+    """
+
+    def __call__(
+        self,
+        *,
+        tools_called: list | str | None = None,
+        web_search_expected: bool | str | None = None,
+    ) -> dict:
+        # web_search_expected absent or null → not applicable, pass
+        if web_search_expected is None or web_search_expected == "":
+            return {"web_tool_accuracy": 1.0}
+
+        # azure-ai-evaluation may deserialise JSON arrays as strings
+        if isinstance(tools_called, str):
+            import json as _json
+
+            try:
+                tools_called = _json.loads(tools_called)
+            except Exception:
+                tools_called = []
+        if tools_called is None:
+            tools_called = []
+
+        # Normalise bool (may arrive as string "true"/"false" from JSONL)
+        if isinstance(web_search_expected, str):
+            web_search_expected = web_search_expected.lower() == "true"
+
+        used_web = "web_search" in tools_called
+        correct = used_web if web_search_expected else not used_web
+        return {"web_tool_accuracy": 1.0 if correct else 0.0}
+
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 
@@ -168,6 +208,7 @@ def main(argv: list[str] | None = None) -> None:
         "no_raw_json": NoRawJsonEvaluator(),
         "hal_identity": HalIdentityEvaluator(),
         "intent_accuracy": IntentAccuracyEvaluator(),
+        "web_tool_accuracy": WebToolAccuracyEvaluator(),
     }
 
     evaluator_config: dict = {
@@ -176,6 +217,10 @@ def main(argv: list[str] | None = None) -> None:
         "intent_accuracy": {
             "intent": "${data.intent}",
             "expected_intent": "${data.expected_intent}",
+        },
+        "web_tool_accuracy": {
+            "tools_called": "${data.tools_called}",
+            "web_search_expected": "${data.web_search_expected}",
         },
     }
 

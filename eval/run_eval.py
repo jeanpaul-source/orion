@@ -60,7 +60,17 @@ class _EvalJudge(Judge):
     """Auto-approves tier-0 (read-only) and silently denies everything else.
 
     No interactive prompts. No LLM risk evaluation (avoids extra latency).
+    Records every tool the model attempts to call in ``tools_called`` so the
+    evaluator can check whether web_search / fetch_url were used correctly.
     """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.tools_called: list[str] = []
+
+    def reset_tools(self) -> None:
+        """Clear the accumulator between queries."""
+        self.tools_called = []
 
     def approve(
         self,
@@ -72,6 +82,8 @@ class _EvalJudge(Judge):
         if tier is None:
             tier = tier_for(action_type, detail)
         approved = tier == 0
+        # Record every tool the model attempted, approved or not
+        self.tools_called.append(action_type)
         self._log(
             action_type,
             detail,
@@ -112,10 +124,11 @@ def _run_query(
     mem: MemoryStore,
     session_id: str,
     system: str,
-) -> tuple[str, str, float]:
-    """Returns (response_text, intent, confidence)."""
+) -> tuple[str, str, float, list[str]]:
+    """Returns (response_text, intent, confidence, tools_called)."""
     # Each query gets a clean history — no cross-contamination between queries
     history: list[dict] = []
+    judge.reset_tools()
     intent, confidence = classifier.classify(query)
     quiet = Console(quiet=True)
 
@@ -138,7 +151,7 @@ def _run_query(
             quiet,
         )
 
-    return response, intent, confidence
+    return response, intent, confidence, list(judge.tools_called)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -204,7 +217,7 @@ def main(argv: list[str] | None = None) -> None:
                 f"[bold]({i}/{len(queries)})[/] [dim]{item.get('failure_case', '')}[/] {query[:80]}"
             )
             try:
-                response, intent, confidence = _run_query(
+                response, intent, confidence, tools_called = _run_query(
                     query,
                     classifier,
                     llm,
@@ -225,12 +238,15 @@ def main(argv: list[str] | None = None) -> None:
                     "expected_intent": item.get("expected_intent", ""),
                     "failure_case": item.get("failure_case", ""),
                     "description": item.get("description", ""),
+                    "tools_called": tools_called,
+                    "web_search_expected": item.get("web_search_expected"),
                 }
                 out_f.write(json.dumps(row) + "\n")
                 out_f.flush()
                 results.append(row)
                 console.print(
                     f"  intent={intent} ({confidence:.2f})  "
+                    f"tools={tools_called}  "
                     f"response={len(response)}c  preview: {response[:60].replace(chr(10), ' ')!r}"
                 )
             except Exception as exc:
@@ -247,6 +263,8 @@ def main(argv: list[str] | None = None) -> None:
                     "expected_intent": item.get("expected_intent", ""),
                     "failure_case": item.get("failure_case", ""),
                     "description": item.get("description", ""),
+                    "tools_called": [],
+                    "web_search_expected": item.get("web_search_expected"),
                 }
                 out_f.write(json.dumps(row) + "\n")
                 out_f.flush()
