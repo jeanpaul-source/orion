@@ -75,7 +75,9 @@ Follow CLAUDE.md format. One change at a time.
 
 ---
 
-## Prompt 3b — Fix eval findings from web baseline (Step 3 follow-up) ← IN PROGRESS
+## ~~Prompt 3b — Fix eval findings from web baseline (Step 3 follow-up)~~ ✅ DONE
+
+*Commits: 1c61110 (date injection), 77e638a (injection-resilience row), 623acdb (health intent examples), 8ce406f (agentic expected_intent). All four sub-items verified. Server eval re-run pending.*
 
 ```
 You are working in /home/jp/orion on the Orion homelab AI assistant project.
