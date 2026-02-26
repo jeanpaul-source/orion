@@ -94,7 +94,7 @@ TOOL_REGISTRY = {
 
 ---
 
-### H3 — `run_conversational` is missing latency telemetry
+### ~~H3 — `run_conversational` is missing latency telemetry~~ ✅ DONE (Feb 25, 2026)
 
 The other three handlers (`run_health`, `run_fact`, `run_agent`) all call
 `REQ_LATENCY.observe(dur, intent=...)` and wrap everything in an OTel span.
@@ -106,7 +106,7 @@ to `run_conversational` in `hal/agent.py`. Exact pattern: copy from `run_health`
 
 ---
 
-### H4 — `total_calls < 5` magic number in agent loop
+### ~~H4 — `total_calls < 5` magic number in agent loop~~ ✅ DONE (Feb 25, 2026)
 
 In `hal/agent.py` the agent loop stopping condition is:
 "terminate after 8 iterations OR after 5 unique tool calls, whichever comes first."
@@ -175,8 +175,8 @@ requires running the full test suite first.
 ## Quick Wins Checklist
 
 - [x] C1: Merge Falco noise filter into shared module — done, `hal/falco_noise.py`
-- [ ] H3: Add latency telemetry to `run_conversational` (~20 min)
-- [ ] H4: Name the `5` as `MAX_TOOL_CALLS` next to `MAX_ITERATIONS` (~10 min)
+- [x] H3: Add latency telemetry to `run_conversational` (~20 min)
+- [x] H4: Name the `5` as `MAX_TOOL_CALLS` next to `MAX_ITERATIONS` (~10 min)
 - [ ] Run eval re-run on server (no code changes needed)
 - [ ] C2: Gate or remove `_extract_tool_calls_from_content`
 - [ ] C3: Config fail-loud on missing `.env` required fields

@@ -459,6 +459,12 @@ Laptop (edit code)
 - **`hal/falco_noise.py` created**: zero `hal.*` deps; `NOISE_RULES` as data tuples; `is_falco_noise(event)` function; used by both `security.py` and `watchdog.py` — watchdog no longer imports from `security.py` at all
 - **432 tests passing**
 
+**Done (as of Feb 25, 2026 — quick wins H3/H4):**
+
+- **H4 completed**: `MAX_TOOL_CALLS = 5` added in `hal/agent.py` next to `MAX_ITERATIONS = 8`; inline `total_calls < 5` replaced with `total_calls < MAX_TOOL_CALLS`; `ARCHITECTURE.md` updated to document dual loop constraints
+- **H3 completed**: `run_conversational()` now uses OTel span `hal.run_conversational`, sets `hal.session_id` / `hal.query` / `hal.response_len`, calls `set_context(session_id=session_id)`, and logs `conversational turn` with intent
+- **Validation**: `.venv/bin/ruff check hal/agent.py` clean; `.venv/bin/pytest tests/ -x -q --ignore=tests/test_intent.py` passed (`432`)
+
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:
