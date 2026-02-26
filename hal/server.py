@@ -47,6 +47,7 @@ from hal.llm import VLLMClient
 from hal.logging_utils import setup_logging
 from hal.main import get_system_prompt, setup_clients
 from hal.memory import MemoryStore
+from hal.patterns import TOOL_CALL_FENCE_RE
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import setup_tracing
 
@@ -161,9 +162,6 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-_TOOL_FENCE_RE = _re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", _re.DOTALL)
-
-
 def _strip_tool_call_blocks(text: str) -> str:
     """Strip ```json {...} ``` fences that contain hallucinated tool-call objects.
 
@@ -182,7 +180,7 @@ def _strip_tool_call_blocks(text: str) -> str:
             return ""  # tool-call hallucination — strip
         return m.group(0)  # real JSON — leave untouched
 
-    return _TOOL_FENCE_RE.sub(_replacer, text).strip()
+    return TOOL_CALL_FENCE_RE.sub(_replacer, text).strip()
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -195,20 +193,20 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     config = _state["config"]
 
-    # Classify intent (HTTP client call — safe outside the thread)
-    classifier: IntentClassifier = _state["classifier"]
-    intent, confidence = classifier.classify(req.message)
-
     # Null Console — suppress Rich output, we only need the return value
     console = Console(file=StringIO(), no_color=True, markup=False, highlight=False)
 
+    classifier: IntentClassifier = _state["classifier"]
     llm: VLLMClient = _state["llm"]
     kb: KnowledgeBase = _state["kb"]
     prom: PrometheusClient = _state["prom"]
     executor: SSHExecutor = _state["executor"]
     judge: Judge = _state["judge"]
 
-    def _run() -> tuple[str, str]:
+    def _run() -> tuple[str, str, str]:
+        # Classify intent inside the thread — embed() is a blocking HTTP call
+        intent, confidence = classifier.classify(req.message)
+
         # MemoryStore opens a SQLite connection — must be created in the thread
         # that uses it.  asyncio.to_thread runs in a thread-pool thread, so we
         # open and close a fresh store here rather than reusing one from _state.
@@ -272,11 +270,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
                     ntopng_url=config.ntopng_url,
                     tavily_api_key=config.tavily_api_key,
                 )
-            return response, session_id
+            return response, session_id, intent
         finally:
             mem.close()
 
-    response, session_id = await asyncio.to_thread(_run)
+    response, session_id, intent = await asyncio.to_thread(_run)
     response = _strip_tool_call_blocks(response)
     return ChatResponse(response=response, session_id=session_id, intent=intent)
 

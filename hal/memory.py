@@ -2,19 +2,17 @@
 
 import json
 import logging
-import re
 import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
 
+from hal.patterns import TOOL_CALL_FENCE_RE
+
 log = logging.getLogger(__name__)
 
 DB_PATH = Path.home() / ".orion" / "memory.db"
 TURN_WINDOW = 40  # messages loaded into LLM context (20 exchanges)
-
-
-_POISON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
 def is_poison_response(text: str) -> bool:
@@ -39,7 +37,7 @@ def is_poison_response(text: str) -> bool:
         return True
 
     # Pattern 2: embedded ```json {...} ``` fences containing tool-call objects
-    for m in _POISON_FENCE_RE.finditer(stripped):
+    for m in TOOL_CALL_FENCE_RE.finditer(stripped):
         try:
             data = json.loads(m.group(1))
         except (json.JSONDecodeError, ValueError):
@@ -152,13 +150,15 @@ class MemoryStore:
 
     def search_sessions(self, query: str, n: int = 20) -> list[dict]:
         """Full-text search across all sessions. Returns matching turns, newest first."""
+        # Escape LIKE wildcards so literal % and _ in queries don't act as globs
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         rows = self.conn.execute(
             """SELECT t.session_id, t.role, t.content, t.timestamp
                FROM turns t
-               WHERE t.content LIKE ?
+               WHERE t.content LIKE ? ESCAPE '\\'
                ORDER BY t.timestamp DESC
                LIMIT ?""",
-            (f"%{query}%", n),
+            (f"%{escaped}%", n),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -194,3 +194,9 @@ class MemoryStore:
 
     def close(self) -> None:
         self.conn.close()
+
+    def __enter__(self) -> "MemoryStore":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
