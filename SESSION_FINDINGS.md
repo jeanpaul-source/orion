@@ -431,6 +431,38 @@ These are listed here as reference for the diagnosis step. Not proposing to fix 
 
 ---
 
+## Session: Feb 25, 2026 — Tool-call hallucination fix
+
+### Problem observed
+
+Two failure patterns seen in the Telegram chat:
+
+1. **Fabricated tool-call output in prose.** A health-intent query ("how is everything? any code updates?") caused the LLM to receive live metrics (no tools available in `run_health`) and then *narrate* a `git_status` call — printing a fake `{"name": "git_status", "arguments": {...}}` JSON fence and inventing plausible-looking git commit hashes. The user received hallucinated lab history.
+
+2. **Off-topic web search.** The follow-up query "What's new in HVAC?" had no homelab context. With no rule bounding `web_search` scope, the LLM launched a multi-step planning sequence and called `web_search` for HVAC technology trends — completely irrelevant to the homelab.
+
+### Root causes
+
+- **Tool simulation:** the system prompt rule "If you don't know, say so plainly — never guess" is not specific enough. The LLM isn't guessing; it's executing a learned pattern (emit tool call → emit result). No rule explicitly blocked narrated tool calls.
+- **Unbounded web search:** `web_search` description says "for questions not covered by the KB" — which is true of HVAC, so the LLM complied. No rule constrained the scope to homelab-relevant external topics.
+- **Poison persistence:** `is_poison_response()` in `memory.py` only catches responses that *start* with `{`. The hallucinated response started with prose, so it passed the filter and was saved to SQLite, ready to be re-injected into future sessions.
+
+### Three-layer fix (commit `c48c66a`)
+
+**Layer 1 — system prompt (`hal/main.py`):** Two new RULES:
+- "Never simulate a tool call or fabricate shell/command output in a prose response. If you need live data but cannot call a tool, say 'I'd need to check [X] for that — ask me directly' and stop."
+- "Only use web_search for questions explicitly about external software, CVEs, or public releases. If asked about a topic with no homelab context, ask the user to clarify."
+
+**Layer 2 — output guard (`hal/server.py`):** `_strip_tool_call_blocks(text)` — strips ` ```json {...} ``` ` code fences whose body parses as a JSON object with both `"name"` and `"arguments"` keys, before the response reaches the Telegram user. Real JSON (metrics, data) is left untouched.
+
+**Layer 3 — poison detection (`hal/memory.py`):** Extended `is_poison_response()` to also scan for embedded code-fence tool-call blocks via `_POISON_FENCE_RE`. Catches Pattern 1 (starts-with-`{`, existing) and Pattern 2 (prose + embedded fence, new). Prevents hallucinated turns from being saved to SQLite and re-injected into future context.
+
+### Tests
+
+423 offline tests passing. Smoke-tested `is_poison_response()` inline against all four cases (bare JSON, embedded fence, normal prose, real JSON data).
+
+---
+
 ## Watchdog Status (as of session start)
 
 The watchdog has been firing `harvest_lag` every 30 minutes since 13:58:26 today (7 alerts logged). Every alert fails to send to ntfy because `NTFY_URL` is not set in the server `.env`. The log is the only record.

@@ -445,6 +445,14 @@ Laptop (edit code)
 - **34 new tests** in `tests/test_web.py`: 9 `_is_private_ip`, 15 `_validate_url` (schemes, hostnames, IPs, DNS rebinding, DNS failure), 7 `fetch_url` (happy path, truncation, trafilatura fallback, SSRF blocked, redirect-to-private, HTTP error, size cap), 2 `get_tools` (fetch_url always present), 1 tool registry immutability
 - **Test count**: 423 (35 intent + 388 offline)
 
+**Done (as of Feb 25, 2026 — tool-call hallucination fix):**
+
+- **Root cause**: two failure modes observed in Telegram — (1) `run_health` has no tools, so when the user asked a compound question the LLM *narrated* a fake `git_status` call and invented plausible commit history; (2) "What's new in HVAC?" had no homelab context, so the LLM launched a `web_search` for HVAC technology trends.
+- **System prompt (`hal/main.py`)**: two new RULES — "never simulate a tool call or fabricate shell/command output in prose" and "only use `web_search` for explicit external software/CVE topics; ask to clarify otherwise"
+- **Output guard (`hal/server.py`)**: `_strip_tool_call_blocks()` — strips ` ```json {"name":...,"arguments":...} ``` ` fences from the final response before it reaches the user; real JSON (metrics, data) is left untouched
+- **Poison detection (`hal/memory.py`)**: extended `is_poison_response()` with `_POISON_FENCE_RE` — catches embedded code-fence tool-call blocks in prose (not just responses that start with `{`); prevents hallucinated turns from being saved to SQLite and re-injected into future sessions
+- **Test count**: 423 (35 intent + 388 offline) — all passing
+
 **Backlog:**
 
 See [ROADMAP.md](ROADMAP.md) for the full backlog and end-state roadmap. Summary:

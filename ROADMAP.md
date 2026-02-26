@@ -107,7 +107,12 @@ What's built, what's next, and where this is going.
 - Always in tool list (no API key); 3 agentic intent examples
 - 34 new tests: IP classification, URL validation/SSRF, fetch+extract, tool registry
 - Test count: 423 (35 intent + 388 offline)
-- Next: Step 3 (eval expansion for web access)
+
+### Feb 25, 2026 — Tool-call hallucination fix
+- System prompt: two new RULES blocking tool-call simulation in prose and unbounded `web_search` for off-topic queries
+- `hal/server.py`: `_strip_tool_call_blocks()` — output-layer guard strips hallucinated ` ```json {"name":...} ``` ` fences before the response reaches the user
+- `hal/memory.py`: extended `is_poison_response()` — catches both bare-JSON tool dumps (existing) and embedded code-fence tool-call blocks (new); prevents hallucinated turns from persisting to SQLite
+- Test count: 423 (35 intent + 388 offline) — all passing
 
 ---
 
