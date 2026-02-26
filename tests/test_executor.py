@@ -262,3 +262,64 @@ def test_write_default_timeout_remote(mock_run: MagicMock):
 
     _, kwargs = mock_run.call_args
     assert kwargs["timeout"] == 30, "default write timeout should be 30s"
+
+
+# --------------------------------------------------------------------------- #
+# Proof 8 — SSH connection-refused returns a stable failure dict
+# --------------------------------------------------------------------------- #
+
+
+@patch("hal.executor.subprocess.run")
+def test_remote_run_returns_failure_dict_on_unreachable_host(mock_run: MagicMock):
+    """SSH exit code 255 (unreachable host) must appear in the returned dict, not raise."""
+    mock_run.return_value = MagicMock(
+        returncode=255,
+        stdout="",
+        stderr="ssh: connect to host 10.0.0.99 port 22: Connection refused",
+    )
+    exe = SSHExecutor("10.0.0.99", "jp")
+
+    result = exe.run("uptime", timeout=5)
+
+    assert result["returncode"] == 255
+    assert "Connection refused" in result["stderr"]
+    assert result["stdout"] == ""
+    assert set(result.keys()) == EXPECTED_KEYS
+
+
+# --------------------------------------------------------------------------- #
+# Proof 9 — _MockExecutor interface contract
+# --------------------------------------------------------------------------- #
+
+
+def test_mock_executor_satisfies_sshexecutor_interface_contract():
+    """_MockExecutor.run() from eval/run_eval.py must return the same dict shape as SSHExecutor."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from eval.run_eval import _MockExecutor
+
+    exe = _MockExecutor("192.168.5.10", "jp")
+    result = exe.run("echo hello")
+
+    assert set(result.keys()) == EXPECTED_KEYS
+    assert result["returncode"] == 0
+    assert isinstance(result["stdout"], str)
+    assert isinstance(result["stderr"], str)
+
+
+def test_mock_executor_never_calls_subprocess(monkeypatch):
+    """_MockExecutor must not invoke subprocess.run — it is a pure stub."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from unittest.mock import patch as _patch
+
+    from eval.run_eval import _MockExecutor
+
+    exe = _MockExecutor("192.168.5.10", "jp")
+    with _patch("hal.executor.subprocess.run") as mock_run:
+        exe.run("rm -rf /")
+        mock_run.assert_not_called()
