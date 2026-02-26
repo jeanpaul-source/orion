@@ -1026,23 +1026,29 @@ def run_conversational(
 
     t0 = time.perf_counter()
     outcome = "ok"
-    messages = list(history) + [{"role": "user", "content": user_input}]
-    try:
-        response = llm.chat(messages, system=system).strip()
-    except Exception as e:
-        outcome = "llm_error"
-        response = f"Error calling model: {e}"
-    console.print(f"\n[bold cyan]hal>[/] {response}")
-    history.append({"role": "user", "content": user_input})
-    history.append({"role": "assistant", "content": response})
-    mem.save_turn(session_id, "user", user_input)
-    mem.save_turn(session_id, "assistant", response)
-    if len(history) > 40:
-        history[:] = history[-40:]
+    with get_tracer().start_as_current_span("hal.run_conversational") as span:
+        span.set_attribute("hal.session_id", session_id)
+        span.set_attribute("hal.query", user_input[:200])
+        set_context(session_id=session_id)
+        messages = list(history) + [{"role": "user", "content": user_input}]
+        try:
+            response = llm.chat(messages, system=system).strip()
+        except Exception as e:
+            outcome = "llm_error"
+            response = f"Error calling model: {e}"
+        span.set_attribute("hal.response_len", len(response))
+        console.print(f"\n[bold cyan]hal>[/] {response}")
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": response})
+        mem.save_turn(session_id, "user", user_input)
+        mem.save_turn(session_id, "assistant", response)
+        if len(history) > 40:
+            history[:] = history[-40:]
     dur = time.perf_counter() - t0
     REQ_LATENCY.observe(dur, intent="conversational")
     REQ_TOTAL.inc(intent="conversational", outcome=outcome)
     flush_metrics()
+    log.info("conversational turn", extra={"intent": "conversational"})
     return response
 
 
