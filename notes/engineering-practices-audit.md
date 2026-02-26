@@ -55,18 +55,20 @@ manipulation that violates E402/I001). **This is done correctly.**
 ### ⚠️ Type checking — `mypy` (warn-only)
 
 `mypy` runs via `make typecheck` but is **not** commit-gated. Current baseline:
-10 errors across 7 files. This is a deliberate starting position — enforcing strict
-mypy from day one on a project with third-party libs that lack stubs is painful.
+13 errors across 8 files (as of Feb 26, 2026). This is a deliberate starting
+position — enforcing strict mypy from day one on a project with third-party libs
+that lack stubs is painful.
 
-Risk: errors accumulate silently. Once the baseline is stable, specific high-value
-files (`judge.py`, `agent.py`) should be tightened to `--strict` incrementally.
+Risk: errors accumulate silently — the baseline has already drifted upward from
+the original 10 errors. Once the baseline is stable, specific high-value files
+(`judge.py`, `agent.py`) should be tightened to `--strict` incrementally.
 
 ### ✅ Testing — `pytest` + `pytest-cov`
 
-530 tests across two tiers:
+565 tests across two tiers:
 
 - **35 intent classifier tests** — require live Ollama (run on server)
-- **495 offline tests** — run anywhere, no external services needed
+- **530 offline tests** — run anywhere, no external services needed
 
 Coverage baseline: 34% (2,000 statements). Notable hotspots: `memory.py` 92%,
 `trust_metrics.py` 87%. Agent loop and security workers are under-covered.
@@ -97,19 +99,25 @@ Server-side push hook also runs `make lint` + `make test` as a secondary gate.
 
 ## Gaps — what is missing and why it matters
 
-### ❌ P1 — GitHub Actions CI
+### ⚠️ P1 — GitHub Actions CI (exists but incomplete)
 
-**What it is:** A `.github/workflows/ci.yml` that runs `make lint`, `make lint-md`,
-and `make test` on every push and pull request, in a clean environment.
+**What exists:** `.github/workflows/test.yml` already runs on push/PR to `main`.
+It checks ruff lint, ruff format, and mypy (warn-only via `continue-on-error`).
 
-**Why it matters:** The current server-side push hook is a custom shell script — it
-provides a gate but is not the same thing. CI is the universal safety net: it runs in
-a fresh environment (no "works on my machine"), produces a public green/red badge,
-blocks PRs from merging when broken, and catches any case where someone bypasses the
-local pre-commit hooks. **This is the single biggest gap.**
+**What's wrong with it:**
 
-**Effort:** ~20 lines in `.github/workflows/ci.yml`. Low risk, high value.
-See below for a draft.
+- **Only tests 3 of 17 test files** (`test_judge.py`, `test_memory.py`,
+  `test_agent_loop.py`) — 527 offline tests are skipped, giving false green.
+- **No markdownlint** — markdown regressions are not caught.
+- **Ad-hoc pip install** — installs `pytest ruff mypy` inline instead of using
+  `requirements-dev.txt`, causing version drift between CI and local dev.
+- **mypy `continue-on-error: true`** — can never gate, errors drift silently.
+
+**Why it matters:** Incomplete CI is worse than no CI — the green badge creates
+false confidence. Someone can push code that breaks 490+ tests and CI stays green.
+
+**Effort:** Update existing `test.yml` to use `make` targets and run all offline
+tests. ~15 min.
 
 ---
 
@@ -152,8 +160,9 @@ repo, single contributor) but grows as the project expands.
 **What it is:** Currently `make typecheck` produces output but never fails a commit
 or CI run. This means type errors accumulate silently.
 
-**Why it matters:** The project already has 10 mypy errors at baseline. Without a
-plan to address them, this number drifts upward and type checking becomes noise.
+**Why it matters:** The project started at 10 mypy errors and has already drifted
+to 13 errors in 8 files — exactly the failure mode predicted above. Without a plan
+to address them, the number continues upward and type checking becomes noise.
 
 **Recommended path:** Don't go `--strict` globally. Instead, add
 `# type: ignore` to known-broken third-party call sites, get the baseline to 0,
@@ -181,22 +190,22 @@ gating. `bandit` is a compile-time complement, not a replacement. Add as
 
 | Priority | Item | Effort | Value |
 | --- | --- | --- | --- |
-| **1** | GitHub Actions CI | 20 lines | Closes the "works on my machine" gap; public green badge |
+| **1** | Fix CI workflow (test.yml is incomplete) | 15 min | Stops false-green badge; gates all 530 offline tests |
 | **2** | Dependency pinning (`pip-compile`) | 15 min | Reproducible environments |
 | **3** | Secret scanning (`detect-secrets`) | 10 min | Prevents the unrecoverable mistake |
-| **4** | mypy graduation plan | ~1 hr | Type safety in security-critical paths |
+| **4** | mypy graduation plan (13→0 errors) | ~1 hr | Type safety in security-critical paths |
 | **5** | `bandit` security scan | 10 min | Defence-in-depth for subprocess usage |
 
-Items 2 and 3 have the best effort-to-risk ratio. Item 1 is the most important
-practice gap.
+Items 2 and 3 have the best effort-to-risk ratio. Item 1 is the most urgent because
+the current CI gives false confidence.
 
 ---
 
-## Draft: GitHub Actions CI workflow
+## Draft: replacement for `.github/workflows/test.yml`
 
 ```yaml
-# .github/workflows/ci.yml
-name: CI
+# .github/workflows/test.yml
+name: Test
 
 on:
   push:
@@ -225,21 +234,31 @@ jobs:
       - name: Lint (ruff)
         run: make lint
 
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Type check (warn-only)
+        run: make typecheck
+        continue-on-error: true
+
       - name: Lint (markdownlint)
         run: make lint-md
 
-      - name: Test (offline only — no Ollama in CI)
+      - name: Test (all offline — no Ollama in CI)
         run: make test
 ```
 
 Notes on the draft:
 
+- **Replaces** the existing incomplete `test.yml`, not a new file
 - Uses `actions/setup-python@v5` with pip cache — fast installs after first run
-- Runs only offline tests (`make test` = `--ignore=tests/test_intent.py`)
+- Installs from both requirements files (unlike the current ad-hoc install)
+- Runs **all 530 offline tests** via `make test` (not just 3 cherry-picked files)
 - Intent tests require live Ollama and cannot run in GitHub-hosted runners without
   a self-hosted runner pointed at the lab — that's a later enhancement
 - `make lint-md` works in CI because `pre-commit run` installs its own Node env
   via `pre-commit`'s isolation mechanism
+- mypy stays `continue-on-error: true` until the graduation plan (P4) is complete
 
 ---
 
