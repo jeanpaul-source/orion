@@ -25,7 +25,7 @@ What's built, what's next, and where this is going.
 - KB search threshold raised to 0.45, top_k raised to 8
 - Session history poison filter + `prune_old_turns(days=30)` — resolves RC3
 - 96 new unit tests for Judge and MemoryStore
-- Eval harness: 32 queries, 4 code evaluators — baselines: intent 100%, no_raw_json 93.8%, hal_identity 96.9%, web_tool_accuracy 96.9% (Feb 26 2026)
+- Eval harness: 32 queries, 4 code evaluators — baselines: intent 100%, no_raw_json 93.8%, hal_identity 96.9%, web_tool_accuracy 96.9% (Feb 23 2026); all four raised to 100% (Feb 26 2026)
 
 ### Feb 23, 2026 — Trust hardening
 - NTFY_URL configured — watchdog alerts now delivered
@@ -114,13 +114,20 @@ What's built, what's next, and where this is going.
 - `hal/memory.py`: extended `is_poison_response()` — catches both bare-JSON tool dumps (existing) and embedded code-fence tool-call blocks (new); prevents hallucinated turns from persisting to SQLite
 - Test count: 423 (35 intent + 388 offline) — all passing
 
+### Feb 26, 2026 — Eval fixes, swap investigation, integration tests
+- `hal/agent.py`: `_strip_tool_artifacts()` — strips bare `{"name":...,"arguments":...}` JSON leaked into prose after tool-loop exhaustion; applied inside `run_agent()` so all callers benefit
+- `hal/main.py`: identity rule extended — explicitly forbids naming underlying model, provider, or company in addition to first-person claims
+- `hal/main.py`: `web_search` permission strengthened to mandatory MUST directive for CVEs, vulnerabilities, release notes, version queries — with explicit date-authority statement to prevent training-data cutoff reasoning
+- `OPERATIONS.md`: swap trap documented — `/dev/zram0` is compressed in-RAM swap (not disk); 75 Mi used is normal; investigation found no remediation needed
+- Integration tests: `tests/test_knowledge.py` (13 tests, pgvector `KnowledgeBase.search()`), `tests/test_security.py` (17 tests, Falco/Osquery workers), `tests/test_executor.py` (+3, SSH executor), `tests/test_agent_loop.py` (+10, `_strip_tool_artifacts`), `tests/test_server.py` (+3, routing + fenced-block stripping)
+- Test count: 486 → 530 (all offline, ruff clean)
+- Eval re-run: all four metrics 100% (32/32 queries)
+
 ---
 
 ## Backlog (immediate)
 
-- **Swap investigation:** 7.3G/8G swap used despite 49G RAM free (Feb 21 2026) — root cause unknown
 - **Grafana Tempo:** `hal/tracing.py` emits OTel spans but no receiver is deployed — deploy Tempo container in monitoring stack
-- **Integration tests:** Zero coverage on SSH executor, pgvector search, HTTP server, security tools — these all require live services but should have smoke tests
 - **Web UI:** Lightweight browser interface using the same `/chat` HTTP endpoint
 
 ---
