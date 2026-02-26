@@ -273,6 +273,15 @@ filtered by default in `hal/security.py`. Do not suppress the rule globally in F
 (`/home/jp/vllm-env/bin/vllm`). If the venv location changes or the user is different,
 edit the unit file before deploying.
 
+**Swap on zram0 — not a leak:** The server uses `/dev/zram0` (8 Gi compressed in-RAM
+swap, not a disk partition). A few hundred MiB "used" there is normal — the kernel
+compresses cold pages into RAM itself. `vm.swappiness=10` ensures the kernel strongly
+prefers RAM; with 62 Gi total and typically only 6–8 Gi in active RSS, actual disk swap
+pressure never occurs. If `swapon -s` shows zram0 near capacity (~8 Gi used), the real
+culprit is the vLLM engine process (3–4 Gi RSS) combined with large buff/cache; reducing
+`--gpu-memory-utilization` in `ops/vllm.service` from 0.95 is the correct lever. Do not
+disable zram — removing it would not free RAM.
+
 ---
 
 ## Secrets
