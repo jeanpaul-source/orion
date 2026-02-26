@@ -367,3 +367,89 @@ def test_kb_context_not_injected_for_low_score_chunks():
     assert "Some weakly related config" not in user_msg["content"], (
         "Low-score KB chunk should NOT be injected into the user message."
     )
+
+
+# ---------------------------------------------------------------------------
+# 11. Planner/Critic gating — simple query skips sub-agents
+# ---------------------------------------------------------------------------
+
+
+def test_planner_critic_skipped_for_simple_query():
+    """Short non-action query should skip PlannerAgent/CriticAgent entirely."""
+    llm, kb, prom, executor, judge, mem = _make_mocks(
+        [
+            _make_text_msg("All good."),
+        ]
+    )
+    planner = MagicMock()
+    planner.run.return_value = "Step 1"
+    critic = MagicMock()
+    critic.run.return_value = "Looks good"
+
+    history: list[dict] = []
+    run_agent(
+        user_input="status?",
+        history=history,
+        llm=llm,
+        kb=kb,
+        prom=prom,
+        executor=executor,
+        judge=judge,
+        mem=mem,
+        session_id="s-simple",
+        system="You are HAL.",
+        console=_make_console(),
+        planner=planner,
+        critic=critic,
+    )
+
+    planner.run.assert_not_called()
+    critic.run.assert_not_called()
+    first_call_args = llm.chat_with_tools.call_args_list[0]
+    working_history = first_call_args[0][0]
+    user_msg = next(m for m in working_history if m.get("role") == "user")
+    assert "Planner's plan:" not in user_msg["content"]
+    assert "Critic's review:" not in user_msg["content"]
+
+
+# ---------------------------------------------------------------------------
+# 12. Planner/Critic gating — action-ish query uses sub-agents
+# ---------------------------------------------------------------------------
+
+
+def test_planner_critic_used_for_action_query():
+    """Action-ish query should run PlannerAgent and CriticAgent once."""
+    llm, kb, prom, executor, judge, mem = _make_mocks(
+        [
+            _make_text_msg("Restart plan complete."),
+        ]
+    )
+    planner = MagicMock()
+    planner.run.return_value = "1) restart prometheus"
+    critic = MagicMock()
+    critic.run.return_value = "Plan is safe and ordered"
+
+    history: list[dict] = []
+    run_agent(
+        user_input="restart prometheus and verify metrics",
+        history=history,
+        llm=llm,
+        kb=kb,
+        prom=prom,
+        executor=executor,
+        judge=judge,
+        mem=mem,
+        session_id="s-action",
+        system="You are HAL.",
+        console=_make_console(),
+        planner=planner,
+        critic=critic,
+    )
+
+    planner.run.assert_called_once()
+    critic.run.assert_called_once()
+    first_call_args = llm.chat_with_tools.call_args_list[0]
+    working_history = first_call_args[0][0]
+    user_msg = next(m for m in working_history if m.get("role") == "user")
+    assert "Planner's plan:" in user_msg["content"]
+    assert "Critic's review:" in user_msg["content"]

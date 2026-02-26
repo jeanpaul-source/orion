@@ -1,6 +1,7 @@
 """Agentic loop — LLM calls tools autonomously, Judge gates everything."""
 
 import json
+import re
 import textwrap
 
 from rich.console import Console
@@ -35,6 +36,46 @@ from hal.workers import (
 MAX_ITERATIONS = 8
 # Max unique tool calls per turn — loop also stops at MAX_ITERATIONS.
 MAX_TOOL_CALLS = 5
+
+# Planner/Critic gating: short non-action queries skip sub-agents.
+# Keep these explicit and easy to tune.
+PLANNER_CRITIC_SHORT_QUERY_WORDS = 7
+PLANNER_CRITIC_ACTION_VERBS = frozenset(
+    {
+        "apply",
+        "build",
+        "change",
+        "check",
+        "create",
+        "debug",
+        "delete",
+        "deploy",
+        "diagnose",
+        "edit",
+        "explain",
+        "fix",
+        "install",
+        "investigate",
+        "list",
+        "patch",
+        "reconfigure",
+        "reload",
+        "remove",
+        "repair",
+        "restart",
+        "rollback",
+        "run",
+        "scan",
+        "search",
+        "show",
+        "start",
+        "stop",
+        "troubleshoot",
+        "update",
+        "verify",
+        "write",
+    }
+)
 
 # Metrics (no-op unless PROM_PUSHGATEWAY is configured)
 REQ_TOTAL = Counter("hal_requests_total", labels=("intent", "outcome"))
@@ -464,6 +505,22 @@ def get_tools(*, tavily_api_key: str = "") -> list[dict]:
     return tools
 
 
+def _should_use_planner_critic(query: str) -> tuple[bool, str]:
+    """Deterministically decide if Planner/Critic should run.
+
+    Rules:
+    - Action-ish query (contains an action verb): use planner/critic.
+    - Long query (more than threshold words): use planner/critic.
+    - Otherwise (short + non-action): skip planner/critic.
+    """
+    words = re.findall(r"[a-z0-9']+", query.lower())
+    if any(word in PLANNER_CRITIC_ACTION_VERBS for word in words):
+        return True, "action_verb"
+    if len(words) > PLANNER_CRITIC_SHORT_QUERY_WORDS:
+        return True, "long_query"
+    return False, "short_non_action"
+
+
 def _dispatch(
     name: str,
     args: dict,
@@ -798,39 +855,51 @@ def run_agent(
         span.set_attribute("hal.query", user_input[:200])
         set_context(session_id=session_id)
 
-        # Sub-agents: Planner and Critic — plan and review before acting.
-        if planner is None:
-            planner = PlannerAgent(llm)
-        if critic is None:
-            critic = CriticAgent(llm)
-
         planner_plan = ""
         critic_review = ""
 
-        try:
-            planner_plan = planner.run(
-                user_input=user_input,
-                history=None,
-                session_id=session_id,
-            )
-            span.set_attribute("hal.planner_included", bool(planner_plan))
-        except Exception as e:
-            log.error("planner failed: %s", e, extra={"subagent": "Planner"})
-            span.set_attribute("hal.planner_error", True)
+        # Sub-agents: Planner and Critic — only for action-ish/complex queries.
+        use_planner_critic, gate_reason = _should_use_planner_critic(user_input)
+        span.set_attribute("hal.planner_critic_used", use_planner_critic)
+        span.set_attribute("hal.planner_critic_gate_reason", gate_reason)
 
-        if planner_plan:
+        if use_planner_critic:
+            if planner is None:
+                planner = PlannerAgent(llm)
+            if critic is None:
+                critic = CriticAgent(llm)
+
             try:
-                critic_review = critic.run(
+                planner_plan = planner.run(
                     user_input=user_input,
-                    plan=planner_plan,
                     history=None,
                     session_id=session_id,
                 )
-                span.set_attribute("hal.critic_included", bool(critic_review))
+                span.set_attribute("hal.planner_used", bool(planner_plan))
             except Exception as e:
-                log.error("critic failed: %s", e, extra={"subagent": "Critic"})
-                span.set_attribute("hal.critic_error", True)
+                log.error("planner failed: %s", e, extra={"subagent": "Planner"})
+                span.set_attribute("hal.planner_error", True)
+                span.set_attribute("hal.planner_used", False)
+
+            if planner_plan:
+                try:
+                    critic_review = critic.run(
+                        user_input=user_input,
+                        plan=planner_plan,
+                        history=None,
+                        session_id=session_id,
+                    )
+                    span.set_attribute("hal.critic_used", bool(critic_review))
+                except Exception as e:
+                    log.error("critic failed: %s", e, extra={"subagent": "Critic"})
+                    span.set_attribute("hal.critic_error", True)
+                    span.set_attribute("hal.critic_used", False)
+            else:
+                span.set_attribute("hal.critic_skipped", True)
+                span.set_attribute("hal.critic_used", False)
         else:
+            span.set_attribute("hal.planner_used", False)
+            span.set_attribute("hal.critic_used", False)
             span.set_attribute("hal.critic_skipped", True)
 
         # Seed the first message with KB context (fast, cheap, often helpful)
