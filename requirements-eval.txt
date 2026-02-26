@@ -1,0 +1,5 @@
+# Eval harness dependencies — heavy install, only needed for eval runs on the server.
+# Install with: .venv/bin/pip install -r requirements-eval.txt
+# Run: python -m eval.run_eval && python -m eval.evaluate
+
+azure-ai-evaluation>=0.4.0

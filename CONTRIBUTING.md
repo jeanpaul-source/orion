@@ -31,11 +31,25 @@ This applies to human contributors as much as AI ones.
 git clone https://github.com/jeanpaul-source/orion
 cd orion
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt   # pytest, ruff, mypy, pre-commit, pytest-cov
+pip install pip-tools
+pip-sync requirements.lock requirements-dev.lock   # reproducible install from lock files
 cp .env.example .env
 # Fill in PGVECTOR_DSN password
 .venv/bin/pre-commit install          # wire lint+format hooks into git
+```
+
+To update dependencies after editing `requirements.txt` or `requirements-dev.txt`:
+
+```bash
+.venv/bin/pip-compile requirements.txt --generate-hashes --allow-unsafe -o requirements.lock
+.venv/bin/pip-compile requirements-dev.txt --generate-hashes --allow-unsafe -o requirements-dev.lock
+pip-sync requirements.lock requirements-dev.lock
+```
+
+For eval work only (heavy install, server only):
+
+```bash
+.venv/bin/pip install -r requirements-eval.txt
 ```
 
 Laptop `.env` should have:
@@ -57,7 +71,7 @@ HAL_INSTANCE=laptop
 **Run before every push. No exceptions.**
 
 ```bash
-make test           # offline tests only (no Ollama needed) — 495 tests
+make test           # offline tests only (no Ollama needed) — 530 tests
 make test-full      # full suite including intent classifier (requires Ollama)
 ```
 
@@ -75,7 +89,7 @@ OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 
 - **35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
   reachable. Run these on the server if you can't reach Ollama from the laptop.
-- **495 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
+- **530 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
   trust_metrics, Telegram bot, parsers, harvest. Run anywhere with no external services.
 
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
@@ -93,7 +107,7 @@ Markdown linting (`markdownlint-cli2`) also runs as a pre-commit hook. Rules are
 make lint       # ruff check — catch errors and import issues
 make lint-md    # markdownlint-cli2 — markdown formatting
 make format     # ruff format — apply formatting
-make typecheck  # mypy — type check hal/ (warn-only; 10 errors in baseline)
+make typecheck  # mypy — type check hal/ (warn-only; 13 errors in baseline)
 make coverage   # pytest-cov — show coverage report for hal/ (baseline: 34%)
 ```
 
@@ -117,7 +131,7 @@ Commit readiness checklist:
 - `make lint` passes
 - `make lint-md` passes
 - `make format` produces no diffs
-- `make test` passes (all 495 offline tests)
+- `make test` passes (all 530 offline tests)
 
 ---
 
@@ -127,6 +141,9 @@ Run after any change that could affect response quality (intent routing, system 
 KB threshold, tool selection):
 
 ```bash
+# Install eval deps first (server only — not in requirements-dev.lock)
+.venv/bin/pip install -r requirements-eval.txt
+
 # On the server (requires vLLM + Ollama + pgvector running)
 python -m eval.run_eval                     # drives 24 queries → eval/responses.jsonl
 python -m eval.evaluate --skip-llm-eval    # scores → eval/results/eval_out.json
@@ -178,7 +195,7 @@ fix stuff                             ← which stuff?
 
 **One logical change per commit.** A commit is ready when:
 
-- `make test` passes (495 offline tests)
+- `make test` passes (all 530 offline tests)
 - `make lint` passes
 - `make lint-md` passes
 - `make format` produces no diffs

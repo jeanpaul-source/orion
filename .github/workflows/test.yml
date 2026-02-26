@@ -20,13 +20,13 @@ jobs:
 
       - name: Install dependencies
         # Creates .venv so all Makefile targets (which use .venv/bin/) work unchanged.
-        # azure-ai-evaluation is excluded — eval-only, heavy, run manually on server.
+        # Installs from lock files for reproducible builds.
+        # azure-ai-evaluation is in requirements-eval.txt (not requirements-dev.lock) — eval-only.
         # intent tests (test_intent.py) are excluded — require a live Ollama instance.
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r requirements.txt
-          grep -v "azure-ai-evaluation" requirements-dev.txt | .venv/bin/pip install -r /dev/stdin
+          .venv/bin/pip install -r requirements.lock -r requirements-dev.lock
 
       - name: Lint
         run: make lint
