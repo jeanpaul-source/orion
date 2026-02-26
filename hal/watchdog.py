@@ -17,6 +17,7 @@ from pathlib import Path
 import requests
 
 import hal.config as cfg
+from hal.falco_noise import is_falco_noise
 from hal.prometheus import PrometheusClient
 
 STATE_FILE = Path.home() / ".orion" / "watchdog_state.json"
@@ -28,31 +29,22 @@ FALCO_LOG = Path("/var/log/falco/events.json")
 FALCO_TAIL = 200
 _FALCO_ALERT_PRIORITIES = {"Emergency", "Alert", "Critical", "Error", "Warning"}
 
-# Replicated from hal/security.py — avoids pulling SSHExecutor/Judge deps into
-# a lightweight timer script.  Keep in sync manually.
-_WATCHDOG_FALCO_NOISE: list = [
-    lambda e: (
-        e.get("output_fields", {}).get("proc.name") == "pg_isready"
-        and "/etc/shadow" in e.get("output_fields", {}).get("fd.name", "")
-    ),
-    lambda e: (
-        e.get("output_fields", {}).get("proc.name")
-        in ("systemd-tmpfile", "unix_chkpwd", "systemd-userwork")
-        and "/etc/shadow" in e.get("output_fields", {}).get("fd.name", "")
-    ),
-]
-
-# metric_key: (threshold, label, urgency)
-THRESHOLDS: dict[str, tuple[float, str, str]] = {
-    "cpu_pct": (85.0, "CPU usage", "default"),
-    "mem_pct": (90.0, "Memory usage", "high"),
-    "disk_root_pct": (85.0, "Disk / usage", "high"),
-    "disk_docker_pct": (85.0, "Disk /docker usage", "high"),
-    "disk_data_pct": (85.0, "Disk /data/projects usage", "high"),
-    "swap_pct": (80.0, "Swap usage", "urgent"),
-    "load1": (16.0, "Load average", "default"),  # 16 on a 20-core machine
-    "gpu_vram_pct": (95.0, "GPU VRAM usage", "urgent"),
-    "gpu_temp_c": (83.0, "GPU temperature", "urgent"),  # 3090 Ti throttle point
+# metric_key: (threshold, label, urgency, unit)
+THRESHOLDS: dict[str, tuple[float, str, str, str]] = {
+    "cpu_pct": (85.0, "CPU usage", "default", "%"),
+    "mem_pct": (90.0, "Memory usage", "high", "%"),
+    "disk_root_pct": (85.0, "Disk / usage", "high", "%"),
+    "disk_docker_pct": (85.0, "Disk /docker usage", "high", "%"),
+    "disk_data_pct": (85.0, "Disk /data/projects usage", "high", "%"),
+    "swap_pct": (80.0, "Swap usage", "urgent", "%"),
+    "load1": (16.0, "Load average", "default", ""),  # 16 on a 20-core machine
+    "gpu_vram_pct": (95.0, "GPU VRAM usage", "urgent", "%"),
+    "gpu_temp_c": (
+        83.0,
+        "GPU temperature",
+        "urgent",
+        "\u00b0C",
+    ),  # 3090 Ti throttle point
 }
 
 
@@ -76,7 +68,7 @@ def _in_cooldown(state: dict, key: str) -> bool:
     return datetime.now() - last_dt < timedelta(minutes=COOLDOWN_MINUTES)
 
 
-def _send_ntfy(ntfy_url: str, alerts: list[tuple[str, float, float, str]]) -> bool:
+def _send_ntfy(ntfy_url: str, alerts: list[tuple[str, float, float, str, str]]) -> bool:
     """Send a bundled ntfy notification. Returns True on success."""
     if not ntfy_url:
         return False
@@ -84,8 +76,8 @@ def _send_ntfy(ntfy_url: str, alerts: list[tuple[str, float, float, str]]) -> bo
     lines = []
     max_urgency = "default"
     urgency_order = {"default": 0, "high": 1, "urgent": 2}
-    for label, value, threshold, urgency in alerts:
-        lines.append(f"{label}: {value:.1f}% (threshold: {threshold:.0f}%)")
+    for label, value, threshold, urgency, unit in alerts:
+        lines.append(f"{label}: {value:.1f}{unit} (threshold: {threshold:.0f}{unit})")
         if urgency_order.get(urgency, 0) > urgency_order.get(max_urgency, 0):
             max_urgency = urgency
 
@@ -239,7 +231,7 @@ def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if any(f(event) for f in _WATCHDOG_FALCO_NOISE):
+        if is_falco_noise(event):
             continue
         priority = event.get("priority", "")
         if priority not in _FALCO_ALERT_PRIORITIES:
@@ -283,17 +275,17 @@ def run() -> None:
 
     state = _load_state()
     alerts: list[
-        tuple[str, float, float, str]
-    ] = []  # (label, value, threshold, urgency)
+        tuple[str, float, float, str, str]
+    ] = []  # (label, value, threshold, urgency, unit)
     fired: list[str] = []
 
-    for key, (threshold, label, urgency) in THRESHOLDS.items():
+    for key, (threshold, label, urgency, unit) in THRESHOLDS.items():
         value = metrics.get(key)
         if value is None:
             continue
         if value >= threshold:
             if not _in_cooldown(state, key):
-                alerts.append((label, value, threshold, urgency))
+                alerts.append((label, value, threshold, urgency, unit))
                 fired.append(key)
                 _log(f"ALERT  {key}={value:.1f} (>={threshold:.0f})")
         else:
@@ -303,7 +295,9 @@ def run() -> None:
                 _log(f"CLEAR  {key}={value:.1f}")
                 _send_ntfy_simple(
                     config.ntfy_url,
-                    [f"{label} recovered: {value:.1f} (threshold: {threshold:.0f})"],
+                    [
+                        f"{label} recovered: {value:.1f}{unit} (threshold: {threshold:.0f}{unit})"
+                    ],
                     urgency="low",
                     title="Orion RESOLVED \u2014 the-lab",
                     tags="white_check_mark,server",

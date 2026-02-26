@@ -15,31 +15,8 @@ import shlex
 import xml.etree.ElementTree as ET
 
 from hal.executor import SSHExecutor
+from hal.falco_noise import is_falco_noise
 from hal.judge import Judge
-
-# ---------------------------------------------------------------------------
-# Noise filters for Falco events
-# Each filter is a callable (event_dict) -> bool.  Return True to DROP.
-# ---------------------------------------------------------------------------
-
-_FALCO_NOISE: list = [
-    # pg_isready polls /etc/shadow — known, benign, extremely noisy
-    lambda e: (
-        e.get("output_fields", {}).get("proc.name") == "pg_isready"
-        and "/etc/shadow" in e.get("output_fields", {}).get("fd.name", "")
-    ),
-    # systemd-tmpfile reads /etc/shadow on boot — not interesting
-    lambda e: (
-        e.get("output_fields", {}).get("proc.name")
-        in ("systemd-tmpfile", "unix_chkpwd")
-        and "/etc/shadow" in e.get("output_fields", {}).get("fd.name", "")
-    ),
-]
-
-
-def _is_noise(event: dict) -> bool:
-    return any(f(event) for f in _FALCO_NOISE)
-
 
 # ---------------------------------------------------------------------------
 # 1. Falco security events
@@ -76,7 +53,7 @@ def get_security_events(
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if _is_noise(event):
+        if is_falco_noise(event):
             continue
         fields = event.get("output_fields", {})
         events.append(
