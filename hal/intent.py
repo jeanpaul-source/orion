@@ -73,6 +73,9 @@ EXAMPLES: dict[str, list[str]] = {
         "what's the system status?",
         "how busy is the server?",
         "any resource issues right now?",
+        "what is the current memory usage?",
+        "how much disk space is left?",
+        "current cpu usage",
     ],
     "fact": [
         "what port does prometheus run on?",
