@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 from hal.executor import SSHExecutor
 from hal.judge import Judge
@@ -35,20 +35,25 @@ from hal.workers import (
 )
 
 
+class ToolContext(NamedTuple):
+    """Shared runtime dependencies threaded through every tool handler.
+
+    Construct once per agent turn at the ``dispatch_tool`` / ``run_agent``
+    boundary.  Adding a new shared dependency only requires changing this class
+    and its single construction site — not every handler signature.
+    """
+
+    executor: "SSHExecutor"
+    judge: "Judge"
+    kb: "KnowledgeBase"
+    prom: "PrometheusClient"
+    ntopng_url: str = "http://localhost:3000"
+    tavily_api_key: str = ""
+
+
 class ToolSpec(TypedDict):
     schema: dict
-    handler: Callable[
-        [
-            dict,
-            SSHExecutor,
-            Judge,
-            KnowledgeBase,
-            PrometheusClient,
-            str,
-            str,
-        ],
-        str,
-    ]
+    handler: Callable[[dict, ToolContext], str]
     enabled: Callable[[str], bool]
 
 
@@ -60,20 +65,12 @@ def _tavily_enabled(tavily_api_key: str) -> bool:
     return bool(tavily_api_key)
 
 
-def _handle_run_command(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_run_command(args: dict, ctx: ToolContext) -> str:
     command = args.get("command") or ""
     reason = args.get("reason") or ""
-    if not judge.approve("run_command", command, reason=reason):
+    if not ctx.judge.approve("run_command", command, reason=reason):
         return "Action denied by user."
-    result = executor.run(command)
+    result = ctx.executor.run(command)
     parts = []
     if result["stdout"].strip():
         parts.append(result["stdout"].strip())
@@ -84,49 +81,25 @@ def _handle_run_command(
     return "\n".join(parts) or "(no output)"
 
 
-def _handle_read_file(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_read_file(args: dict, ctx: ToolContext) -> str:
     path = args.get("path") or ""
     reason = args.get("reason") or ""
-    content = read_file(path, executor, judge, reason=reason)
+    content = read_file(path, ctx.executor, ctx.judge, reason=reason)
     return content if content is not None else f"Could not read {path}"
 
 
-def _handle_list_dir(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_list_dir(args: dict, ctx: ToolContext) -> str:
     path = args.get("path") or ""
     reason = args.get("reason") or ""
-    output = list_dir(path, executor, judge, reason=reason)
+    output = list_dir(path, ctx.executor, ctx.judge, reason=reason)
     return output if output is not None else f"Could not list {path}"
 
 
-def _handle_write_file(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_write_file(args: dict, ctx: ToolContext) -> str:
     path = args.get("path") or ""
     content = args.get("content") or ""
     reason = args.get("reason") or ""
-    ok = write_file(path, content, executor, judge, reason=reason)
+    ok = write_file(path, content, ctx.executor, ctx.judge, reason=reason)
     return (
         f"Written {len(content)} bytes to {path}"
         if ok
@@ -134,18 +107,10 @@ def _handle_write_file(
     )
 
 
-def _handle_search_kb(
-    args: dict,
-    _executor: SSHExecutor,
-    _judge: Judge,
-    kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_search_kb(args: dict, ctx: ToolContext) -> str:
     query = args.get("query") or ""
     try:
-        chunks = kb.search(query, top_k=8)
+        chunks = ctx.kb.search(query, top_k=8)
         lines = []
         for c in chunks:
             if c["score"] < 0.45:
@@ -158,77 +123,37 @@ def _handle_search_kb(
         return f"KB search failed: {e}"
 
 
-def _handle_patch_file(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_patch_file(args: dict, ctx: ToolContext) -> str:
     path = args.get("path") or ""
     old_str = args.get("old_str") or ""
     new_str = args.get("new_str") or ""
     reason = args.get("reason") or ""
-    return patch_file(path, old_str, new_str, executor, judge, reason=reason)
+    return patch_file(path, old_str, new_str, ctx.executor, ctx.judge, reason=reason)
 
 
-def _handle_git_status(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_git_status(args: dict, ctx: ToolContext) -> str:
     repo_path = args.get("repo_path") or ""
     reason = args.get("reason") or ""
-    return git_status(repo_path, executor, judge, reason=reason)
+    return git_status(repo_path, ctx.executor, ctx.judge, reason=reason)
 
 
-def _handle_git_diff(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_git_diff(args: dict, ctx: ToolContext) -> str:
     repo_path = args.get("repo_path") or ""
     ref = args.get("ref") or "HEAD"
     reason = args.get("reason") or ""
-    return git_diff(repo_path, executor, judge, ref=ref, reason=reason)
+    return git_diff(repo_path, ctx.executor, ctx.judge, ref=ref, reason=reason)
 
 
-def _handle_get_metrics(
-    args: dict,
-    _executor: SSHExecutor,
-    _judge: Judge,
-    _kb: KnowledgeBase,
-    prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_get_metrics(args: dict, ctx: ToolContext) -> str:
     _ = args
     try:
-        h = prom.health()
+        h = ctx.prom.health()
         return "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
     except Exception as e:
         return f"Metrics unavailable: {e}"
 
 
-def _handle_get_action_stats(
-    args: dict,
-    _executor: SSHExecutor,
-    _judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
     pattern = args.get("action_pattern") or ""
     if not pattern:
         return "Error: action_pattern is required."
@@ -239,86 +164,50 @@ def _handle_get_action_stats(
         return f"get_action_stats failed: {e}"
 
 
-def _handle_get_security_events(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_get_security_events(args: dict, ctx: ToolContext) -> str:
     n = int(args.get("n", 50))
     reason = args.get("reason") or ""
-    events = get_security_events(executor, judge, n=n, reason=reason)
+    events = get_security_events(ctx.executor, ctx.judge, n=n, reason=reason)
     return json.dumps(events, indent=2)
 
 
-def _handle_get_host_connections(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_get_host_connections(args: dict, ctx: ToolContext) -> str:
     reason = args.get("reason") or ""
-    data = get_host_connections(executor, judge, reason=reason)
+    data = get_host_connections(ctx.executor, ctx.judge, reason=reason)
     return json.dumps(data, indent=2) if data else "Denied."
 
 
-def _handle_get_traffic_summary(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_get_traffic_summary(args: dict, ctx: ToolContext) -> str:
     top_flows = int(args.get("top_flows", 20))
     reason = args.get("reason") or ""
     data = get_traffic_summary(
-        executor, judge, ntopng_url=ntopng_url, top_flows=top_flows, reason=reason
+        ctx.executor,
+        ctx.judge,
+        ntopng_url=ctx.ntopng_url,
+        top_flows=top_flows,
+        reason=reason,
     )
     return json.dumps(data, indent=2) if data else "Denied."
 
 
-def _handle_scan_lan(
-    args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_scan_lan(args: dict, ctx: ToolContext) -> str:
     subnet = args.get("subnet") or ""
     reason = args.get("reason") or ""
     if not subnet:
         return "Error: subnet is required."
-    hosts = scan_lan(subnet, executor, judge, reason=reason)
+    hosts = scan_lan(subnet, ctx.executor, ctx.judge, reason=reason)
     return json.dumps(hosts, indent=2)
 
 
-def _handle_web_search(
-    args: dict,
-    _executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    tavily_api_key: str,
-) -> str:
+def _handle_web_search(args: dict, ctx: ToolContext) -> str:
     query = args.get("query") or ""
     reason = args.get("reason") or ""
-    if not judge.approve("web_search", query, reason=reason):
+    if not ctx.judge.approve("web_search", query, reason=reason):
         return "Web search denied by policy."
-    if not tavily_api_key:
+    if not ctx.tavily_api_key:
         return "web_search is disabled — TAVILY_API_KEY is not configured."
     try:
-        results = _web_search(query, api_key=tavily_api_key)
+        results = _web_search(query, api_key=ctx.tavily_api_key)
         lines = []
         for r in results:
             lines.append(f"**{r['title']}**")
@@ -332,18 +221,10 @@ def _handle_web_search(
         return f"Web search failed: {e}"
 
 
-def _handle_fetch_url(
-    args: dict,
-    _executor: SSHExecutor,
-    judge: Judge,
-    _kb: KnowledgeBase,
-    _prom: PrometheusClient,
-    _ntopng_url: str,
-    _tavily_api_key: str,
-) -> str:
+def _handle_fetch_url(args: dict, ctx: ToolContext) -> str:
     url = args.get("url") or ""
     reason = args.get("reason") or ""
-    if not judge.approve("fetch_url", url, reason=reason):
+    if not ctx.judge.approve("fetch_url", url, reason=reason):
         return "URL fetch denied by policy."
     try:
         return _fetch_url(url)
@@ -832,23 +713,10 @@ def get_tools(*, tavily_api_key: str = "") -> list[dict]:
 def dispatch_tool(
     name: str,
     args: dict,
-    executor: SSHExecutor,
-    judge: Judge,
-    kb: KnowledgeBase,
-    prom: PrometheusClient,
-    ntopng_url: str = "http://localhost:3000",
-    tavily_api_key: str = "",
+    ctx: ToolContext,
 ) -> str:
     """Dispatch a tool by registry lookup, preserving legacy error contract."""
     spec = TOOL_REGISTRY.get(name)
     if spec is None:
         return f"Unknown tool: {name}"
-    return spec["handler"](
-        args,
-        executor,
-        judge,
-        kb,
-        prom,
-        ntopng_url,
-        tavily_api_key,
-    )
+    return spec["handler"](args, ctx)

@@ -15,7 +15,7 @@ from hal.logging_utils import get_logger, set_context
 from hal.memory import MemoryStore
 from hal.prometheus import Counter, Histogram, PrometheusClient, flush_metrics
 from hal.sanitize import strip_tool_call_artifacts
-from hal.tools import dispatch_tool, get_tools
+from hal.tools import ToolContext, dispatch_tool, get_tools
 from hal.tracing import get_tracer
 
 MAX_ITERATIONS = 8
@@ -416,12 +416,14 @@ def run_agent(
                         result = dispatch_tool(
                             name,
                             raw_args,
-                            executor,
-                            judge,
-                            kb,
-                            prom,
-                            ntopng_url,
-                            tavily_api_key,
+                            ToolContext(
+                                executor=executor,
+                                judge=judge,
+                                kb=kb,
+                                prom=prom,
+                                ntopng_url=ntopng_url,
+                                tavily_api_key=tavily_api_key,
+                            ),
                         )
                         TOOL_CALLS_TOTAL.inc(tool=name, outcome="ok")
                     except Exception as e:

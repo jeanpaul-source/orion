@@ -114,7 +114,7 @@ def test_dispatch_integration_via_agent_tool(tmp_path, monkeypatch):
     # Minimal dispatcher path using hal.tools.dispatch_tool
     from unittest.mock import MagicMock
 
-    from hal.tools import dispatch_tool
+    from hal.tools import ToolContext, dispatch_tool
 
     kb = MagicMock()
     prom = MagicMock()
@@ -124,10 +124,7 @@ def test_dispatch_integration_via_agent_tool(tmp_path, monkeypatch):
     out = dispatch_tool(
         "get_action_stats",
         {"action_pattern": "docker restart"},
-        executor,
-        judge,
-        kb,
-        prom,
+        ToolContext(executor=executor, judge=judge, kb=kb, prom=prom),
     )
     data = json.loads(out)
     assert data["total"] == 1

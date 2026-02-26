@@ -2,7 +2,14 @@
 
 from unittest.mock import MagicMock
 
-from hal.tools import TOOL_REGISTRY, dispatch_tool, get_tools
+from hal.tools import TOOL_REGISTRY, ToolContext, dispatch_tool, get_tools
+
+_CTX = ToolContext(
+    executor=MagicMock(),
+    judge=MagicMock(),
+    kb=MagicMock(),
+    prom=MagicMock(),
+)
 
 
 def test_get_tools_registry_parity_with_and_without_tavily_key():
@@ -23,10 +30,7 @@ def test_dispatch_tool_unknown_name_returns_clear_error():
     out = dispatch_tool(
         name="does_not_exist",
         args={},
-        executor=MagicMock(),
-        judge=MagicMock(),
-        kb=MagicMock(),
-        prom=MagicMock(),
+        ctx=_CTX,
     )
     assert out == "Unknown tool: does_not_exist"
 
@@ -44,10 +48,7 @@ def test_dispatch_tool_uses_registry_handler():
         out = dispatch_tool(
             name="search_kb",
             args={"query": "x"},
-            executor=MagicMock(),
-            judge=MagicMock(),
-            kb=MagicMock(),
-            prom=MagicMock(),
+            ctx=_CTX,
         )
     finally:
         TOOL_REGISTRY["search_kb"] = original
