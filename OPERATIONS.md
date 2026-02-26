@@ -7,13 +7,14 @@ Deploy, configure, and run Orion/HAL on the homelab server.
 ## Prerequisites
 
 **On the machine running HAL (server or laptop with `USE_SSH_TUNNEL=true`):**
+
 - Python 3.11+
 - SSH key-based access to `LAB_HOST` (no password prompt on connect)
 
 **On the server (`the-lab`, `192.168.5.10`):**
 
 | Service | How it runs | Port | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | vLLM | user systemd `vllm.service` | 8000 | Chat LLM — must be fully loaded before starting HAL |
 | Ollama | system systemd | 11434 | Embeddings only, CPU-bound — `OLLAMA_NUM_GPU=0` is load-bearing |
 | pgvector | Docker | 5432 | PostgreSQL + pgvector extension |
@@ -38,11 +39,13 @@ cp .env.example .env
 ```
 
 Fill in `PGVECTOR_DSN` password from the server:
+
 ```bash
 cat /run/homelab-secrets/pgvector-kb.env
 ```
 
 Then run the initial harvest to populate the knowledge base:
+
 ```bash
 python -m harvest
 ```
@@ -55,7 +58,7 @@ All variables have defaults in `config.py`. Server `.env` uses `localhost`. Lapt
 uses the server IP and `USE_SSH_TUNNEL=true`.
 
 | Variable | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `VLLM_URL` | `http://localhost:8000` | vLLM OpenAI-compatible API — `localhost` on server, tunneled on laptop |
 | `CHAT_MODEL` | `Qwen/Qwen2.5-32B-Instruct-AWQ` | Must exactly match the model loaded in vLLM |
 | `OLLAMA_HOST` | `http://192.168.5.10:11434` | Embeddings only — do not point at vLLM |
@@ -119,6 +122,7 @@ journalctl --user -u vllm -f
 ```
 
 **Load-bearing environment variables** in the unit file — do not remove:
+
 - `VLLM_USE_FLASHINFER_SAMPLER=0` — fixes CUDA device-side assert crash on RTX 3090 Ti
 - `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` — prevents KV cache OOM under load
 
@@ -126,6 +130,7 @@ vLLM takes 60–90 seconds to load the model. HAL's `ping()` checks the `/health
 which returns 200 only when the model is fully loaded (not on API server start).
 
 To update the unit file:
+
 ```bash
 cp ops/vllm.service ~/.config/systemd/user/vllm.service
 systemctl --user daemon-reload && systemctl --user restart vllm.service
@@ -161,7 +166,7 @@ python -m harvest --dry-run   # preview only
 The harvest pipeline populates a three-layer knowledge base via the `doc_tier` column:
 
 | Tier | Source | Harvest behavior |
-|------|--------|-----------------|
+| --- | --- | --- |
 | `ground-truth` | `knowledge/*.md` in the repo | Cleared and re-ingested every run |
 | `reference` | `/data/orion/orion-data/documents/raw` (HTML, PDF, text) | Incremental — unchanged docs skipped via content hash; orphan rows cleaned |
 | `live-state` | Docker, systemd, disk, memory, ports, hardware, configs | Cleared and re-ingested every run |
@@ -257,6 +262,7 @@ override must also be `9091`. Do not "fix" it to 9090.
 **SQLite init race:** If HAL crashes between opening `~/.orion/memory.db` and completing
 schema init, the file is left as an empty schema-0 database. Next start fails with
 `sqlite3.OperationalError: disk I/O error`. Fix:
+
 ```bash
 rm ~/.orion/memory.db   # HAL recreates it on next launch
 ```
@@ -289,6 +295,7 @@ disable zram — removing it would not free RAM.
 Managed by SOPS + `homelab-secrets.service` (tmpfs at `/run/homelab-secrets/`).
 
 Secret files available at runtime:
+
 - `monitoring-stack.env` — Grafana credentials
 - `pgvector-kb.env` — pgvector DB password
 - `agent-zero.env` — (legacy, unused)
