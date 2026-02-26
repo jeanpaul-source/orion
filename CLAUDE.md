@@ -122,11 +122,11 @@ HAL is fully operational on the-lab (192.168.5.10). All core components working:
 - **Knowledge base**: ~19,900 chunks in pgvector; three-layer model (ground-truth, reference, live-state, memory); nightly harvest at 3am
 - **Security**: Falco, Osquery, ntopng, Nmap workers — all Judge-gated
 - **Web tools**: `web_search` (Tavily, conditional on API key), `fetch_url` (SSRF-protected)
-- **Interfaces**: terminal REPL, FastAPI HTTP server (`/chat`, `/health`), Telegram bot
+- **Interfaces**: terminal REPL (`/postmortem` and all slash commands), FastAPI HTTP server (`/chat`, `/health`), Telegram bot
 - **Monitoring**: watchdog (CPU, mem, disk x3, swap, load, GPU VRAM/temp, NTP, containers, Falco); ntfy alerts + recovery notifications
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 544 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 552 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

@@ -181,6 +181,21 @@ Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, 
   route to the tool loop, not the health fast-path
 - Test count: 534 → 544 (all offline, ruff clean)
 
+### Feb 26, 2026 — `/postmortem` command (end-state capability #4)
+
+- `hal/postmortem.py`: `gather_postmortem_context(description, window_hours, prom, executor, judge)`
+  collects three evidence layers — audit log (non-trivial + denied events within window),
+  Prometheus health snapshot + cpu/mem/disk_docker trends, Falco security events (noise-filtered).
+  All layers wrapped in try/except; each returns `"unavailable"` on error rather than raising.
+- `/postmortem <desc> [--hours N]` slash command in terminal REPL — default window 2h;
+  prints `"Gathering evidence..."` status, calls `gather_postmortem_context()`, then
+  invokes `run_agent()` with a postmortem-scoped system prompt override.
+- Added to `/help` display alongside other slash commands.
+- `tests/test_postmortem.py`: 8 offline tests covering window filtering, tier-0 denial
+  inclusion, Prometheus error resilience, Falco error resilience (exception + error dict),
+  usage guard, and `--hours` parsing.
+- Test count: 544 → 552 (all offline, ruff clean)
+
 ---
 
 ## Backlog (immediate)
@@ -250,14 +265,14 @@ rising/falling/stable summaries with delta and rate-per-hour. Covers the reactiv
 "is /docker disk growing fast?" answered on demand. Remaining proactive piece: a background
 loop that watches key trends automatically and fires ntfy before thresholds hit.
 
-### 4. Post-incident synthesis
+### 4. Post-incident synthesis ✓ delivered Feb 26, 2026
 
 After something goes wrong, HAL reconstructs the timeline from its audit log, Prometheus,
 Falco events, and session history, and writes a brief post-mortem.
 
-All the raw material exists. The missing piece: a `/postmortem <incident-description>`
-command that invokes the agent loop with a specific system prompt framing the task as
-"reconstruct and synthesize the timeline."
+`/postmortem <incident-description> [--hours N]` delivered — collects audit log, Prometheus
+trends, and Falco events into a context block, then invokes the agent loop with a
+postmortem-scoped system prompt. See `hal/postmortem.py` and the `/postmortem` REPL command.
 
 ### 5. Trust evolution
 
