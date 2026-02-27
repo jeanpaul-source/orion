@@ -1,4 +1,5 @@
 """Security workers — read Falco alerts, Osquery host state, ntopng traffic,
+# why locked: Layer 3 — Falco/Osquery security tools; requires Judge hardening at Layer 0 first
 and run Nmap LAN scans.
 
 All read operations are tier 0 (auto-approved).  scan_lan is tier 1 (active
@@ -14,8 +15,10 @@ import json
 import shlex
 import xml.etree.ElementTree as ET
 
+from hal._unlocked.falco_noise import (
+    is_falco_noise,  # why: falco_noise is locked alongside security (Layer 3)
+)
 from hal.executor import SSHExecutor
-from hal.falco_noise import is_falco_noise
 from hal.judge import Judge
 
 # ---------------------------------------------------------------------------

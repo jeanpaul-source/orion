@@ -1,4 +1,5 @@
 """Trust metrics — parse Judge audit log and compute simple action statistics.
+# why locked: Layer 3 — audit log analytics; depends on stable Judge audit format
 
 Provides:
 - load_audit_log(path): parse ~/.orion/audit.log entries into AuditEvent objects

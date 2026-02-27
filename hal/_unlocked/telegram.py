@@ -1,4 +1,5 @@
 """Telegram bot interface for HAL.
+# why locked: Layer 4 — Telegram bot interface; reactivate after server.py (Layer 4) is stable
 
 Thin async wrapper that POSTs to the HAL HTTP server's ``/chat`` endpoint.
 Inherits ``ServerJudge`` behaviour (tier 0 only — no interactive approvals).

@@ -10,14 +10,14 @@ import time
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import hal.postmortem as pm
-from hal.postmortem import (
+import hal._unlocked.postmortem as pm
+from hal._unlocked.postmortem import (
     _audit_section,
     _falco_section,
     _prometheus_section,
     gather_postmortem_context,
 )
-from hal.trust_metrics import AuditEvent
+from hal._unlocked.trust_metrics import AuditEvent
 
 # ---------------------------------------------------------------------------
 # Helpers

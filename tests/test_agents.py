@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from hal.agents import (
+from hal._unlocked.agents import (
     CRITIC_SYSTEM_PROMPT,
     PLANNER_SYSTEM_PROMPT,
     CriticAgent,

@@ -1,4 +1,5 @@
 """Falco noise filter rules — shared by security.py and watchdog.py.
+# why locked: Layer 3 — Falco noise filter; locked with security.py
 
 This module deliberately has ZERO imports from hal.* to keep the watchdog
 timer lightweight (no Judge, Executor, or LLM deps load when this is imported).

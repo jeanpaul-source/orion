@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from hal.intent import IntentClassifier
+from hal._unlocked.intent import IntentClassifier
 from hal.llm import OllamaClient
 
 # Read Ollama URL from environment, defaulting to server-local address.

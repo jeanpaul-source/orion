@@ -1,4 +1,5 @@
 """Sub-agent abstractions for HAL: Planner and Critic.
+# why locked: Layer 2 — Planner/Critic sub-agents; only activated after Layer 1 is hardened
 
 These are "thinker" agents that never call tools directly. They use
 VLLMClient under the hood with specialized system prompts to:

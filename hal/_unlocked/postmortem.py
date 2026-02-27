@@ -1,4 +1,5 @@
 """Post-incident evidence gathering for the /postmortem slash command.
+# why locked: Layer 3 — depends on security and trust_metrics (both Layer 3)
 
 Provides a single pure function, gather_postmortem_context(), that collects
 audit log events, Prometheus metric snapshots/trends, and Falco security events
@@ -14,11 +15,15 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
+from hal._unlocked.security import (
+    get_security_events,  # why: security is locked (Layer 3)
+)
+from hal._unlocked.trust_metrics import (
+    load_audit_log,  # why: trust_metrics is locked (Layer 3)
+)
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.prometheus import PrometheusClient
-from hal.security import get_security_events
-from hal.trust_metrics import load_audit_log
 
 # PromQL expressions for the three trend metrics (mirrors PrometheusClient.health())
 _CPU_PROMQL = '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'

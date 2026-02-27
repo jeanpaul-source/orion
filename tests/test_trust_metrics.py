@@ -7,7 +7,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hal.trust_metrics import aggregate_stats, get_action_stats, load_audit_log
+from hal._unlocked.trust_metrics import (
+    aggregate_stats,
+    get_action_stats,
+    load_audit_log,
+)
 
 # Original sample log in legacy pipe format is now replaced with JSON equivalents.
 # The legacy parser (_parse_legacy_line) was deleted in N7 because the JSON format

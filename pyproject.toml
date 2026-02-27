@@ -14,7 +14,8 @@ select = ["E4", "E7", "E9", "F", "I"]
 # server.py manipulates sys.path before importing hal.* (required when run
 # directly as a script).  E402 = module-level import not at top of file;
 # I001 = isort treats the sys.path block as separating two import groups.
-"hal/server.py" = ["E402", "I001"]
+# why: path updated when server.py moved to hal/_unlocked/ (Layer 4 lock)
+"hal/_unlocked/server.py" = ["E402", "I001"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -26,9 +26,9 @@ from rich.console import Console
 
 # ── HAL imports ─────────────────────────────────────────────────────────────
 import hal.config as cfg
+from hal._unlocked.intent import IntentClassifier
 from hal.agent import run_agent
 from hal.executor import SSHExecutor
-from hal.intent import IntentClassifier
 from hal.judge import Judge, tier_for
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient

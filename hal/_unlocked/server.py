@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """HAL HTTP server — FastAPI wrapper around the HAL agent.
+# why locked: Layer 4 — FastAPI HTTP interface; reactivate after REPL (Layer 0) is bulletproof
 
 Run directly:    python hal/server.py [--host 127.0.0.1] [--port 8087]
 Or via module:   python -m hal.server
@@ -39,7 +40,9 @@ import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
 from hal.sanitize import strip_tool_call_artifacts
-from hal.intent import IntentClassifier
+from hal._unlocked.intent import (
+    IntentClassifier,
+)  # why: intent routing is locked (Layer 1)
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
