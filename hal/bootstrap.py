@@ -237,6 +237,68 @@ def setup_clients(
 # ---------------------------------------------------------------------------
 
 
+def _handle_health(
+    user_input: str,
+    history: list,
+    llm: VLLMClient,
+    prom: PrometheusClient,
+    mem: MemoryStore,
+    session_id: str,
+    system_prompt: str,
+    console: Console,
+) -> str | None:
+    """Answer health/status queries using a Prometheus snapshot + single LLM call.
+
+    Returns None if Prometheus is unavailable so dispatch_intent can fall back
+    to run_agent, which can diagnose and report the outage.
+
+    # why: "how's the CPU?" only needs a Prometheus snapshot — routing it through
+    # the full 8-iteration tool loop wastes 3-5 LLM round-trips and can trigger
+    # spurious KB lookups or command calls for a simple status question.
+    """
+    try:
+        metrics = prom.health()
+    except Exception:
+        # Prometheus unreachable — signal dispatch_intent to use the full agent loop,
+        # which can call get_metrics and explain why it failed.
+        return None
+
+    def _fmt(val: object, suffix: str = "") -> str:
+        return f"{val}{suffix}" if val is not None else "unavailable"
+
+    snapshot = (
+        f"cpu={_fmt(metrics.get('cpu_pct'), '%')} "
+        f"mem={_fmt(metrics.get('mem_pct'), '%')} "
+        f"disk_root={_fmt(metrics.get('disk_root_pct'), '%')} "
+        f"disk_docker={_fmt(metrics.get('disk_docker_pct'), '%')} "
+        f"disk_data={_fmt(metrics.get('disk_data_pct'), '%')} "
+        f"swap={_fmt(metrics.get('swap_pct'), '%')} "
+        f"load={_fmt(metrics.get('load1'))} "
+        f"gpu_vram={_fmt(metrics.get('gpu_vram_pct'), '%')} "
+        f"gpu_temp={_fmt(metrics.get('gpu_temp_c'), '°C')}"
+    )
+    augmented = f"[Live metrics: {snapshot}]\n\n{user_input}"
+    working = list(history) + [{"role": "user", "content": augmented}]
+    try:
+        msg = llm.chat_with_tools(working, [], system=system_prompt)
+    except Exception as e:
+        err = f"LLM unavailable: {e}"
+        console.print(f"\n[bold red]hal>[/] {err}")
+        return err
+    response = (msg.get("content") or "").strip()
+    console.print(f"\n[bold cyan]hal>[/] {response}")
+    # Save original (unaugmented) user input so history stays clean.
+    # why: the metrics snapshot is live data injected per-turn; storing it in
+    # history would re-inject stale numbers into every future context window.
+    history.append({"role": "user", "content": user_input})
+    history.append({"role": "assistant", "content": response})
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response)
+    if len(history) > 40:
+        history[:] = history[-40:]
+    return response
+
+
 def _handle_conversational(
     user_input: str,
     history: list,
@@ -303,6 +365,14 @@ def dispatch_intent(
             return _handle_conversational(
                 user_input, history, llm, mem, session_id, system_prompt, console
             )
+        if intent == "health":
+            # why: fall back to run_agent if Prometheus is unreachable so the
+            # agent loop can diagnose and explain the outage rather than going silent.
+            result = _handle_health(
+                user_input, history, llm, prom, mem, session_id, system_prompt, console
+            )
+            if result is not None:
+                return result
     return run_agent(
         user_input,
         history,

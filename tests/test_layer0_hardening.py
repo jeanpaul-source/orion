@@ -205,8 +205,138 @@ def test_conversational_query_calls_no_tools():
 
 
 # ---------------------------------------------------------------------------
-# L1-H2: Ollama failure must fall back to agentic gracefully
+# L2-H1: Health queries must use Prometheus snapshot, not the tool loop
 # ---------------------------------------------------------------------------
+
+
+def test_health_query_uses_prometheus_not_tool_loop():
+    """Health intent must call prom.health() and pass tools=[] to the LLM.
+
+    # why this test exists: "how's the CPU?" classified as health should receive
+    # a Prometheus snapshot directly — not spin up the 8-iteration tool loop
+    # which adds 3-5 extra LLM round-trips for a query that only needs one
+    # Prometheus call.  If someone changes the routing, this test fails loudly.
+    #
+    # Verified against bootstrap.py:
+    #   - dispatch_intent() routes health intent to _handle_health()
+    #   - _handle_health() calls prom.health() then llm.chat_with_tools(working, [], ...)
+    #   - kb.search is never called on the health path
+    """
+    llm = MagicMock()
+    llm.chat_with_tools.return_value = {"role": "assistant", "content": "All good."}
+    prom = MagicMock()
+    prom.health.return_value = {
+        "cpu_pct": 12.3,
+        "mem_pct": 45.6,
+        "disk_root_pct": 30.0,
+        "disk_docker_pct": 55.0,
+        "disk_data_pct": 20.0,
+        "swap_pct": 1.0,
+        "load1": 0.5,
+        "gpu_vram_pct": 80.0,
+        "gpu_temp_c": 65.0,
+    }
+    kb = MagicMock()
+    mem = MagicMock()
+    classifier = MagicMock()
+    # why: force health routing regardless of the actual query text
+    classifier.classify.return_value = ("health", 0.92)
+
+    result = dispatch_intent(
+        "how is the server doing?",
+        [],
+        llm,
+        prom,
+        kb,
+        MagicMock(),
+        MagicMock(),
+        mem,
+        "l2-test",
+        "You are HAL.",
+        _make_console(),
+        classifier=classifier,
+    )
+
+    assert result == "All good."
+
+    # Prometheus must have been queried for live metrics
+    prom.health.assert_called_once()
+
+    # KB must never be touched on a health turn
+    # why: health queries answer from live metrics, not from stored knowledge
+    kb.search.assert_not_called()
+
+    # LLM must have been called with tools=[] — no tool loop
+    tools_arg = llm.chat_with_tools.call_args[0][1]
+    assert tools_arg == [], (
+        f"Health path must call LLM with tools=[], got: {tools_arg!r}"
+    )
+
+    # The metrics snapshot must have been injected into the user message
+    # why: if the snapshot is not in the message the LLM has no data to answer from
+    user_msg = llm.chat_with_tools.call_args[0][0][-1]["content"]
+    assert "cpu=12.3%" in user_msg, (
+        f"Expected metrics snapshot in user message, got: {user_msg!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# L2-H2: Prometheus failure on health path must fall back to run_agent
+# ---------------------------------------------------------------------------
+
+
+def test_health_prometheus_failure_falls_back_to_agent():
+    """If Prometheus raises, health path must fall back to the full agent loop.
+
+    # why this test exists: when Prometheus is down, _handle_health() returns None
+    # and dispatch_intent() must fall through to run_agent() rather than returning
+    # an empty or misleading response.  run_agent() can call get_metrics, detect
+    # the failure, and explain it to the user — _handle_health() cannot.
+    #
+    # Verified against bootstrap.py:
+    #   - _handle_health() returns None on prom.health() exception
+    #   - dispatch_intent() checks `if result is not None` before returning
+    #   - falls through to run_agent() when result is None
+    """
+    llm = MagicMock()
+    # why: run_agent will also call the LLM; return a valid response so the test
+    # doesn't fail on the agent loop's own LLM interaction
+    llm.chat_with_tools.return_value = {
+        "role": "assistant",
+        "content": "Prometheus is unreachable.",
+    }
+    prom = MagicMock()
+    # why: simulate Prometheus being completely down
+    prom.health.side_effect = ConnectionError("Prometheus unreachable")
+    prom.query.return_value = None  # get_metrics tool also fails gracefully
+    kb = MagicMock()
+    kb.search.return_value = []
+    mem = MagicMock()
+    classifier = MagicMock()
+    classifier.classify.return_value = ("health", 0.88)
+
+    dispatch_intent(
+        "is the server healthy?",
+        [],
+        llm,
+        prom,
+        kb,
+        MagicMock(),
+        MagicMock(),
+        mem,
+        "l2-fallback-test",
+        "You are HAL.",
+        _make_console(),
+        classifier=classifier,
+    )
+
+    # prom.health was attempted (and failed)
+    prom.health.assert_called_once()
+
+    # run_agent was entered — it will call llm.chat_with_tools at least once
+    # why: if the fallback didn't happen, llm would never be called
+    # (prom.health raised before the LLM call in _handle_health)
+    llm.chat_with_tools.assert_called()
 
 
 def test_ollama_failure_falls_back_to_agentic():
