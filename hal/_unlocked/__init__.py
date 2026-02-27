@@ -6,8 +6,8 @@
 # The directory name "_unlocked" is intentional — these modules are not
 # deleted, they will be graduated back to hal/ layer by layer:
 #
-#   Layer 1: intent.py          (embedding-based intent routing)
-#   Layer 2: agents.py          (Planner/Critic sub-agents)
+#   Layer 1: intent.py          (embedding-based intent routing) — graduated
+#   Layer 2: agents.py          (Planner/Critic sub-agents) — deleted; replaced by system prompt reasoning
 #   Layer 3: security.py, web.py, trust_metrics.py, postmortem.py,
 #            falco_noise.py, watchdog.py
 #   Layer 4: server.py, telegram.py

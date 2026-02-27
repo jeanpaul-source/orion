@@ -140,7 +140,6 @@ locked in `hal/_unlocked/` until each layer's hardening criteria are met.
 
 | Module | Layer | Why locked |
 | --- | --- | --- |
-| `agents.py` | 2 | Planner/Critic sub-agents — reactivate after Layer 1 is hardened |
 | `security.py`, `web.py`, `trust_metrics.py`, `postmortem.py`, `falco_noise.py`, `watchdog.py` | 3 | Security/web tools and watchdog — require Judge hardening at Layer 0 first |
 | `server.py`, `telegram.py` | 4 | HTTP + Telegram interfaces — reactivate after REPL is bulletproof |
 
