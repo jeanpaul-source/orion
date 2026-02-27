@@ -26,7 +26,7 @@ from rich.console import Console
 
 # ── HAL imports ─────────────────────────────────────────────────────────────
 import hal.config as cfg
-from hal.agent import run_agent, run_conversational, run_fact, run_health
+from hal.agent import run_agent
 from hal.executor import SSHExecutor
 from hal.intent import IntentClassifier
 from hal.judge import Judge, tier_for
@@ -133,28 +133,19 @@ def _run_query(
     intent, confidence = classifier.classify(query)
     quiet = Console(quiet=True)
 
-    if intent == "health":
-        response = run_health(query, history, llm, prom, mem, session_id, system, quiet)
-    elif intent == "fact":
-        response = run_fact(query, history, llm, kb, mem, session_id, system, quiet)
-    elif intent == "conversational":
-        response = run_conversational(
-            query, history, llm, mem, session_id, system, quiet
-        )
-    else:
-        response = run_agent(
-            query,
-            history,
-            llm,
-            kb,
-            prom,
-            executor,
-            judge,
-            mem,
-            session_id,
-            system,
-            quiet,
-        )
+    response = run_agent(
+        query,
+        history,
+        llm,
+        kb,
+        prom,
+        executor,
+        judge,
+        mem,
+        session_id,
+        system,
+        quiet,
+    )
 
     return response, intent, confidence, list(judge.tools_called)
 

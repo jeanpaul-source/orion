@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from rich.console import Console
 
 import hal.config as cfg
-from hal.agent import run_agent, run_conversational, run_fact, run_health
+from hal.agent import run_agent
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
@@ -240,38 +240,19 @@ def dispatch_intent(
     ntopng_url: str = "",
     tavily_api_key: str = "",
 ) -> str:
-    """Route a pre-classified query to the correct handler and return the response string.
-
-    Replaces the identical if/elif/else blocks that previously appeared in:
-      - hal/main.py REPL loop
-      - hal/main.py --print mode
-      - hal/server.py _run()
-    """
-    if intent == "conversational":
-        return run_conversational(
-            user_input, history, llm, mem, session_id, system_prompt, console
-        )
-    elif intent == "health":
-        return run_health(
-            user_input, history, llm, prom, mem, session_id, system_prompt, console
-        )
-    elif intent == "fact":
-        return run_fact(
-            user_input, history, llm, kb, mem, session_id, system_prompt, console
-        )
-    else:
-        return run_agent(
-            user_input,
-            history,
-            llm,
-            kb,
-            prom,
-            executor,
-            judge,
-            mem,
-            session_id,
-            system_prompt,
-            console,
-            ntopng_url=ntopng_url,
-            tavily_api_key=tavily_api_key,
-        )
+    """Route a query to run_agent (Layer 0 — all queries use the agentic loop)."""
+    return run_agent(
+        user_input,
+        history,
+        llm,
+        kb,
+        prom,
+        executor,
+        judge,
+        mem,
+        session_id,
+        system_prompt,
+        console,
+        ntopng_url=ntopng_url,
+        tavily_api_key=tavily_api_key,
+    )

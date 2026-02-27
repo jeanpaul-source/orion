@@ -134,7 +134,7 @@ def test_chat_happy_path_returns_response_session_and_intent(monkeypatch) -> Non
     monkeypatch.setattr(server, "MemoryStore", _Mem)
     monkeypatch.setattr(
         bootstrap,
-        "run_conversational",
+        "run_agent",
         lambda *args, **kwargs: "final response",
     )
 
@@ -230,7 +230,7 @@ def test_chat_routes_agentic_intent_and_returns_response(monkeypatch) -> None:
 
 
 def test_chat_routes_health_intent_and_returns_response(monkeypatch) -> None:
-    """This proves to the user that /chat calls run_health when intent is health."""
+    """This proves to the user that /chat calls run_agent for all intents (Layer 0)."""
 
     class _Mem:
         def session_exists(self, _sid: str) -> bool:
@@ -262,7 +262,7 @@ def test_chat_routes_health_intent_and_returns_response(monkeypatch) -> None:
     monkeypatch.setattr(server, "MemoryStore", _Mem)
     monkeypatch.setattr(
         bootstrap,
-        "run_health",
+        "run_agent",
         lambda *args, **kwargs: "health check response",
     )
 

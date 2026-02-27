@@ -1,12 +1,10 @@
 """Agentic loop — LLM calls tools autonomously, Judge gates everything."""
 
 import json
-import re
 import textwrap
 
 from rich.console import Console
 
-from hal.agents import CriticAgent, PlannerAgent
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
@@ -22,46 +20,6 @@ MAX_ITERATIONS = 8
 # Max unique tool calls per turn — loop also stops at MAX_ITERATIONS.
 MAX_TOOL_CALLS = 5
 
-# Planner/Critic gating: short non-action queries skip sub-agents.
-# Keep these explicit and easy to tune.
-PLANNER_CRITIC_SHORT_QUERY_WORDS = 7
-PLANNER_CRITIC_ACTION_VERBS = frozenset(
-    {
-        "apply",
-        "build",
-        "change",
-        "check",
-        "create",
-        "debug",
-        "delete",
-        "deploy",
-        "diagnose",
-        "edit",
-        "explain",
-        "fix",
-        "install",
-        "investigate",
-        "list",
-        "patch",
-        "reconfigure",
-        "reload",
-        "remove",
-        "repair",
-        "restart",
-        "rollback",
-        "run",
-        "scan",
-        "search",
-        "show",
-        "start",
-        "stop",
-        "troubleshoot",
-        "update",
-        "verify",
-        "write",
-    }
-)
-
 # Metrics (no-op unless PROM_PUSHGATEWAY is configured)
 REQ_TOTAL = Counter("hal_requests_total", labels=("intent", "outcome"))
 REQ_LATENCY = Histogram("hal_request_latency_seconds", labels=("intent",))
@@ -69,160 +27,6 @@ TOOL_CALLS_TOTAL = Counter("hal_tool_calls_total", labels=("tool", "outcome"))
 
 # Logger
 log = get_logger(__name__)
-
-
-def _should_use_planner_critic(query: str) -> tuple[bool, str]:
-    """Deterministically decide if Planner/Critic should run.
-
-    Rules:
-    - Action-ish query (contains an action verb): use planner/critic.
-    - Long query (more than threshold words): use planner/critic.
-    - Otherwise (short + non-action): skip planner/critic.
-    """
-    words = re.findall(r"[a-z0-9']+", query.lower())
-    if any(word in PLANNER_CRITIC_ACTION_VERBS for word in words):
-        return True, "action_verb"
-    if len(words) > PLANNER_CRITIC_SHORT_QUERY_WORDS:
-        return True, "long_query"
-    return False, "short_non_action"
-
-
-def run_health(
-    user_input: str,
-    history: list[dict],
-    llm: VLLMClient,
-    prom: PrometheusClient,
-    mem: MemoryStore,
-    session_id: str,
-    system: str,
-    console: Console,
-) -> str:
-    """Health handler: fetch live metrics, answer in one LLM call with no tools."""
-    import time
-
-    t0 = time.perf_counter()
-    outcome = "ok"
-    with get_tracer().start_as_current_span("hal.run_health") as span:
-        span.set_attribute("hal.session_id", session_id)
-        span.set_attribute("hal.query", user_input[:200])
-        set_context(session_id=session_id)
-        try:
-            with console.status("[dim]fetching metrics...[/]", spinner="dots"):
-                h = prom.health()
-            metrics_str = "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
-            span.set_attribute("hal.metrics_available", True)
-        except Exception as e:
-            metrics_str = f"Metrics unavailable: {e}"
-            outcome = "metrics_error"
-            span.set_attribute("hal.metrics_available", False)
-
-        messages = list(history) + [
-            {
-                "role": "user",
-                "content": f"Current lab metrics:\n{metrics_str}\n\n{user_input}",
-            }
-        ]
-
-        try:
-            with console.status("[dim]thinking...[/]", spinner="dots"):
-                response = llm.chat(messages, system=system)
-        except Exception as e:
-            outcome = "llm_error"
-            response = f"Error calling model: {e}"
-
-        response = response.strip()
-        span.set_attribute("hal.response_len", len(response))
-        console.print(f"\n[bold cyan]hal>[/] {response}")
-
-        history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": response})
-        mem.save_turn(session_id, "user", user_input)
-        mem.save_turn(session_id, "assistant", response)
-
-        if len(history) > 40:
-            history[:] = history[-40:]
-
-    dur = time.perf_counter() - t0
-    REQ_LATENCY.observe(dur, intent="health")
-    REQ_TOTAL.inc(intent="health", outcome=outcome)
-    flush_metrics()
-    log.info("health turn", extra={"intent": "health", "confidence": 1.0})
-    return response
-
-
-def run_fact(
-    user_input: str,
-    history: list[dict],
-    llm: VLLMClient,
-    kb: KnowledgeBase,
-    mem: MemoryStore,
-    session_id: str,
-    system: str,
-    console: Console,
-) -> str:
-    """Fact handler: search KB once, answer in one LLM call with no tools.
-
-    If the KB has nothing relevant, the LLM answers from the system prompt alone
-    (which contains key lab facts). If it still doesn't know, it says so.
-    """
-    import time
-
-    t0 = time.perf_counter()
-    outcome = "ok"
-    with get_tracer().start_as_current_span("hal.run_fact") as span:
-        span.set_attribute("hal.session_id", session_id)
-        span.set_attribute("hal.query", user_input[:200])
-        set_context(session_id=session_id)
-        try:
-            with console.status("[dim]searching knowledge base...[/]", spinner="dots"):
-                chunks = kb.search(user_input, top_k=3)
-            relevant = [c for c in chunks if c["score"] >= 0.5]
-            span.set_attribute("hal.kb.chunks_returned", len(chunks))
-            span.set_attribute("hal.kb.relevant_chunks", len(relevant))
-            if relevant:
-                span.set_attribute("hal.kb.top_score", relevant[0]["score"])
-        except Exception:
-            relevant = []
-            outcome = "kb_error"
-            span.set_attribute("hal.kb.chunks_returned", 0)
-            span.set_attribute("hal.kb.relevant_chunks", 0)
-
-        if relevant:
-            context = "\n\n".join(
-                f"[{c['file']} | score={c['score']:.2f}]\n{c['content'].strip()}"
-                for c in relevant
-            )
-            augmented = f"{context}\n\n{user_input}"
-        else:
-            augmented = user_input
-
-        messages = list(history) + [{"role": "user", "content": augmented}]
-
-        try:
-            with console.status("[dim]thinking...[/]", spinner="dots"):
-                response = llm.chat(messages, system=system)
-        except Exception as e:
-            outcome = "llm_error"
-            response = f"Error calling model: {e}"
-
-        response = response.strip()
-        span.set_attribute("hal.response_len", len(response))
-        console.print(f"\n[bold cyan]hal>[/] {response}")
-
-        history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": response})
-        mem.save_turn(session_id, "user", user_input)
-        mem.save_turn(session_id, "assistant", response)
-
-        if len(history) > 40:
-            history[:] = history[-40:]
-
-    dur = time.perf_counter() - t0
-    REQ_LATENCY.observe(dur, intent="fact")
-    REQ_TOTAL.inc(intent="fact", outcome=outcome)
-    flush_metrics()
-    log.info("fact turn", extra={"intent": "fact"})
-    return response
 
 
 def run_agent(
@@ -239,12 +43,11 @@ def run_agent(
     console: Console,
     ntopng_url: str = "http://localhost:3000",
     tavily_api_key: str = "",
-    planner: PlannerAgent | None = None,
-    critic: CriticAgent | None = None,
 ) -> str:
     """Agentic loop: LLM calls tools autonomously until it produces a final answer.
 
     Returns the final text response.
+    On LLM failure: prints error, returns error string, does NOT write to history.
     """
     import time
 
@@ -255,58 +58,9 @@ def run_agent(
         span.set_attribute("hal.query", user_input[:200])
         set_context(session_id=session_id)
 
-        planner_plan = ""
-        critic_review = ""
-
         # Build the active tool set once — only includes tools whose API
         # keys / config are present.  The LLM never sees disabled tools.
         available_tools = get_tools(tavily_api_key=tavily_api_key)
-        tool_names = [t["function"]["name"] for t in available_tools]
-
-        # Sub-agents: Planner and Critic — only for action-ish/complex queries.
-        use_planner_critic, gate_reason = _should_use_planner_critic(user_input)
-        span.set_attribute("hal.planner_critic_used", use_planner_critic)
-        span.set_attribute("hal.planner_critic_gate_reason", gate_reason)
-
-        if use_planner_critic:
-            if planner is None:
-                planner = PlannerAgent(llm)
-            if critic is None:
-                critic = CriticAgent(llm)
-
-            try:
-                planner_plan = planner.run(
-                    user_input=user_input,
-                    history=history[-10:],
-                    tools=tool_names,
-                    session_id=session_id,
-                )
-                span.set_attribute("hal.planner_used", bool(planner_plan))
-            except Exception as e:
-                log.error("planner failed: %s", e, extra={"subagent": "Planner"})
-                span.set_attribute("hal.planner_error", True)
-                span.set_attribute("hal.planner_used", False)
-
-            if planner_plan:
-                try:
-                    critic_review = critic.run(
-                        user_input=user_input,
-                        plan=planner_plan,
-                        history=history[-10:],
-                        session_id=session_id,
-                    )
-                    span.set_attribute("hal.critic_used", bool(critic_review))
-                except Exception as e:
-                    log.error("critic failed: %s", e, extra={"subagent": "Critic"})
-                    span.set_attribute("hal.critic_error", True)
-                    span.set_attribute("hal.critic_used", False)
-            else:
-                span.set_attribute("hal.critic_skipped", True)
-                span.set_attribute("hal.critic_used", False)
-        else:
-            span.set_attribute("hal.planner_used", False)
-            span.set_attribute("hal.critic_used", False)
-            span.set_attribute("hal.critic_skipped", True)
 
         # Seed the first message with KB context (fast, cheap, often helpful)
         # Threshold 0.75: only inject context that is a strong semantic match.
@@ -329,24 +83,6 @@ def run_agent(
         except Exception:
             span.set_attribute("hal.kb.seeded_chunks", 0)
 
-        # Defensive: ensure sub-agent outputs are strings before appending
-        if not isinstance(planner_plan, str):
-            planner_plan = ""
-        if not isinstance(critic_review, str):
-            critic_review = ""
-
-        # Planner/Critic output goes into the system message, not the user message.
-        # In the user role the LLM reads it as content to describe back to the user;
-        # in the system role it is treated as execution guidance to act on.
-        effective_system = system
-        if planner_plan:
-            effective_system += (
-                "\n\n── EXECUTION PLAN (use tools to carry this out — do not describe it) ──\n"
-                + planner_plan
-            )
-        if critic_review:
-            effective_system += "\n\n── SAFETY REVIEW ──\n" + critic_review
-
         sections.append("User query:\n" + user_input)
         augmented = "\n\n".join(sections)
 
@@ -366,10 +102,21 @@ def run_agent(
                 if (iteration < MAX_ITERATIONS - 1 and total_calls < MAX_TOOL_CALLS)
                 else []
             )
-            with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
-                msg = llm.chat_with_tools(
-                    working, effective_tools, system=effective_system
-                )
+            try:
+                with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
+                    msg = llm.chat_with_tools(working, effective_tools, system=system)
+            except Exception as e:
+                # LLM unavailable — report error but do NOT write to history.
+                # Error strings in history corrupt every subsequent turn.
+                outcome = "llm_error"
+                log.error("LLM call failed: %s", e)
+                err = f"LLM unavailable: {e}"
+                console.print(f"\n[bold red]hal>[/] {err}")
+                dur = time.perf_counter() - t0
+                REQ_LATENCY.observe(dur, intent="agent")
+                REQ_TOTAL.inc(intent="agent", outcome=outcome)
+                flush_metrics()
+                return err
 
             working.append(msg)
             tool_calls = msg.get("tool_calls") or []
@@ -493,46 +240,6 @@ def run_agent(
         flush_metrics()
         log.info("agent turn", extra={"intent": "agent"})
         return response_text
-
-
-def run_conversational(
-    user_input: str,
-    history: list[dict],
-    llm: VLLMClient,
-    mem: MemoryStore,
-    session_id: str,
-    system: str,
-    console: Console,
-) -> str:
-    """Fast path for greetings and small talk — one LLM call, no tools, no KB lookup."""
-    import time
-
-    t0 = time.perf_counter()
-    outcome = "ok"
-    with get_tracer().start_as_current_span("hal.run_conversational") as span:
-        span.set_attribute("hal.session_id", session_id)
-        span.set_attribute("hal.query", user_input[:200])
-        set_context(session_id=session_id)
-        messages = list(history) + [{"role": "user", "content": user_input}]
-        try:
-            response = llm.chat(messages, system=system).strip()
-        except Exception as e:
-            outcome = "llm_error"
-            response = f"Error calling model: {e}"
-        span.set_attribute("hal.response_len", len(response))
-        console.print(f"\n[bold cyan]hal>[/] {response}")
-        history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": response})
-        mem.save_turn(session_id, "user", user_input)
-        mem.save_turn(session_id, "assistant", response)
-        if len(history) > 40:
-            history[:] = history[-40:]
-    dur = time.perf_counter() - t0
-    REQ_LATENCY.observe(dur, intent="conversational")
-    REQ_TOTAL.inc(intent="conversational", outcome=outcome)
-    flush_metrics()
-    log.info("conversational turn", extra={"intent": "conversational"})
-    return response
 
 
 def _fmt_args(args: dict) -> str:
