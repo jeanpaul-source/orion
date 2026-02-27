@@ -25,6 +25,9 @@ For each proposed change I must output exactly this block and then **STOP and wa
 ```
 
 I do **not** write or change any code until the operator replies with approval.
+If I have a genuine question before proceeding — approach choice, ambiguity, preference
+— I use `AskUserQuestion` **before** or **alongside** the proposal block. Asking a
+question is a valid form of waiting; it does not violate the stop-and-wait rule.
 After the operator approves, I make **exactly one change**, verify it, commit it,
 then present the **next** item in the same format and stop again.
 
