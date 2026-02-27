@@ -122,10 +122,13 @@ locked in `hal/_unlocked/` until each layer's hardening criteria are met.
 **Layer 0 + 1 (active):**
 
 - **LLM**: vLLM serving Qwen2.5-32B-Instruct-AWQ (port 8000); Ollama embeddings-only on CPU
-- **Agent loop**: `dispatch_intent()` classifies each query via `IntentClassifier`; conversational
-  queries ("hello", "thanks") route to `_handle_conversational()` — a single LLM call with
-  `tools=[]`, no Prometheus, no KB. All other queries route to `run_agent()`. 7 tools:
-  `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`.
+- **Agent loop**: `dispatch_intent()` classifies each query via `IntentClassifier`; four routes:
+  - `conversational` → `_handle_conversational()` — single LLM call, `tools=[]`, no KB, no Prometheus
+  - `health` → `_handle_health()` — `prom.health()` → single LLM call, no tool loop
+  - `fact` → `_handle_fact()` — `kb.search(top_k=3, threshold=0.5)` → single LLM call, no tool loop
+  - `agentic` → `run_agent()` — full 8-iteration tool loop (default for anything not classified above)
+
+  7 tools: `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`.
   LLM errors return early without writing to history (history-poisoning bug fixed).
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log
