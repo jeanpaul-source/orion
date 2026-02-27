@@ -175,6 +175,17 @@ def _connect(
         )
         sys.exit(1)
 
+    # Also skip if lab_host is local — even if the service URL contains the server's
+    # IP (e.g. VLLM_URL=http://192.168.5.10:8000), tunnelling to localhost still
+    # can't help: we're already on the machine and the port is simply closed.
+    # why: lab_host=localhost means HAL is running on the server itself;
+    # the URL check above only catches http://localhost:... not http://192.168.x.x:...
+    if lab_host in ("localhost", "127.0.0.1", "::1"):
+        _console.print(
+            f"[red]{name} is not reachable on {host}:{port} — is it running?[/]"
+        )
+        sys.exit(1)
+
     _console.print(f"[yellow]{name} not directly reachable — trying SSH tunnel...[/]")
     tunnel = SSHTunnel(lab_user, lab_host, port, default_port)
     try:
