@@ -13,7 +13,17 @@ from pgvector.psycopg2 import register_vector
 
 from hal.llm import OllamaClient
 
+# Ground-truth docs (LAB_ENVIRONMENT.md, hand-written facts) are more
+# authoritative than harvested reference material.  A +0.10 boost is enough
+# to prefer them over a reference doc with a slightly better raw cosine score
+# without drowning out a reference doc that is genuinely more relevant.
 _GROUND_TRUTH_BOOST = 0.10
+
+# Fetch this many extra candidates from the DB before applying the boost.
+# Without over-fetch, a ground-truth doc sitting at position top_k+1 by raw
+# cosine would never be fetched and therefore never receive the boost — exactly
+# the case where the boost matters most.  3× is cheap (one ANN index scan).
+_BOOST_FETCH_MULTIPLIER = 3
 
 
 class KnowledgeBase:
@@ -53,7 +63,11 @@ class KnowledgeBase:
                 if conditions:
                     where = "WHERE " + " AND ".join(conditions)
 
-                params.extend([embedding, top_k])
+                # Fetch more candidates than needed so the post-fetch boost
+                # can surface ground-truth docs that raw cosine ranked just
+                # outside top_k.  Final slice back to top_k happens below.
+                fetch_k = top_k * _BOOST_FETCH_MULTIPLIER
+                params.extend([embedding, fetch_k])
                 cur.execute(
                     f"""
                     SELECT content, file_name, category,
@@ -81,14 +95,15 @@ class KnowledgeBase:
             for r in rows
         ]
 
-        # Post-fetch boost: ground-truth docs get a score bump
+        # Post-fetch boost: ground-truth docs get a score bump, then re-sort,
+        # then slice back to the caller's requested top_k.
         if boost_ground_truth:
             for r in results:
                 if r["doc_tier"] == "ground-truth":
                     r["score"] = min(1.0, r["score"] + _GROUND_TRUTH_BOOST)
             results.sort(key=lambda x: x["score"], reverse=True)
 
-        return results
+        return results[:top_k]
 
     def categories(self) -> list[tuple[str, int]]:
         conn = self._connect()
