@@ -258,6 +258,11 @@ def run_agent(
         planner_plan = ""
         critic_review = ""
 
+        # Build the active tool set once — only includes tools whose API
+        # keys / config are present.  The LLM never sees disabled tools.
+        available_tools = get_tools(tavily_api_key=tavily_api_key)
+        tool_names = [t["function"]["name"] for t in available_tools]
+
         # Sub-agents: Planner and Critic — only for action-ish/complex queries.
         use_planner_critic, gate_reason = _should_use_planner_critic(user_input)
         span.set_attribute("hal.planner_critic_used", use_planner_critic)
@@ -273,6 +278,7 @@ def run_agent(
                 planner_plan = planner.run(
                     user_input=user_input,
                     history=history[-10:],
+                    tools=tool_names,
                     session_id=session_id,
                 )
                 span.set_attribute("hal.planner_used", bool(planner_plan))
@@ -340,10 +346,6 @@ def run_agent(
 
         # Working history — don't mutate the session history until we have a final answer
         working = list(history) + [{"role": "user", "content": augmented}]
-
-        # Build the active tool set once — only includes tools whose API
-        # keys / config are present.  The LLM never sees disabled tools.
-        available_tools = get_tools(tavily_api_key=tavily_api_key)
 
         response_text = ""
         seen_calls: set[tuple] = set()  # (name, args_json) — detect repeat tool calls

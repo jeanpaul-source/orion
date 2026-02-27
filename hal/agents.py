@@ -113,20 +113,27 @@ class PlannerAgent:
         self,
         user_input: str,
         history: list[dict] | None = None,
+        tools: list[str] | None = None,
         session_id: str | None = None,
     ) -> str:
         """Return a structured plan for the given user_input.
 
-        history and session_id are accepted for future use (e.g. adding
-        light conversational context or tracing), but are optional and
-        may be None.
+        Args:
+            user_input: The operator's query to plan for.
+            history: Recent conversation turns for context (optional).
+            tools: Names of tools available to HAL (optional). When provided,
+                appended to the user message so the Planner can reference them.
+            session_id: Used for tracing correlation only.
         """
 
         messages: list[dict] = []
         if history:
             # Keep any provided context in order, but do not mutate it.
             messages.extend(history)
-        messages.append({"role": "user", "content": user_input})
+        content = user_input
+        if tools:
+            content += f"\n\nAvailable tools: {', '.join(tools)}"
+        messages.append({"role": "user", "content": content})
 
         with get_tracer().start_as_current_span("hal.subagent.planner") as span:
             span.set_attribute("subagent.name", self.name)
