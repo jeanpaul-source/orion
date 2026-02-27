@@ -20,6 +20,9 @@ from rich.console import Console
 import hal.config as cfg
 from hal.agent import run_agent
 from hal.executor import SSHExecutor
+from hal.intent import (
+    IntentClassifier,  # why: Layer 1 — needed for conversational routing in dispatch_intent
+)
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
@@ -234,6 +237,41 @@ def setup_clients(
 # ---------------------------------------------------------------------------
 
 
+def _handle_conversational(
+    user_input: str,
+    history: list,
+    llm: VLLMClient,
+    mem: MemoryStore,
+    session_id: str,
+    system_prompt: str,
+    console: Console,
+) -> str:
+    """Respond to greetings and acknowledgements with a single LLM call, no tools.
+
+    # why: conversational turns (hello, thanks, ok) need no tool calls, no KB lookup,
+    # and no Prometheus queries — routing them through run_agent wastes at least one
+    # extra LLM round-trip and can trigger spurious tool calls.
+    """
+    working = list(history) + [{"role": "user", "content": user_input}]
+    try:
+        msg = llm.chat_with_tools(working, [], system=system_prompt)
+    except Exception as e:
+        # LLM error — same contract as run_agent: do NOT write to history.
+        # why: error strings in history corrupt every subsequent turn (H-1 contract).
+        err = f"LLM unavailable: {e}"
+        console.print(f"\n[bold red]hal>[/] {err}")
+        return err
+    response = (msg.get("content") or "").strip()
+    console.print(f"\n[bold cyan]hal>[/] {response}")
+    history.append({"role": "user", "content": user_input})
+    history.append({"role": "assistant", "content": response})
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response)
+    if len(history) > 40:
+        history[:] = history[-40:]
+    return response
+
+
 def dispatch_intent(
     user_input: str,
     history: list,
@@ -247,10 +285,24 @@ def dispatch_intent(
     system_prompt: str,
     console: Console,
     *,
+    classifier: IntentClassifier | None = None,
     ntopng_url: str = "",
     tavily_api_key: str = "",
 ) -> str:
-    """Route a query to run_agent (Layer 0 — all queries use the agentic loop)."""
+    """Route a query to the correct handler based on intent classification.
+
+    # why: Layer 1 — conversational queries (greetings, acknowledgements) skip the
+    # full agentic tool loop for lower latency and fewer spurious tool calls.
+    # classifier is optional during Layer 1 rollout; once main.py passes it,
+    # all conversational queries are routed here instead of run_agent.
+    # All non-conversational intents (health, fact, agentic) still use run_agent.
+    """
+    if classifier is not None:
+        intent, _confidence = classifier.classify(user_input)
+        if intent == "conversational":
+            return _handle_conversational(
+                user_input, history, llm, mem, session_id, system_prompt, console
+            )
     return run_agent(
         user_input,
         history,
