@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from hal._unlocked.intent import IntentClassifier
+from hal.intent import IntentClassifier  # why: intent.py graduated to Layer 1
 from hal.llm import OllamaClient
 
 # Read Ollama URL from environment, defaulting to server-local address.

@@ -40,9 +40,9 @@ import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
 from hal.sanitize import strip_tool_call_artifacts
-from hal._unlocked.intent import (
+from hal.intent import (
     IntentClassifier,
-)  # why: intent routing is locked (Layer 1)
+)  # why: intent.py graduated to Layer 1 — moved from hal/_unlocked/
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
