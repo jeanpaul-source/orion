@@ -12,17 +12,23 @@ _CTX = ToolContext(
 )
 
 
-def test_get_tools_registry_parity_with_and_without_tavily_key():
-    """web_search is key-gated; fetch_url is always available."""
-    names_no_key = [tool["function"]["name"] for tool in get_tools()]
+def test_get_tools_returns_layer0_tool_set():
+    """Layer 0 tool set: 7 tools, all always-enabled, no key-gating."""
+    names = [tool["function"]["name"] for tool in get_tools()]
+    assert set(names) == {
+        "search_kb",
+        "get_metrics",
+        "get_trend",
+        "run_command",
+        "read_file",
+        "list_dir",
+        "write_file",
+    }
+    # tavily key makes no difference in Layer 0 — no key-gated tools
     names_with_key = [
         tool["function"]["name"] for tool in get_tools(tavily_api_key="k")
     ]
-
-    assert "fetch_url" in names_no_key
-    assert "fetch_url" in names_with_key
-    assert "web_search" not in names_no_key
-    assert "web_search" in names_with_key
+    assert names == names_with_key
 
 
 def test_dispatch_tool_unknown_name_returns_clear_error():
