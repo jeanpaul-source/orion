@@ -169,6 +169,7 @@ def run_agent(
                     tool_span.set_attribute(
                         "tool.args", json.dumps(raw_args, sort_keys=True)[:500]
                     )
+                    _tool_detail = json.dumps(raw_args, sort_keys=True)[:500]
                     try:
                         result = dispatch_tool(
                             name,
@@ -183,9 +184,13 @@ def run_agent(
                             ),
                         )
                         TOOL_CALLS_TOTAL.inc(tool=name, outcome="ok")
+                        if judge:
+                            judge.record_outcome(name, _tool_detail, "success")
                     except Exception as e:
                         result = f"Tool {name} failed: {e}"
                         TOOL_CALLS_TOTAL.inc(tool=name, outcome="error")
+                        if judge:
+                            judge.record_outcome(name, _tool_detail, "error")
                     tool_span.set_attribute("tool.result_len", len(result))
 
                 # Cap tool output to protect the context window

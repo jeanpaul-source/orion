@@ -221,3 +221,57 @@ def test_tier_for_list_dir_sensitive():
 def test_tier_for_unknown_action():
     # Unknown action types default to tier 2 (default-deny: explain + approve)
     assert tier_for("some_unknown_action") == 2
+
+
+# ---------------------------------------------------------------------------
+# Judge.record_outcome — audit log outcome entries
+# ---------------------------------------------------------------------------
+
+
+def test_record_outcome_writes_success_entry(tmp_path):
+    """record_outcome appends a JSON outcome entry with status='outcome'."""
+    import json
+
+    from hal.judge import Judge
+
+    log = tmp_path / "audit.log"
+    judge = Judge(audit_log=log)
+    judge.record_outcome("run_command", "ps aux", "success")
+
+    lines = log.read_text().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["status"] == "outcome"
+    assert entry["outcome"] == "success"
+    assert entry["action"] == "run_command"
+    assert entry["detail"] == "ps aux"
+
+
+def test_record_outcome_writes_error_entry(tmp_path):
+    """record_outcome records error outcomes correctly."""
+    import json
+
+    from hal.judge import Judge
+
+    log = tmp_path / "audit.log"
+    judge = Judge(audit_log=log)
+    judge.record_outcome("run_command", "some_cmd", "error")
+
+    entry = json.loads(log.read_text().splitlines()[0])
+    assert entry["outcome"] == "error"
+    assert entry["status"] == "outcome"
+
+
+def test_record_outcome_truncates_long_detail(tmp_path):
+    """detail is capped at 500 chars to match _log() behaviour."""
+    import json
+
+    from hal.judge import Judge
+
+    log = tmp_path / "audit.log"
+    judge = Judge(audit_log=log)
+    long_detail = "x" * 600
+    judge.record_outcome("search_kb", long_detail, "success")
+
+    entry = json.loads(log.read_text().splitlines()[0])
+    assert len(entry["detail"]) == 500

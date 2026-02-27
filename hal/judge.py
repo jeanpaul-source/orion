@@ -682,3 +682,50 @@ class Judge:
 
         with open(self.audit_log, "a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def record_outcome(
+        self,
+        action_type: str,
+        detail: str,
+        outcome: str,
+    ) -> None:
+        """Append an outcome entry to the audit log after a tool executes.
+
+        outcome is 'success' or 'error'. Correlates with the preceding
+        approval entry via session_id / trace_id for trust evolution (B-2).
+        """
+        entry: dict[str, object] = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "status": "outcome",
+            "outcome": outcome,
+            "action": action_type,
+            "detail": detail.replace("\n", " ")[:500],
+        }
+
+        # Session correlation from logging_utils contextvars
+        try:
+            from hal.logging_utils import _ctx_session_id, _ctx_turn_id
+
+            sid = _ctx_session_id.get()
+            tid = _ctx_turn_id.get()
+            if sid:
+                entry["session_id"] = sid
+            if tid:
+                entry["turn_id"] = tid
+        except Exception:
+            pass
+
+        # OTel trace correlation
+        try:
+            from opentelemetry import trace  # type: ignore[import-untyped]
+
+            span = trace.get_current_span()
+            ctx = span.get_span_context() if span else None
+            if ctx and ctx.is_valid:
+                entry["trace_id"] = f"{ctx.trace_id:032x}"
+                entry["span_id"] = f"{ctx.span_id:016x}"
+        except Exception:
+            pass
+
+        with open(self.audit_log, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
