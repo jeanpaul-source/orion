@@ -80,6 +80,14 @@ EXAMPLES: dict[str, list[str]] = {
         "what is the current memory usage?",
         "how much disk space is left?",
         "current cpu usage",
+        # informal status questions observed misrouting in smoke tests
+        "how are we looking?",
+        "how are things?",
+        "all good?",
+        "everything running ok?",
+        "gpu seems hot",
+        "is the gpu temperature normal?",
+        "how's the gpu doing?",
     ],
     "fact": [
         "what port does prometheus run on?",
