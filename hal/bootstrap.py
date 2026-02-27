@@ -147,6 +147,8 @@ notes, or version information — call it first, do not reason from training dat
 The current date injected above is authoritative; never assume you cannot find current data. \
 For topics with no homelab context (e.g. unrelated consumer technology), ask the user to clarify \
 instead of searching the web.
+• Before calling any tool, state your plan in one sentence, then immediately call the tool — \
+do not ask the user for permission to proceed.
 """
 
 
