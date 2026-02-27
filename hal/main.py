@@ -16,6 +16,9 @@ from rich.text import Text
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
+from hal.intent import (
+    IntentClassifier,  # why: Layer 1 — routes conversational queries away from the tool loop
+)
 from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
 from hal.logging_utils import set_context, setup_logging
@@ -273,6 +276,8 @@ def main() -> None:
     executor = SSHExecutor(config.lab_host, config.lab_user)
     judge = Judge(llm=llm)
     mem = MemoryStore()
+    # why: build classifier after embed is ready; failures degrade to agentic routing
+    classifier = IntentClassifier(embed)
     mem.prune_old_turns()  # silently drop turns older than 30 days on every startup
 
     # Resume last session or start fresh
@@ -314,6 +319,7 @@ def main() -> None:
                 session_id,
                 get_system_prompt(),
                 console,
+                classifier=classifier,
                 ntopng_url=config.ntopng_url,
                 tavily_api_key=config.tavily_api_key,
             )
@@ -400,6 +406,7 @@ def main() -> None:
                         session_id,
                         get_system_prompt(),
                         console,
+                        classifier=classifier,
                         ntopng_url=config.ntopng_url,
                         tavily_api_key=config.tavily_api_key,
                     )
