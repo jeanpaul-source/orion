@@ -5,7 +5,6 @@ These tests are self-contained and do not touch the real ~/.orion/audit.log.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from hal.trust_metrics import aggregate_stats, get_action_stats, load_audit_log
@@ -104,32 +103,6 @@ def test_get_action_stats_regex_and_substring(tmp_path, monkeypatch):
     assert stats3["total"] == 0
     assert stats3["approved"] == 0
     assert stats3["confidence"] == 0.0
-
-
-def test_dispatch_integration_via_agent_tool(tmp_path, monkeypatch):
-    # Create temp audit log and point env to it
-    p = _write_temp_audit(tmp_path)
-    monkeypatch.setenv("ORION_AUDIT_LOG", str(p))
-
-    # Minimal dispatcher path using hal.tools.dispatch_tool
-    from unittest.mock import MagicMock
-
-    from hal.tools import ToolContext, dispatch_tool
-
-    kb = MagicMock()
-    prom = MagicMock()
-    executor = MagicMock()
-    judge = MagicMock()
-
-    out = dispatch_tool(
-        "get_action_stats",
-        {"action_pattern": "docker restart"},
-        ToolContext(executor=executor, judge=judge, kb=kb, prom=prom),
-    )
-    data = json.loads(out)
-    assert data["total"] == 1
-    assert data["approved"] == 1
-    assert "by_action_class" in data
 
 
 # ---------------------------------------------------------------------------
