@@ -115,17 +115,18 @@ Read these before working on the relevant area. They are the source of truth —
 
 ## Current State
 
-Active branch: `reliability/layer-0`. Layer 0 hardening in progress — only the core
-agentic loop is active. Higher-layer modules are locked in `hal/_unlocked/` until each
-layer's hardening criteria are met (all tests pass + manual smoke test).
+Active branch: `reliability/layer-0`. Layer 0 and Layer 1 complete — core agentic loop
+and conversational intent routing both active and smoke-tested. Higher-layer modules are
+locked in `hal/_unlocked/` until each layer's hardening criteria are met.
 
-**Layer 0 (active):**
+**Layer 0 + 1 (active):**
 
 - **LLM**: vLLM serving Qwen2.5-32B-Instruct-AWQ (port 8000); Ollama embeddings-only on CPU
-- **Agent loop**: single `run_agent()` entry point; all queries route directly through the
-  agentic loop with no intent classification. 7 Layer 0 tools: `search_kb`, `get_metrics`,
-  `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`. LLM errors return early
-  without writing to history (history-poisoning bug fixed).
+- **Agent loop**: `dispatch_intent()` classifies each query via `IntentClassifier`; conversational
+  queries ("hello", "thanks") route to `_handle_conversational()` — a single LLM call with
+  `tools=[]`, no Prometheus, no KB. All other queries route to `run_agent()`. 7 tools:
+  `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`.
+  LLM errors return early without writing to history (history-poisoning bug fixed).
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log
 - **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am
@@ -133,13 +134,12 @@ layer's hardening criteria are met (all tests pass + manual smoke test).
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 544 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 546 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Locked in `hal/_unlocked/` (not active):**
 
 | Module | Layer | Why locked |
 | --- | --- | --- |
-| `intent.py` | 1 | Embedding intent routing — reactivate after Layer 0 smoke test passes |
 | `agents.py` | 2 | Planner/Critic sub-agents — reactivate after Layer 1 is hardened |
 | `security.py`, `web.py`, `trust_metrics.py`, `postmortem.py`, `falco_noise.py`, `watchdog.py` | 3 | Security/web tools and watchdog — require Judge hardening at Layer 0 first |
 | `server.py`, `telegram.py` | 4 | HTTP + Telegram interfaces — reactivate after REPL is bulletproof |
