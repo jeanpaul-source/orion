@@ -335,11 +335,17 @@ def run_agent(
         if not isinstance(critic_review, str):
             critic_review = ""
 
+        # Planner/Critic output goes into the system message, not the user message.
+        # In the user role the LLM reads it as content to describe back to the user;
+        # in the system role it is treated as execution guidance to act on.
+        effective_system = system
         if planner_plan:
-            sections.append("Planner's plan:\n" + planner_plan)
-
+            effective_system += (
+                "\n\n── EXECUTION PLAN (use tools to carry this out — do not describe it) ──\n"
+                + planner_plan
+            )
         if critic_review:
-            sections.append("Critic's review:\n" + critic_review)
+            effective_system += "\n\n── SAFETY REVIEW ──\n" + critic_review
 
         sections.append("User query:\n" + user_input)
         augmented = "\n\n".join(sections)
@@ -361,7 +367,9 @@ def run_agent(
                 else []
             )
             with console.status(f"[dim]thinking{label}...[/]", spinner="dots"):
-                msg = llm.chat_with_tools(working, effective_tools, system=system)
+                msg = llm.chat_with_tools(
+                    working, effective_tools, system=effective_system
+                )
 
             working.append(msg)
             tool_calls = msg.get("tool_calls") or []

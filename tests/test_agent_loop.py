@@ -463,8 +463,15 @@ def test_planner_critic_used_for_action_query():
     first_call_args = llm.chat_with_tools.call_args_list[0]
     working_history = first_call_args[0][0]
     user_msg = next(m for m in working_history if m.get("role") == "user")
-    assert "Planner's plan:" in user_msg["content"]
-    assert "Critic's review:" in user_msg["content"]
+    # Plan/review must be in the system message, NOT the user message.
+    # When injected as user content the LLM echoes the plan instead of executing it.
+    assert "Planner's plan:" not in user_msg["content"]
+    assert "Critic's review:" not in user_msg["content"]
+    system_arg = first_call_args[1]["system"]
+    assert "EXECUTION PLAN" in system_arg
+    assert "1) restart prometheus" in system_arg
+    assert "SAFETY REVIEW" in system_arg
+    assert "Plan is safe and ordered" in system_arg
 
 
 # ---------------------------------------------------------------------------
