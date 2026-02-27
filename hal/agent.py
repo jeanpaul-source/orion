@@ -272,7 +272,7 @@ def run_agent(
             try:
                 planner_plan = planner.run(
                     user_input=user_input,
-                    history=None,
+                    history=history[-10:],
                     session_id=session_id,
                 )
                 span.set_attribute("hal.planner_used", bool(planner_plan))
@@ -286,7 +286,7 @@ def run_agent(
                     critic_review = critic.run(
                         user_input=user_input,
                         plan=planner_plan,
-                        history=None,
+                        history=history[-10:],
                         session_id=session_id,
                     )
                     span.set_attribute("hal.critic_used", bool(critic_review))
