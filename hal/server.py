@@ -198,7 +198,6 @@ async def chat(req: ChatRequest) -> ChatResponse:
             history = mem.load_turns(session_id)
 
             response = dispatch_intent(
-                intent,
                 req.message,
                 history,
                 llm,

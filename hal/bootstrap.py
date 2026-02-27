@@ -224,7 +224,6 @@ def setup_clients(
 
 
 def dispatch_intent(
-    intent: str,
     user_input: str,
     history: list,
     llm: VLLMClient,
