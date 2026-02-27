@@ -237,6 +237,64 @@ def setup_clients(
 # ---------------------------------------------------------------------------
 
 
+def _handle_fact(
+    user_input: str,
+    history: list,
+    llm: VLLMClient,
+    kb: KnowledgeBase,
+    mem: MemoryStore,
+    session_id: str,
+    system_prompt: str,
+    console: Console,
+) -> str | None:
+    """Answer documented-fact queries using KB search + single LLM call.
+
+    Returns None if no KB results meet the threshold so dispatch_intent can
+    fall back to run_agent, which can search more broadly or use other tools.
+
+    # why: "what port does Prometheus run on?" is already documented in the KB —
+    # routing it through the 8-iteration tool loop wastes 3-5 LLM round-trips
+    # for a question that needs one KB lookup and one LLM call to answer.
+    """
+    _FACT_THRESHOLD = 0.5
+    _FACT_TOP_K = 3
+
+    try:
+        results = kb.search(user_input, top_k=_FACT_TOP_K)
+    except Exception:
+        # KB unreachable — fall back to run_agent which can diagnose and retry.
+        return None
+
+    hits = [r for r in results if r.get("score", 0) >= _FACT_THRESHOLD]
+    if not hits:
+        # No confident KB match — fall back to run_agent which can search more
+        # broadly, use web_search, or ask the user to clarify.
+        # why: returning a no-context LLM response would risk hallucination.
+        return None
+
+    chunks = "\n---\n".join(h["content"] for h in hits)
+    augmented = f"[KB context:\n{chunks}]\n\n{user_input}"
+    working = list(history) + [{"role": "user", "content": augmented}]
+    try:
+        msg = llm.chat_with_tools(working, [], system=system_prompt)
+    except Exception as e:
+        err = f"LLM unavailable: {e}"
+        console.print(f"\n[bold red]hal>[/] {err}")
+        return err
+    response = (msg.get("content") or "").strip()
+    console.print(f"\n[bold cyan]hal>[/] {response}")
+    # Save original (unaugmented) user input so history stays clean.
+    # why: KB chunks injected per-turn should not re-enter future context windows
+    # as stale user messages — context is always re-fetched from live KB.
+    history.append({"role": "user", "content": user_input})
+    history.append({"role": "assistant", "content": response})
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response)
+    if len(history) > 40:
+        history[:] = history[-40:]
+    return response
+
+
 def _handle_health(
     user_input: str,
     history: list,
@@ -370,6 +428,14 @@ def dispatch_intent(
             # agent loop can diagnose and explain the outage rather than going silent.
             result = _handle_health(
                 user_input, history, llm, prom, mem, session_id, system_prompt, console
+            )
+            if result is not None:
+                return result
+        if intent == "fact":
+            # why: fall back to run_agent if KB has no matching chunks — the agent
+            # loop can search more broadly, use web_search, or ask for clarification.
+            result = _handle_fact(
+                user_input, history, llm, kb, mem, session_id, system_prompt, console
             )
             if result is not None:
                 return result

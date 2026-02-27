@@ -339,6 +339,129 @@ def test_health_prometheus_failure_falls_back_to_agent():
     llm.chat_with_tools.assert_called()
 
 
+# ---------------------------------------------------------------------------
+# L2-H3: Fact queries must use KB context, not the tool loop
+# ---------------------------------------------------------------------------
+
+
+def test_fact_query_uses_kb_not_tool_loop():
+    """Fact intent must call kb.search() and pass tools=[] to the LLM.
+
+    # why this test exists: "what port does Prometheus run on?" is answered by
+    # the KB — routing it through the 8-iteration tool loop wastes 3-5 LLM
+    # round-trips for a question that only needs one KB lookup.  If routing
+    # changes, this test fails loudly.
+    #
+    # Verified against bootstrap.py:
+    #   - dispatch_intent() routes fact intent to _handle_fact()
+    #   - _handle_fact() calls kb.search() then llm.chat_with_tools(working, [], ...)
+    #   - prom.health is never called on the fact path
+    """
+    llm = MagicMock()
+    llm.chat_with_tools.return_value = {
+        "role": "assistant",
+        "content": "Prometheus runs on port 9091.",
+    }
+    prom = MagicMock()
+    kb = MagicMock()
+    kb.search.return_value = [
+        {"content": "Prometheus: port 9091", "file": "services.md", "score": 0.82},
+    ]
+    mem = MagicMock()
+    classifier = MagicMock()
+    # why: force fact routing regardless of the actual query text
+    classifier.classify.return_value = ("fact", 0.91)
+
+    result = dispatch_intent(
+        "what port does prometheus run on?",
+        [],
+        llm,
+        prom,
+        kb,
+        MagicMock(),
+        MagicMock(),
+        mem,
+        "l2-fact-test",
+        "You are HAL.",
+        _make_console(),
+        classifier=classifier,
+    )
+
+    assert result == "Prometheus runs on port 9091."
+    kb.search.assert_called_once()
+    prom.health.assert_not_called()
+
+    tools_arg = llm.chat_with_tools.call_args[0][1]
+    assert tools_arg == [], f"Fact path must call LLM with tools=[], got: {tools_arg!r}"
+
+    # KB context must have been injected into the user message
+    # why: without it the LLM has no grounded data and may hallucinate
+    user_msg = llm.chat_with_tools.call_args[0][0][-1]["content"]
+    assert "Prometheus: port 9091" in user_msg, (
+        f"Expected KB chunk in user message, got: {user_msg!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# L2-H4: Fact path with no KB hits must fall back to run_agent
+# ---------------------------------------------------------------------------
+
+
+def test_fact_no_kb_hits_falls_back_to_agent():
+    """If KB search returns no results above threshold, fact path must fall back.
+
+    # why this test exists: _handle_fact() returns None when all scores are below
+    # 0.5.  dispatch_intent() must then fall through to run_agent() — not return
+    # an empty or hallucinated answer.
+    #
+    # Verified against bootstrap.py:
+    #   - _handle_fact() returns None when hits list is empty after threshold filter
+    #   - dispatch_intent() checks `if result is not None` before returning
+    #   - falls through to run_agent() when result is None
+    """
+    llm = MagicMock()
+    llm.chat_with_tools.return_value = {
+        "role": "assistant",
+        "content": "I couldn't find that in the KB.",
+    }
+    prom = MagicMock()
+    kb = MagicMock()
+    # why: scores all below 0.5 threshold — no confident KB match
+    kb.search.return_value = [
+        {"content": "unrelated chunk", "file": "other.md", "score": 0.3},
+    ]
+    mem = MagicMock()
+    classifier = MagicMock()
+    classifier.classify.return_value = ("fact", 0.78)
+
+    dispatch_intent(
+        "what is the wifi password?",
+        [],
+        llm,
+        prom,
+        kb,
+        MagicMock(),
+        MagicMock(),
+        mem,
+        "l2-fact-fallback",
+        "You are HAL.",
+        _make_console(),
+        classifier=classifier,
+    )
+
+    assert kb.search.called
+    # run_agent was entered — LLM was called at least once
+    # why: if fallback didn't happen, LLM would not be called
+    # (_handle_fact returns None before reaching llm.chat_with_tools)
+    # note: assert_called_once() not used — run_agent also calls kb.search
+    llm.chat_with_tools.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# L1-H2: Ollama failure must fall back to agentic gracefully
+# ---------------------------------------------------------------------------
+
+
 def test_ollama_failure_falls_back_to_agentic():
     """IntentClassifier must degrade to agentic routing when Ollama is unavailable.
 
