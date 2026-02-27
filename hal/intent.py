@@ -1,5 +1,5 @@
 """Intent classifier — routes queries to the right handler before the LLM sees them.
-# why locked: Layer 1 — intent routing adds latency and complexity; Layer 0 routes all queries through run_agent directly
+# why: graduated from hal/_unlocked/ — Layer 0 complete, intent routing now active
 
 Uses embedding similarity against a fixed set of example sentences per category.
 Routing is deterministic and fast: one embed call per query, no LLM needed.
