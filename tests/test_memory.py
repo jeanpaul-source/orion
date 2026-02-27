@@ -22,6 +22,11 @@ POISON_STRINGS = [
     '{"name": "search_kb", "arguments": {"query": "list of all AWS regions"}}',
     '  {"name": "read_file", "arguments": {"path": "/etc/passwd"}}  ',  # whitespace padded
     '{"name": "<function-name>", "arguments": {}}',  # exact pattern from SESSION_FINDINGS B1
+    # Fenced tool calls with nested argument dicts — the lazy {.*?} regex
+    # would stop at the inner closing brace and fail to parse, letting these
+    # through.  Greedy {.*} fixes this.
+    '```json\n{"name": "run_command", "arguments": {"command": "ls -la"}}\n```',
+    'Here is what I will do:\n```json\n{"name": "read_file", "arguments": {"path": "/etc/hosts", "reason": "check"}}\n```',
 ]
 
 CLEAN_STRINGS = [

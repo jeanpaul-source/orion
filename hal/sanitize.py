@@ -16,7 +16,12 @@ import json
 import re
 
 # Matches ```json {...} ``` code fences containing a single JSON object.
-TOOL_CALL_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+# Greedy {.*} is intentional: lazy {.*?} stops at the first } it finds,
+# which for nested objects like {"arguments": {"key": "val"}} captures only
+# the inner dict, producing invalid JSON that json.loads() rejects and the
+# poison check misses.  Greedy captures from the first { to the last } in
+# the fence, which is the correct bound for a single top-level object.
+TOOL_CALL_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
 
 
 def is_tool_call_artifact(text: str) -> bool:
