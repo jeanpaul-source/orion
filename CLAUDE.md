@@ -115,21 +115,36 @@ Read these before working on the relevant area. They are the source of truth —
 
 ## Current State
 
-HAL is fully operational on the-lab (192.168.5.10). All core components working:
+Active branch: `reliability/layer-0`. Layer 0 hardening in progress — only the core
+agentic loop is active. Higher-layer modules are locked in `hal/_unlocked/` until each
+layer's hardening criteria are met (all tests pass + manual smoke test).
+
+**Layer 0 (active):**
 
 - **LLM**: vLLM serving Qwen2.5-32B-Instruct-AWQ (port 8000); Ollama embeddings-only on CPU
-- **LLM tool-call fallback parsing**: `<tool_call>/<tools>` content extraction is opt-in via `HAL_EXTRACT_FALLBACK=1`; default is disabled to prevent phantom tool-call injection from free-text examples
-- **Intent routing**: embedding classifier routes to conversational, health, fact, or agentic handlers
-- **Agent loop**: tool dispatch via registry (`hal/tools.py`); Planner/Critic sub-agents gated by query complexity; `get_trend` tool for PromQL range-query trend analysis (rising/falling/stable, 1h–24h window)
-- **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path canonicalization, self-edit governance, default-deny; JSON audit log
-- **Knowledge base**: ~19,900 chunks in pgvector; three-layer model (ground-truth, reference, live-state, memory); nightly harvest at 3am
-- **Security**: Falco, Osquery, ntopng, Nmap workers — all Judge-gated
-- **Web tools**: `web_search` (Tavily, conditional on API key), `fetch_url` (SSRF-protected)
-- **Interfaces**: terminal REPL (`/postmortem` and all slash commands), FastAPI HTTP server (`/chat`, `/health`), Telegram bot
-- **Monitoring**: watchdog (CPU, mem, disk x3, swap, load, GPU VRAM/temp, NTP, containers, Falco); ntfy alerts + recovery notifications
+- **Agent loop**: single `run_agent()` entry point; all queries route directly through the
+  agentic loop with no intent classification. 7 Layer 0 tools: `search_kb`, `get_metrics`,
+  `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`. LLM errors return early
+  without writing to history (history-poisoning bug fixed).
+- **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
+  canonicalization, self-edit governance, default-deny; JSON audit log
+- **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am
+- **Interface**: terminal REPL only (all slash commands except `/postmortem`, `/web_stats`)
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 552 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 544 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+
+**Locked in `hal/_unlocked/` (not active):**
+
+| Module | Layer | Why locked |
+| --- | --- | --- |
+| `intent.py` | 1 | Embedding intent routing — reactivate after Layer 0 smoke test passes |
+| `agents.py` | 2 | Planner/Critic sub-agents — reactivate after Layer 1 is hardened |
+| `security.py`, `web.py`, `trust_metrics.py`, `postmortem.py`, `falco_noise.py`, `watchdog.py` | 3 | Security/web tools and watchdog — require Judge hardening at Layer 0 first |
+| `server.py`, `telegram.py` | 4 | HTTP + Telegram interfaces — reactivate after REPL is bulletproof |
+
+To graduate a module: `git mv hal/_unlocked/foo.py hal/foo.py`, update imports, run
+`pytest` — the H-2 hardening test will catch any boundary breach.
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.
