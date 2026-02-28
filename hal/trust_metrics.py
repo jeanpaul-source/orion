@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, Optional
+from typing import Any, Dict, Iterable, Iterator, Optional
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -240,7 +240,7 @@ def aggregate_stats(
 # ---------------------------------------------------------------------------
 
 
-def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, object]:
+def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, Any]:
     """Return aggregated stats for events matching a pattern.
 
     Pattern behavior:

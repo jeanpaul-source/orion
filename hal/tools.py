@@ -215,11 +215,12 @@ def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
         stats = _trust_metrics.get_action_stats(pattern)
     except Exception as exc:
         return f"get_action_stats failed: {exc}"
+    by_tool: dict = stats.get("by_tool") or {}
     lines = []
-    for action, s in stats.items():
+    for action, s in by_tool.items():
         lines.append(
-            f"{action}: total={s.total}, approved={s.approved}, "
-            f"denied={s.denied}, last={s.last_timestamp}"
+            f"{action}: total={s['total']}, approved={s['approved']}, "
+            f"denied={s['denied']}, last={s['last_timestamp']}"
         )
     return "\n".join(lines) if lines else f"No audit entries matching '{pattern}'."
 
