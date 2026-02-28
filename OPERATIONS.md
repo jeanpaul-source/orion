@@ -273,7 +273,7 @@ three args will break.
 
 **Falco `pg_isready` noise:** Falco fires `Read sensitive file untrusted` every ~30s
 because the pgvector healthcheck reads `/etc/shadow`. This is a known false positive
-filtered by default in `hal/security.py`. Do not suppress the rule globally in Falco.
+filtered by default in `hal/_unlocked/security.py`. Do not suppress the rule globally in Falco.
 
 **vLLM path in unit file:** `ops/vllm.service` contains an absolute path
 (`/home/jp/vllm-env/bin/vllm`). If the venv location changes or the user is different,
