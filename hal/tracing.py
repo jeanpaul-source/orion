@@ -53,9 +53,9 @@ def setup_tracing(endpoint: str | None = None) -> None:
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        url = (endpoint or os.getenv("OTLP_ENDPOINT", "http://localhost:4318")).rstrip(
-            "/"
-        )
+        url = (
+            endpoint or os.getenv("OTLP_ENDPOINT") or "http://localhost:4318"
+        ).rstrip("/")
 
         # Probe before wiring the provider. If the endpoint is down, skip setup
         # entirely — no BatchSpanProcessor thread, no silently-dropped spans.
