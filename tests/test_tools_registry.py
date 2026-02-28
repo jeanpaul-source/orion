@@ -13,7 +13,7 @@ _CTX = ToolContext(
 
 
 def test_get_tools_returns_layer0_tool_set():
-    """Active tool set without Tavily key: 9 tools (web_search is key-gated)."""
+    """Active tool set without Tavily key: 13 tools (web_search is key-gated)."""
     names = [tool["function"]["name"] for tool in get_tools()]
     assert set(names) == {
         "search_kb",
@@ -25,8 +25,13 @@ def test_get_tools_returns_layer0_tool_set():
         "write_file",
         "fetch_url",
         "get_action_stats",
+        # Layer 3 security tools (Stage 3b)
+        "get_security_events",
+        "get_host_connections",
+        "get_traffic_summary",
+        "scan_lan",
     }
-    # With a Tavily key, web_search is also included (10 tools total)
+    # With a Tavily key, web_search is also included (14 tools total)
     names_with_key = [
         tool["function"]["name"] for tool in get_tools(tavily_api_key="k")
     ]

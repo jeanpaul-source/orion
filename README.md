@@ -113,7 +113,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/intent.py` | Embedding classifier — tune `EXAMPLES` here |
 | `hal/judge.py` | Policy gate — every action goes through this |
 | `hal/llm.py` | `VLLMClient` (chat) + `OllamaClient` (embeddings only) |
-| `hal/_unlocked/security.py` | Falco, Osquery, ntopng, Nmap workers |
+| `hal/security.py` | Falco, Osquery, ntopng, Nmap workers |
 | `hal/falco_noise.py` | Falco noise filter rules (`NOISE_RULES` + `is_falco_noise()`); no `hal.*` deps |
 | `hal/web.py` | `web_search()` via Tavily; `fetch_url()` with SSRF + DNS-rebinding defence; `sanitize_query()` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
@@ -124,7 +124,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/_unlocked/server.py` | FastAPI HTTP server — `/chat` + `/health` |
 | `hal/_unlocked/telegram.py` | Telegram bot — polls API, POSTs to `/chat`, single-user auth |
 | `hal/trust_metrics.py` | Audit log parser + `get_action_stats` tool |
-| `hal/_unlocked/watchdog.py` | Standalone health monitor (runs as systemd timer) |
+| `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
 | `eval/` | Evaluation harness — 24 queries, scorer, baselines |
 | `tests/` | 558 offline tests + 35 intent classifier tests (require Ollama) |

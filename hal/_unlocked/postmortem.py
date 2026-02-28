@@ -15,12 +15,12 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
-from hal._unlocked.security import (
-    get_security_events,  # why: security is locked (Layer 3)
-)
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.prometheus import PrometheusClient
+from hal.security import (
+    get_security_events,
+)
 from hal.trust_metrics import (
     load_audit_log,
 )

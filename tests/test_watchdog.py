@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hal._unlocked import watchdog
+from hal import watchdog
 
 
 class _FakePromClient:

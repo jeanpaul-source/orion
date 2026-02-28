@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from hal._unlocked.security import get_host_connections, get_security_events
+from hal.security import get_host_connections, get_security_events
 
 # ---------------------------------------------------------------------------
 # Helpers

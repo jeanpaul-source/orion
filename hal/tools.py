@@ -10,13 +10,16 @@ Layer 0 tools (always available, no external API keys required):
   write_file      — file write (Judge-gated)
 
 Layer 3 tools (graduated — active):
-  web_search      — Tavily web search (enabled only when TAVILY_API_KEY is set)
-  fetch_url       — SSRF-safe URL fetch + text extraction (Judge tier 1)
-  get_action_stats — audit log analytics
+  web_search           — Tavily web search (enabled only when TAVILY_API_KEY is set)
+  fetch_url            — SSRF-safe URL fetch + text extraction (Judge tier 1)
+  get_action_stats     — audit log analytics
+  get_security_events  — Falco security event reader (noise-filtered)
+  get_host_connections — Osquery listening ports + established connections + ARP
+  get_traffic_summary  — ntopng interface stats + top flows
+  scan_lan             — Nmap ping-sweep LAN discovery (Judge tier 1)
 
 Locked tools (still in hal/_unlocked/ — return with their layer):
-  Layer 3: get_security_events, get_host_connections, get_traffic_summary, scan_lan,
-           patch_file, git_status, git_diff
+  Layer 3: patch_file, git_status, git_diff
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import NamedTuple, TypedDict
 
+import hal.security as _security
 import hal.trust_metrics as _trust_metrics
 import hal.web as _web
 from hal.executor import SSHExecutor
@@ -218,6 +222,52 @@ def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
             f"denied={s.denied}, last={s.last_timestamp}"
         )
     return "\n".join(lines) if lines else f"No audit entries matching '{pattern}'."
+
+
+def _handle_get_security_events(args: dict, ctx: ToolContext) -> str:
+    n = int(args.get("n") or 50)
+    reason = args.get("reason") or ""
+    events = _security.get_security_events(ctx.executor, ctx.judge, n=n, reason=reason)
+    if not events:
+        return "No security events found (or action denied)."
+    import json as _json
+
+    return _json.dumps(events, indent=2)
+
+
+def _handle_get_host_connections(args: dict, ctx: ToolContext) -> str:
+    reason = args.get("reason") or ""
+    result = _security.get_host_connections(ctx.executor, ctx.judge, reason=reason)
+    if not result:
+        return "No host connection data returned (or action denied)."
+    import json as _json
+
+    return _json.dumps(result, indent=2)
+
+
+def _handle_get_traffic_summary(args: dict, ctx: ToolContext) -> str:
+    reason = args.get("reason") or ""
+    result = _security.get_traffic_summary(
+        ctx.executor, ctx.judge, ntopng_url=ctx.ntopng_url, reason=reason
+    )
+    if not result:
+        return "No traffic data returned (or action denied)."
+    import json as _json
+
+    return _json.dumps(result, indent=2)
+
+
+def _handle_scan_lan(args: dict, ctx: ToolContext) -> str:
+    subnet = args.get("subnet") or ""
+    reason = args.get("reason") or ""
+    if not subnet:
+        return "Error: subnet is required."
+    hosts = _security.scan_lan(subnet, ctx.executor, ctx.judge, reason=reason)
+    if not hosts:
+        return "No hosts found (or action denied)."
+    import json as _json
+
+    return _json.dumps(hosts, indent=2)
 
 
 def _web_search_enabled(tavily_api_key: str) -> bool:
@@ -520,6 +570,114 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
         "handler": _handle_get_action_stats,
+        "enabled": _always_enabled,
+    },
+    "get_security_events": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_security_events",
+                "description": (
+                    "Read the most recent Falco security events from the lab server, "
+                    "with noisy/benign rules filtered out. Use this to check for "
+                    "suspicious activity, intrusion attempts, or policy violations."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "n": {
+                            "type": "integer",
+                            "description": "Number of recent log lines to inspect (default 50).",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this data.",
+                        },
+                    },
+                    "required": ["reason"],
+                },
+            },
+        },
+        "handler": _handle_get_security_events,
+        "enabled": _always_enabled,
+    },
+    "get_host_connections": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_host_connections",
+                "description": (
+                    "Query Osquery for listening ports, established TCP connections, "
+                    "and ARP cache on the lab server. Use this to investigate network "
+                    "exposure, see which processes are listening, or map active sessions."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this data.",
+                        }
+                    },
+                    "required": ["reason"],
+                },
+            },
+        },
+        "handler": _handle_get_host_connections,
+        "enabled": _always_enabled,
+    },
+    "get_traffic_summary": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_traffic_summary",
+                "description": (
+                    "Get aggregate network interface statistics and the top active "
+                    "flows from ntopng. Use this to answer questions about bandwidth "
+                    "usage, top talkers, or anomalous traffic patterns."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this data.",
+                        }
+                    },
+                    "required": ["reason"],
+                },
+            },
+        },
+        "handler": _handle_get_traffic_summary,
+        "enabled": _always_enabled,
+    },
+    "scan_lan": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "scan_lan",
+                "description": (
+                    "Run an Nmap ping-sweep (host discovery only, no port probing) "
+                    "over a subnet. Use this to enumerate live hosts on the LAN. "
+                    "Requires approval (tier 1) because it actively probes the network."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subnet": {
+                            "type": "string",
+                            "description": "CIDR subnet to scan, e.g. '192.168.5.0/24'.",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this scan.",
+                        },
+                    },
+                    "required": ["subnet", "reason"],
+                },
+            },
+        },
+        "handler": _handle_scan_lan,
         "enabled": _always_enabled,
     },
 }
