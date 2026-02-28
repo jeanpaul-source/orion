@@ -2,11 +2,22 @@
 # Track A — 2-Path Routing Refactor: Full Plan
 
 **Created:** 2026-02-28  
-**Branch target:** `feat/routing-refactor` (to be cut from `main`)  
-**Approval gate:** Operator must approve each Item individually before implementation.  
-**Session context:** This note was produced at the end of a session that merged
-`docs/reconcile-drift` into `main`. It captures the full grounded plan while
-the codebase is known-good (558 tests passing, lint clean).
+**Branch target:** `feat/routing-refactor` (cut from `main`)  
+**Approval gate:** Operator must approve each Item individually before implementation.
+
+---
+
+## ⚠️ CURRENT POSITION (read this first after any context reset)
+
+**Branch:** `feat/routing-refactor`  
+**Last commit:** `359b55e` — `feat(routing): binary dispatch + metrics pre-seed in run_agent`  
+**Test status:** 558 passed, 0 failed, lint clean  
+**Working tree:** clean (one unrelated unstaged file: `notes/new_02-26-26`)  
+
+**Item 1 is done. Item 2 is next and requires operator approval before any code change.**
+
+Item 2 proposal is in section 3 below. The exact files and lines to delete are
+called out there. Do not proceed past reading until the operator says "Item 2 approved".
 
 ---
 
@@ -121,9 +132,9 @@ Each item is one logical change = one commit = one approval.
 
 ### Item 1 — Binary routing + metrics pre-seed in run_agent ✅ DONE
 
-**Commit:** `feat(routing): binary dispatch + metrics pre-seed in run_agent`  
+**Commit:** `359b55e` — `feat(routing): binary dispatch + metrics pre-seed in run_agent`  
 **Branch:** `feat/routing-refactor`  
-**Result:** 558 passed, lint clean.  
+**Result:** 558 passed, lint clean, all pre-commit hooks passed.
 
 **Files:** `hal/bootstrap.py` + `hal/agent.py` + `tests/test_agent_loop.py` + `tests/test_layer0_hardening.py`  
 **What changed:**
@@ -161,9 +172,14 @@ to when Prometheus/KB is unavailable.
 
 ---
 
-### Item 2 — Remove dead _handle_health and _handle_fact functions
+### Item 2 — Remove dead _handle_health and _handle_fact functions ← NEXT (awaiting approval)
 
-**Files:** `hal/bootstrap.py`  
+**Root cause:** `_handle_health()` (lines 298–358) and `_handle_fact()` (lines 240–296)
+in `hal/bootstrap.py` are now unreachable — `dispatch_intent()` no longer routes to them
+after Item 1. Dead code misleads future readers and will silently diverge from any
+future changes to `run_agent`.
+
+**Files:** `hal/bootstrap.py` only  
 **Why this is a separate item:** After Item 1 merges, `_handle_health()` and
 `_handle_fact()` are unreachable. They are not deleted in Item 1 because:
 1. One change at a time — confirming Item 1 works first reduces blast radius.
@@ -242,8 +258,8 @@ Test B — fact boundary:
 ```text
 main (clean, 558 tests passing)
   └─ feat/routing-refactor
-        ├─ Item 1: binary routing + metrics pre-seed  ← approve here
-        ├─ Item 2: delete dead handlers
+        ├─ Item 1: binary routing + metrics pre-seed  ✔️ 359b55e
+        ├─ Item 2: delete dead handlers              ← HERE (awaiting approval)
         ├─ Item 3: update CLAUDE.md
         └─ Item 4: add regression tests
 ```
@@ -301,12 +317,17 @@ Once `feat/routing-refactor` is merged into `main`:
 
 ## 7. Approval checkpoint
 
-**Awaiting approval for Item 1.**
+**Item 1 is done.** Awaiting approval for **Item 2**.
 
-To approve: reply "Item 1 approved" or equivalent. I will then:
-1. `git checkout main && git checkout -b feat/routing-refactor`
-2. Edit `hal/bootstrap.py` `dispatch_intent()` — remove health/fact branches.
-3. Edit `hal/agent.py` `run_agent()` — add metrics pre-seed after KB pre-seed.
-4. Run `pytest tests/ --ignore=tests/test_intent.py -q` and `make lint`.
-5. Commit: `feat(routing): binary dispatch + metrics pre-seed in run_agent`.
-6. Present smoke-test results and Item 2 proposal.
+To approve Item 2: reply "Item 2 approved" or equivalent. I will then:
+
+1. Delete `_handle_fact()` (lines 240–296 of `hal/bootstrap.py`).
+2. Delete `_handle_health()` (lines 298–358 of `hal/bootstrap.py`).
+3. Run `pytest tests/ --ignore=tests/test_intent.py -q` and `make lint`.
+4. Verify `grep -n "_handle_health\|_handle_fact" hal/bootstrap.py` returns 0 matches.
+5. Commit: `refactor(routing): remove dead _handle_health and _handle_fact`.
+6. Present result and Item 3 proposal (CLAUDE.md update).
+
+After Items 2 and 3 are done, Item 4 adds the explicit boundary-query regression
+tests (health/fact-classified queries must have `tools != []`). Then
+`feat/routing-refactor` is ready to merge into `main`.
