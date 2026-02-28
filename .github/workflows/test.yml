@@ -1,10 +1,14 @@
-name: Test
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["*"]        # every branch, not just main
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -16,31 +20,46 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+          cache: "pip"
 
       - name: Install dependencies
-        # Creates .venv so all Makefile targets (which use .venv/bin/) work unchanged.
-        # Installs from lock files for reproducible builds.
-        # azure-ai-evaluation is in requirements-eval.txt (not requirements-dev.lock) — eval-only.
-        # intent tests (test_intent.py) are excluded — require a live Ollama instance.
         run: |
-          python -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r requirements.lock -r requirements-dev.lock
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Lint
-        run: make lint
+      - name: Ruff lint
+        run: ruff check --output-format=github hal/ tests/ harvest/ eval/
 
-      - name: Format check
-        run: .venv/bin/ruff format --check .
+      - name: Ruff format
+        run: ruff format --check hal/ tests/ harvest/ eval/
 
-      - name: Type check (warn-only)
-        run: make typecheck
-        continue-on-error: true
+      - name: Mypy
+        run: mypy hal/
 
-      - name: Markdown lint (warn-only until backlog item 6 is resolved)
-        run: make lint-md
-        continue-on-error: true
+      - name: Markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: |
+            **/*.md
+            !notes/**
+            !.venv/**
 
-      - name: Test (offline — all 530 tests)
-        run: make test
+      - name: Tests + Coverage
+        run: |
+          pytest tests/ --ignore=tests/test_intent.py \
+            --cov=hal --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=60 \
+            --junitxml=junit-results.xml \
+            -q --no-header
+
+      - name: Doc-drift check
+        run: python scripts/check_doc_drift.py
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            junit-results.xml
+            coverage.xml
