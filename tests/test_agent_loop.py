@@ -128,8 +128,11 @@ def test_single_tool_call_then_answer():
     )
     result = _call_run_agent(llm, kb, prom, executor, judge, mem, "how is the server?")
     assert result == "CPU is at 12.5%, RAM at 45%."
-    # get_metrics must have caused prom.health() to be called
-    prom.health.assert_called_once()
+    # prom.health is called twice: once by the metrics pre-seed at run_agent entry,
+    # once by the get_metrics tool dispatch inside the loop.
+    # why: Track A routing refactor — all non-conversational queries enter run_agent
+    # which pre-seeds a Prometheus snapshot before the first LLM call.
+    assert prom.health.call_count == 2
     # tool result message must carry the correct tool_call_id
     second_call_args = llm.chat_with_tools.call_args_list[1]
     working_history = second_call_args[0][0]  # first positional arg
@@ -159,8 +162,10 @@ def test_duplicate_tool_call_injects_loop_breaker():
     )
     result = _call_run_agent(llm, kb, prom, executor, judge, mem)
     assert result == "The metrics are fine."
-    # Tool was dispatched exactly once despite being requested twice
-    assert prom.health.call_count == 1
+    # Tool was dispatched exactly once despite being requested twice.
+    # prom.health.call_count == 2: once for the metrics pre-seed at run_agent entry,
+    # once for the single get_metrics tool dispatch (duplicate was suppressed).
+    assert prom.health.call_count == 2
     # Verify the loop-breaker user message appeared in working history
     all_args = llm.chat_with_tools.call_args_list
     found_breaker = False

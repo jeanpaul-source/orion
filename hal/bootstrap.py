@@ -409,13 +409,20 @@ def dispatch_intent(
     ntopng_url: str = "",
     tavily_api_key: str = "",
 ) -> str:
-    """Route a query to the correct handler based on intent classification.
+    """Route a query to one of two paths based on intent classification.
 
-    # why: Layer 1 — conversational queries (greetings, acknowledgements) skip the
-    # full agentic tool loop for lower latency and fewer spurious tool calls.
-    # classifier is optional during Layer 1 rollout; once main.py passes it,
-    # all conversational queries are routed here instead of run_agent.
-    # All non-conversational intents (health, fact, agentic) still use run_agent.
+    Path 1 — conversational (fast): greetings and acknowledgements skip the
+    tool loop entirely. No KB lookup, no Prometheus call, one LLM round-trip.
+
+    Path 2 — capable (everything else): health, fact, and agentic queries all
+    enter run_agent, which has full tool access and pre-seeds context from both
+    KB and a live Prometheus snapshot before the first LLM call. Simple health
+    and fact queries resolve in iteration 1 (context already injected); boundary
+    queries that need tools can call them without restriction.
+
+    # why: collapsing health/fact into run_agent removes the capability gate that
+    # caused boundary queries to get shallow answers. See notes/track-a-routing-
+    # refactor-plan.md Item 1 for the full root-cause analysis.
     """
     if classifier is not None:
         intent, _confidence = classifier.classify(user_input)
@@ -423,22 +430,6 @@ def dispatch_intent(
             return _handle_conversational(
                 user_input, history, llm, mem, session_id, system_prompt, console
             )
-        if intent == "health":
-            # why: fall back to run_agent if Prometheus is unreachable so the
-            # agent loop can diagnose and explain the outage rather than going silent.
-            result = _handle_health(
-                user_input, history, llm, prom, mem, session_id, system_prompt, console
-            )
-            if result is not None:
-                return result
-        if intent == "fact":
-            # why: fall back to run_agent if KB has no matching chunks — the agent
-            # loop can search more broadly, use web_search, or ask for clarification.
-            result = _handle_fact(
-                user_input, history, llm, kb, mem, session_id, system_prompt, console
-            )
-            if result is not None:
-                return result
     return run_agent(
         user_input,
         history,

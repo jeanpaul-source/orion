@@ -209,18 +209,22 @@ def test_conversational_query_calls_no_tools():
 # ---------------------------------------------------------------------------
 
 
-def test_health_query_uses_prometheus_not_tool_loop():
-    """Health intent must call prom.health() and pass tools=[] to the LLM.
+def test_health_query_routes_to_run_agent_with_metrics_seeded():
+    """Health intent enters run_agent with metrics pre-seeded and full tool access.
 
-    # why this test exists: "how's the CPU?" classified as health should receive
-    # a Prometheus snapshot directly — not spin up the 8-iteration tool loop
-    # which adds 3-5 extra LLM round-trips for a query that only needs one
-    # Prometheus call.  If someone changes the routing, this test fails loudly.
+    # why this test exists (Track A regression guard): health-classified queries must
+    # enter run_agent so the LLM has tool access for boundary queries. Simple status
+    # questions resolve in iteration 1 because the Prometheus snapshot is already in
+    # context; boundary questions ("is the vLLM config causing memory pressure?")
+    # can call read_file or search_kb without hitting a tools=[] gate.
     #
-    # Verified against bootstrap.py:
-    #   - dispatch_intent() routes health intent to _handle_health()
-    #   - _handle_health() calls prom.health() then llm.chat_with_tools(working, [], ...)
-    #   - kb.search is never called on the health path
+    # This replaces test_health_query_uses_prometheus_not_tool_loop which tested the
+    # now-removed _handle_health() path. See notes/track-a-routing-refactor-plan.md.
+    #
+    # Verified against bootstrap.py + agent.py:
+    #   - dispatch_intent() routes health intent to run_agent() (not _handle_health)
+    #   - run_agent() calls prom.health() for metrics pre-seed before first LLM call
+    #   - run_agent() calls llm.chat_with_tools(working, available_tools, ...) — tools != []
     """
     llm = MagicMock()
     llm.chat_with_tools.return_value = {"role": "assistant", "content": "All good."}
@@ -237,6 +241,8 @@ def test_health_query_uses_prometheus_not_tool_loop():
         "gpu_temp_c": 65.0,
     }
     kb = MagicMock()
+    # why: no KB hits expected for a status query; metrics pre-seed is the context
+    kb.search.return_value = []
     mem = MagicMock()
     classifier = MagicMock()
     # why: force health routing regardless of the actual query text
@@ -259,24 +265,27 @@ def test_health_query_uses_prometheus_not_tool_loop():
 
     assert result == "All good."
 
-    # Prometheus must have been queried for live metrics
+    # Prometheus must have been queried for the metrics pre-seed
     prom.health.assert_called_once()
 
-    # KB must never be touched on a health turn
-    # why: health queries answer from live metrics, not from stored knowledge
-    kb.search.assert_not_called()
-
-    # LLM must have been called with tools=[] — no tool loop
+    # LLM must be called with a NON-EMPTY tools list — health queries must have tool access.
+    # why: this is the core Track A guarantee. If this assertion fails, a tools=[] gate
+    # was re-introduced on the health path and boundary queries will get shallow answers.
     tools_arg = llm.chat_with_tools.call_args[0][1]
-    assert tools_arg == [], (
-        f"Health path must call LLM with tools=[], got: {tools_arg!r}"
+    assert tools_arg != [], (
+        "Health path must have tool access (tools != []). "
+        "A tools=[] gate was re-introduced — see notes/track-a-routing-refactor-plan.md."
     )
 
-    # The metrics snapshot must have been injected into the user message
-    # why: if the snapshot is not in the message the LLM has no data to answer from
-    user_msg = llm.chat_with_tools.call_args[0][0][-1]["content"]
-    assert "cpu=12.3%" in user_msg, (
-        f"Expected metrics snapshot in user message, got: {user_msg!r}"
+    # The metrics snapshot must appear in the augmented user message.
+    # why: pre-seeding avoids a get_metrics tool call for simple status queries;
+    # the LLM sees the snapshot immediately and can answer in one iteration.
+    # Note: search by role — working list is mutated post-call (assistant msg appended),
+    # so [-1] would return the assistant reply, not the user message.
+    all_msgs = llm.chat_with_tools.call_args_list[0][0][0]
+    augmented_user = next(m["content"] for m in all_msgs if m.get("role") == "user")
+    assert "cpu=12.3%" in augmented_user, (
+        f"Expected metrics snapshot in augmented user message, got: {augmented_user!r}"
     )
 
 
@@ -344,18 +353,22 @@ def test_health_prometheus_failure_falls_back_to_agent():
 # ---------------------------------------------------------------------------
 
 
-def test_fact_query_uses_kb_not_tool_loop():
-    """Fact intent must call kb.search() and pass tools=[] to the LLM.
+def test_fact_query_routes_to_run_agent_with_kb_seeded():
+    """Fact intent enters run_agent with KB context pre-seeded and full tool access.
 
-    # why this test exists: "what port does Prometheus run on?" is answered by
-    # the KB — routing it through the 8-iteration tool loop wastes 3-5 LLM
-    # round-trips for a question that only needs one KB lookup.  If routing
-    # changes, this test fails loudly.
+    # why this test exists (Track A regression guard): fact-classified queries must
+    # enter run_agent so the LLM has tool access. Simple documented facts resolve
+    # from the KB pre-seed in iteration 1; queries that need live data can use
+    # get_metrics or run_command without hitting a tools=[] gate.
     #
-    # Verified against bootstrap.py:
-    #   - dispatch_intent() routes fact intent to _handle_fact()
-    #   - _handle_fact() calls kb.search() then llm.chat_with_tools(working, [], ...)
-    #   - prom.health is never called on the fact path
+    # This replaces test_fact_query_uses_kb_not_tool_loop which tested the
+    # now-removed _handle_fact() path. See notes/track-a-routing-refactor-plan.md.
+    #
+    # Verified against bootstrap.py + agent.py:
+    #   - dispatch_intent() routes fact intent to run_agent() (not _handle_fact)
+    #   - run_agent() calls kb.search() for KB pre-seed; score 0.82 >= 0.75 threshold
+    #   - run_agent() calls prom.health() for metrics pre-seed
+    #   - run_agent() calls llm.chat_with_tools(working, available_tools, ...) — tools != []
     """
     llm = MagicMock()
     llm.chat_with_tools.return_value = {
@@ -363,7 +376,21 @@ def test_fact_query_uses_kb_not_tool_loop():
         "content": "Prometheus runs on port 9091.",
     }
     prom = MagicMock()
+    # why: metrics pre-seed runs for all non-conversational queries in run_agent;
+    # provide a real dict so the snapshot formats cleanly in the context message.
+    prom.health.return_value = {
+        "cpu_pct": 10.0,
+        "mem_pct": 40.0,
+        "disk_root_pct": 30.0,
+        "disk_docker_pct": 50.0,
+        "disk_data_pct": 20.0,
+        "swap_pct": 1.0,
+        "load1": 0.4,
+        "gpu_vram_pct": 75.0,
+        "gpu_temp_c": 60.0,
+    }
     kb = MagicMock()
+    # score 0.82 is above the 0.75 pre-seed threshold — chunk will be injected
     kb.search.return_value = [
         {"content": "Prometheus: port 9091", "file": "services.md", "score": 0.82},
     ]
@@ -388,17 +415,26 @@ def test_fact_query_uses_kb_not_tool_loop():
     )
 
     assert result == "Prometheus runs on port 9091."
-    kb.search.assert_called_once()
-    prom.health.assert_not_called()
+    kb.search.assert_called()
 
+    # LLM must be called with a NON-EMPTY tools list — fact queries must have tool access.
+    # why: this is the core Track A guarantee. If this assertion fails, a tools=[] gate
+    # was re-introduced on the fact path and boundary queries will get shallow answers.
     tools_arg = llm.chat_with_tools.call_args[0][1]
-    assert tools_arg == [], f"Fact path must call LLM with tools=[], got: {tools_arg!r}"
+    assert tools_arg != [], (
+        "Fact path must have tool access (tools != []). "
+        "A tools=[] gate was re-introduced — see notes/track-a-routing-refactor-plan.md."
+    )
 
-    # KB context must have been injected into the user message
-    # why: without it the LLM has no grounded data and may hallucinate
-    user_msg = llm.chat_with_tools.call_args[0][0][-1]["content"]
-    assert "Prometheus: port 9091" in user_msg, (
-        f"Expected KB chunk in user message, got: {user_msg!r}"
+    # KB context must have been injected into the augmented user message.
+    # why: pre-seeding avoids a search_kb tool call for simple factual queries;
+    # the LLM sees the relevant chunk immediately and can answer in one iteration.
+    # Note: search by role — working list is mutated post-call (assistant msg appended),
+    # so [-1] would return the assistant reply, not the user message.
+    all_msgs = llm.chat_with_tools.call_args_list[0][0][0]
+    augmented_user = next(m["content"] for m in all_msgs if m.get("role") == "user")
+    assert "Prometheus: port 9091" in augmented_user, (
+        f"Expected KB chunk in augmented user message, got: {augmented_user!r}"
     )
 
 

@@ -83,6 +83,37 @@ def run_agent(
         except Exception:
             span.set_attribute("hal.kb.seeded_chunks", 0)
 
+        # Seed the first message with a live Prometheus metrics snapshot.
+        # Symmetric to the KB pre-seed above: one cheap HTTP call, result injected
+        # into the augmented context before the first LLM invocation.
+        # why: health-classified queries now enter run_agent (Track A routing refactor).
+        # Pre-seeding means simple status questions ("how's CPU?") still resolve in
+        # iteration 1 with no tool call — same quality as the old _handle_health path
+        # but without forfeiting tool access for boundary queries that need it.
+        # If Prometheus is unreachable, we skip silently; run_agent can call get_metrics
+        # as a tool on iteration 1 and explain the outage itself.
+        def _fmt_metric(val: object, suffix: str = "") -> str:
+            return f"{val}{suffix}" if val is not None else "unavailable"
+
+        try:
+            _metrics = prom.health()
+            if _metrics:
+                _snapshot = (
+                    f"cpu={_fmt_metric(_metrics.get('cpu_pct'), '%')} "
+                    f"mem={_fmt_metric(_metrics.get('mem_pct'), '%')} "
+                    f"disk_root={_fmt_metric(_metrics.get('disk_root_pct'), '%')} "
+                    f"disk_docker={_fmt_metric(_metrics.get('disk_docker_pct'), '%')} "
+                    f"disk_data={_fmt_metric(_metrics.get('disk_data_pct'), '%')} "
+                    f"swap={_fmt_metric(_metrics.get('swap_pct'), '%')} "
+                    f"load={_fmt_metric(_metrics.get('load1'))} "
+                    f"gpu_vram={_fmt_metric(_metrics.get('gpu_vram_pct'), '%')} "
+                    f"gpu_temp={_fmt_metric(_metrics.get('gpu_temp_c'), '\u00b0C')}"
+                )
+                sections.append("Live metrics: " + _snapshot)
+                span.set_attribute("hal.metrics.seeded", True)
+        except Exception:
+            span.set_attribute("hal.metrics.seeded", False)
+
         sections.append("User query:\n" + user_input)
         augmented = "\n\n".join(sections)
 
