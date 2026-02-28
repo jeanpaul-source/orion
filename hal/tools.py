@@ -1,17 +1,21 @@
-"""Tool registry for the agent loop — Layer 0.
+"""Tool registry for the agent loop.
 
 Layer 0 tools (always available, no external API keys required):
-  search_kb     — pgvector semantic search
-  get_metrics   — live Prometheus metrics
-  get_trend     — Prometheus range-query trend analysis
-  run_command   — shell command execution (Judge-gated)
-  read_file     — file read (Judge-gated)
-  list_dir      — directory listing (Judge-gated)
-  write_file    — file write (Judge-gated)
+  search_kb       — pgvector semantic search
+  get_metrics     — live Prometheus metrics
+  get_trend       — Prometheus range-query trend analysis
+  run_command     — shell command execution (Judge-gated)
+  read_file       — file read (Judge-gated)
+  list_dir        — directory listing (Judge-gated)
+  write_file      — file write (Judge-gated)
 
-Locked tools (moved to hal/_unlocked/ — returns with their layer):
-  Layer 3: get_action_stats, get_security_events, get_host_connections,
-           get_traffic_summary, scan_lan, fetch_url, web_search,
+Layer 3 tools (graduated — active):
+  web_search      — Tavily web search (enabled only when TAVILY_API_KEY is set)
+  fetch_url       — SSRF-safe URL fetch + text extraction (Judge tier 1)
+  get_action_stats — audit log analytics
+
+Locked tools (still in hal/_unlocked/ — return with their layer):
+  Layer 3: get_security_events, get_host_connections, get_traffic_summary, scan_lan,
            patch_file, git_status, git_diff
 """
 
@@ -20,6 +24,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import NamedTuple, TypedDict
 
+import hal.trust_metrics as _trust_metrics
+import hal.web as _web
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
@@ -169,6 +175,53 @@ def _handle_get_trend(args: dict, ctx: ToolContext) -> str:
         f"{summary['delta_per_hour']:+.2f}/h, "
         f"{summary['direction']})"
     )
+
+
+def _handle_web_search(args: dict, ctx: ToolContext) -> str:
+    query = args.get("query") or ""
+    try:
+        results = _web.web_search(query, api_key=ctx.tavily_api_key)
+    except (ValueError, RuntimeError) as exc:
+        return f"web_search failed: {exc}"
+    if not results:
+        return "No results found."
+    lines = []
+    for r in results:
+        lines.append(f"[{r['score']:.2f}] {r['title']}")
+        lines.append(f"  {r['url']}")
+        lines.append(f"  {r['content']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _handle_fetch_url(args: dict, ctx: ToolContext) -> str:
+    url = args.get("url") or ""
+    reason = args.get("reason") or ""
+    if not ctx.judge.approve("fetch_url", url, reason=reason):
+        return "Action denied by user."
+    try:
+        return _web.fetch_url(url)
+    except (ValueError, RuntimeError) as exc:
+        return f"fetch_url failed: {exc}"
+
+
+def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
+    pattern = args.get("pattern") or ""
+    try:
+        stats = _trust_metrics.get_action_stats(pattern)
+    except Exception as exc:
+        return f"get_action_stats failed: {exc}"
+    lines = []
+    for action, s in stats.items():
+        lines.append(
+            f"{action}: total={s.total}, approved={s.approved}, "
+            f"denied={s.denied}, last={s.last_timestamp}"
+        )
+    return "\n".join(lines) if lines else f"No audit entries matching '{pattern}'."
+
+
+def _web_search_enabled(tavily_api_key: str) -> bool:
+    return bool(tavily_api_key)
 
 
 TOOL_REGISTRY: dict[str, ToolSpec] = {
@@ -385,6 +438,88 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
         "handler": _handle_write_file,
+        "enabled": _always_enabled,
+    },
+    "web_search": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": (
+                    "Search the public web via Tavily. Use this when the answer is "
+                    "not in the KB and requires current information from the internet. "
+                    "Private IPs and hostnames are stripped from the query before sending."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Natural-language search query",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
+        "handler": _handle_web_search,
+        "enabled": _web_search_enabled,
+    },
+    "fetch_url": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "fetch_url",
+                "description": (
+                    "Fetch a public URL and extract its article text. "
+                    "Only http:// and https:// are allowed. Private IPs, RFC1918 "
+                    "addresses, and .local/.internal hostnames are blocked (SSRF guard). "
+                    "Requires approval."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to fetch (must be http:// or https://)",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need to fetch this URL",
+                        },
+                    },
+                    "required": ["url"],
+                },
+            },
+        },
+        "handler": _handle_fetch_url,
+        "enabled": _always_enabled,
+    },
+    "get_action_stats": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_action_stats",
+                "description": (
+                    "Query Judge audit log statistics — counts of approved and denied "
+                    "actions matching a given pattern. Useful for trust/safety reporting."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": (
+                                "Substring or regex to filter actions by name. "
+                                "Use empty string to get all actions."
+                            ),
+                        }
+                    },
+                    "required": ["pattern"],
+                },
+            },
+        },
+        "handler": _handle_get_action_stats,
         "enabled": _always_enabled,
     },
 }

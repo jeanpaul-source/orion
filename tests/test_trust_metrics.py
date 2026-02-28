@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hal._unlocked.trust_metrics import (
+from hal.trust_metrics import (
     aggregate_stats,
     get_action_stats,
     load_audit_log,

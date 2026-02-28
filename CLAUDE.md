@@ -143,7 +143,7 @@ locked in `hal/_unlocked/` until each layer's hardening criteria are met.
 
 | Module | Layer | Why locked |
 | --- | --- | --- |
-| `security.py`, `web.py`, `trust_metrics.py`, `postmortem.py`, `falco_noise.py`, `watchdog.py` | 3 | Security/web tools and watchdog — require Judge hardening at Layer 0 first |
+| `security.py`, `postmortem.py`, `watchdog.py` | 3 | Security workers and watchdog — require Judge hardening at Layer 0 first |
 | `server.py`, `telegram.py` | 4 | HTTP + Telegram interfaces — reactivate after REPL is bulletproof |
 
 To graduate a module: `git mv hal/_unlocked/foo.py hal/foo.py`, update imports, run

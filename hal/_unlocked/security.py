@@ -15,10 +15,10 @@ import json
 import shlex
 import xml.etree.ElementTree as ET
 
-from hal._unlocked.falco_noise import (
-    is_falco_noise,  # why: falco_noise is locked alongside security (Layer 3)
-)
 from hal.executor import SSHExecutor
+from hal.falco_noise import (
+    is_falco_noise,
+)
 from hal.judge import Judge
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from hal._unlocked.postmortem import (
     _prometheus_section,
     gather_postmortem_context,
 )
-from hal._unlocked.trust_metrics import AuditEvent
+from hal.trust_metrics import AuditEvent
 
 # ---------------------------------------------------------------------------
 # Helpers

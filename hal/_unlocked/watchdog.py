@@ -18,8 +18,8 @@ from pathlib import Path
 import requests
 
 import hal.config as cfg
-from hal._unlocked.falco_noise import (
-    is_falco_noise,  # why: falco_noise is locked alongside security (Layer 3)
+from hal.falco_noise import (
+    is_falco_noise,
 )
 from hal.prometheus import PrometheusClient
 

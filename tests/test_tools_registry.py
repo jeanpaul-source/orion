@@ -13,7 +13,7 @@ _CTX = ToolContext(
 
 
 def test_get_tools_returns_layer0_tool_set():
-    """Layer 0 tool set: 7 tools, all always-enabled, no key-gating."""
+    """Active tool set without Tavily key: 9 tools (web_search is key-gated)."""
     names = [tool["function"]["name"] for tool in get_tools()]
     assert set(names) == {
         "search_kb",
@@ -23,12 +23,14 @@ def test_get_tools_returns_layer0_tool_set():
         "read_file",
         "list_dir",
         "write_file",
+        "fetch_url",
+        "get_action_stats",
     }
-    # tavily key makes no difference in Layer 0 — no key-gated tools
+    # With a Tavily key, web_search is also included (10 tools total)
     names_with_key = [
         tool["function"]["name"] for tool in get_tools(tavily_api_key="k")
     ]
-    assert names == names_with_key
+    assert set(names_with_key) == set(names) | {"web_search"}
 
 
 def test_dispatch_tool_unknown_name_returns_clear_error():
