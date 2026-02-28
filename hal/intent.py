@@ -1,4 +1,5 @@
 """Intent classifier — routes queries to the right handler before the LLM sees them.
+# why: graduated from hal/_unlocked/ — Layer 0 complete, intent routing now active
 
 Uses embedding similarity against a fixed set of example sentences per category.
 Routing is deterministic and fast: one embed call per query, no LLM needed.
@@ -79,6 +80,14 @@ EXAMPLES: dict[str, list[str]] = {
         "what is the current memory usage?",
         "how much disk space is left?",
         "current cpu usage",
+        # informal status questions observed misrouting in smoke tests
+        "how are we looking?",
+        "how are things?",
+        "all good?",
+        "everything running ok?",
+        "gpu seems hot",
+        "is the gpu temperature normal?",
+        "how's the gpu doing?",
     ],
     "fact": [
         "what port does prometheus run on?",

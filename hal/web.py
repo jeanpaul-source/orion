@@ -1,4 +1,5 @@
 """Web access for HAL — search (Level 0) and page fetch (Level 1).
+# why locked: Layer 3 — web_search and fetch_url; SSRF protection must be re-audited when unlocking
 
 Privacy guard: RFC1918 addresses and private hostnames are stripped from
 outbound queries before they reach the Tavily API.

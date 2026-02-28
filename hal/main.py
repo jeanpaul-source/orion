@@ -16,7 +16,9 @@ from rich.text import Text
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
-from hal.intent import IntentClassifier
+from hal.intent import (
+    IntentClassifier,  # why: Layer 1 — routes conversational queries away from the tool loop
+)
 from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
 from hal.logging_utils import set_context, setup_logging
@@ -24,7 +26,6 @@ from hal.memory import MemoryStore
 from hal.postmortem import gather_postmortem_context
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import get_tracer, setup_tracing
-from hal.trust_metrics import get_action_stats, load_audit_log
 from hal.workers import list_dir, read_file, write_file
 
 console = Console()
@@ -41,10 +42,9 @@ Commands:
   /ls <path>       — list a directory on the server
   /write <path>    — write a file on the server (prompts for content)
   /audit           — show recent audit log
-  /web_stats       — show web search + fetch_url usage stats
+  /postmortem <desc>   — gather post-incident audit + metrics + Falco evidence
   /kb              — list knowledge base categories
   /remember <fact> — store a fact permanently in the knowledge base
-  /postmortem <desc> — reconstruct timeline and synthesize post-mortem (--hours N, default 2)
   /search_memory <q> — search past sessions for a keyword
   /sessions        — list recent sessions
   /resume <id>     — resume a past session
@@ -147,6 +147,31 @@ def cmd_write(path: str, executor: SSHExecutor, judge: Judge) -> None:
         console.print("[red]write failed or cancelled[/]")
 
 
+def cmd_postmortem(
+    description: str,
+    prom: PrometheusClient,
+    executor: SSHExecutor,
+    judge: Judge,
+) -> None:
+    if not description:
+        console.print("[yellow]Usage: /postmortem <incident description>[/]")
+        return
+    try:
+        with console.status("gathering post-incident evidence...", spinner="dots"):
+            context = gather_postmortem_context(
+                description=description,
+                window_hours=24,
+                prom=prom,
+                executor=executor,
+                judge=judge,
+            )
+        console.print(
+            Panel(context, title="post-incident evidence", border_style="red")
+        )
+    except Exception as e:
+        console.print(f"[red]postmortem failed: {e}[/]")
+
+
 def cmd_audit(n: int = 20) -> None:
     try:
         lines = AUDIT_LOG.read_text().splitlines()
@@ -169,48 +194,6 @@ def cmd_audit(n: int = 20) -> None:
                 console.print(f"  [yellow]{line}[/]")
     except FileNotFoundError:
         console.print("[dim]no audit log yet[/]")
-
-
-def cmd_web_stats() -> None:
-    """Show web tool usage stats from the audit log."""
-    ws = get_action_stats("web_search")
-    fu = get_action_stats("fetch_url")
-
-    if ws["total"] == 0 and fu["total"] == 0:
-        console.print("[dim]no web tool activity in audit log[/]")
-        return
-
-    console.print("\n[bold]Web tool usage[/]")
-    console.print(
-        f"  web_search : {ws['total']} calls  "
-        f"({ws['approved']} approved, {ws['denied']} denied)"
-    )
-    console.print(
-        f"  fetch_url  : {fu['total']} calls  "
-        f"({fu['approved']} approved, {fu['denied']} denied)"
-    )
-
-    # Collect recent queries / URLs from the audit log (last 10 each)
-    ws_queries: list[str] = []
-    fu_urls: list[str] = []
-    try:
-        for ev in load_audit_log():
-            if ev.action_type == "web_search" and ev.detail:
-                ws_queries.append(ev.detail)
-            elif ev.action_type == "fetch_url" and ev.detail:
-                fu_urls.append(ev.detail)
-    except FileNotFoundError:
-        pass
-
-    if ws_queries:
-        console.print("\n[dim]Recent web_search queries (last 10):[/]")
-        for q in ws_queries[-10:]:
-            console.print(f"    {q}")
-    if fu_urls:
-        console.print("\n[dim]Recent fetch_url calls (last 10):[/]")
-        for u in fu_urls[-10:]:
-            console.print(f"    {u}")
-    console.print()
 
 
 def cmd_kb(kb: KnowledgeBase) -> None:
@@ -263,67 +246,6 @@ def cmd_remember(fact: str, kb: KnowledgeBase) -> None:
     with console.status("storing fact...", spinner="dots"):
         kb.remember(fact)
     console.print(f"[green]remembered:[/] {fact}")
-
-
-_POSTMORTEM_SYSTEM = (
-    "You are performing a post-incident analysis. "
-    "Reconstruct the timeline, identify the likely root cause, and write a brief post-mortem. "
-    "Be factual and concise. Do not invent events not present in the data."
-)
-
-
-def cmd_postmortem(
-    raw_args: str,
-    prom: PrometheusClient,
-    executor: SSHExecutor,
-    judge: Judge,
-    history: list[dict],
-    llm: object,
-    kb: object,
-    mem: object,
-    session_id: str,
-) -> None:
-    """Gather evidence and synthesize a post-mortem via the agent loop."""
-    from hal.agent import run_agent
-
-    # Parse optional --hours N suffix.
-    window_hours = 2
-    description = raw_args.strip()
-    if "--hours" in description:
-        parts = description.split("--hours", 1)
-        description = parts[0].strip()
-        try:
-            window_hours = int(parts[1].strip().split()[0])
-        except (ValueError, IndexError):
-            console.print("[yellow]Invalid --hours value; using default 2h.[/]")
-
-    if not description:
-        console.print(
-            "[yellow]Usage: /postmortem <incident description> [--hours N][/]"
-        )
-        return
-
-    console.print(
-        f"[dim]Gathering evidence for '{description}' (window={window_hours}h)...[/]"
-    )
-    context_block = gather_postmortem_context(
-        description, window_hours, prom, executor, judge
-    )
-
-    user_input = f"{context_block}\n\nIncident to analyse: {description}"
-    run_agent(
-        user_input=user_input,
-        history=history,
-        llm=llm,
-        kb=kb,
-        prom=prom,
-        executor=executor,
-        judge=judge,
-        mem=mem,
-        session_id=session_id,
-        system=_POSTMORTEM_SYSTEM,
-        console=console,
-    )
 
 
 def main() -> None:
@@ -381,10 +303,9 @@ def main() -> None:
     executor = SSHExecutor(config.lab_host, config.lab_user)
     judge = Judge(llm=llm)
     mem = MemoryStore()
+    # why: build classifier after embed is ready; failures degrade to agentic routing
+    classifier = IntentClassifier(embed)
     mem.prune_old_turns()  # silently drop turns older than 30 days on every startup
-
-    with console.status("[dim]building intent classifier...[/]", spinner="dots"):
-        classifier = IntentClassifier(embed)
 
     # Resume last session or start fresh
     session_id = mem.last_session_id()
@@ -413,9 +334,7 @@ def main() -> None:
     if args.query:
         try:
             user_input = args.query.strip()
-            intent, confidence = classifier.classify(user_input)
             dispatch_intent(
-                intent,
                 user_input,
                 history,
                 llm,
@@ -427,6 +346,7 @@ def main() -> None:
                 session_id,
                 get_system_prompt(),
                 console,
+                classifier=classifier,
                 ntopng_url=config.ntopng_url,
                 tavily_api_key=config.tavily_api_key,
             )
@@ -467,24 +387,12 @@ def main() -> None:
                 cmd_write(user_input[7:].strip(), executor, judge)
             elif user_input == "/audit":
                 cmd_audit()
-            elif user_input == "/web_stats":
-                cmd_web_stats()
+            elif user_input.startswith("/postmortem "):
+                cmd_postmortem(user_input[12:].strip(), prom, executor, judge)
             elif user_input == "/kb":
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):
                 cmd_remember(user_input[10:].strip(), kb)
-            elif user_input.startswith("/postmortem"):
-                cmd_postmortem(
-                    user_input[11:].strip(),
-                    prom,
-                    executor,
-                    judge,
-                    history,
-                    llm,
-                    kb,
-                    mem,
-                    session_id,
-                )
             elif user_input.startswith("/search_memory "):
                 cmd_search_memory(user_input[15:].strip(), mem)
             elif user_input == "/sessions":
@@ -509,19 +417,13 @@ def main() -> None:
             elif user_input.startswith("/"):
                 console.print("[yellow]Unknown command. Type /help.[/]")
             else:
-                intent, confidence = classifier.classify(user_input)
-                console.print(f"[dim]  intent: {intent} ({confidence:.2f})[/]")
-
                 # Set logging context for this turn
                 set_context(session_id=session_id)
                 with get_tracer().start_as_current_span("hal.turn") as turn_span:
                     turn_span.set_attribute("hal.session_id", session_id)
                     turn_span.set_attribute("hal.query", user_input[:200])
-                    turn_span.set_attribute("hal.intent", intent)
-                    turn_span.set_attribute("hal.confidence", confidence)
 
                     dispatch_intent(
-                        intent,
                         user_input,
                         history,
                         llm,
@@ -533,6 +435,7 @@ def main() -> None:
                         session_id,
                         get_system_prompt(),
                         console,
+                        classifier=classifier,
                         ntopng_url=config.ntopng_url,
                         tavily_api_key=config.tavily_api_key,
                     )

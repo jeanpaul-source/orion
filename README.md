@@ -37,8 +37,8 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 
 ## Current state (Feb 2026)
 
-147 tests (35 require Ollama, 129 offline). Eval baselines: `hal_identity=100%`,
-`no_raw_json=100%`, `intent_accuracy=95.8%`.
+558 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
+`hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=100%`, `web_tool_accuracy=100%`.
 
 | Component | Status |
 |---|---|
@@ -75,7 +75,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 
 ## Slash commands
 
-```
+```text
 /health          — live Prometheus metrics (CPU, memory, disk, load)
 /search <q>      — search the knowledge base
 /run <cmd>       — execute a command on the server (goes through Judge)
@@ -114,6 +114,8 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/judge.py` | Policy gate — every action goes through this |
 | `hal/llm.py` | `VLLMClient` (chat) + `OllamaClient` (embeddings only) |
 | `hal/security.py` | Falco, Osquery, ntopng, Nmap workers |
+| `hal/falco_noise.py` | Falco noise filter rules (`NOISE_RULES` + `is_falco_noise()`); no `hal.*` deps |
+| `hal/web.py` | `web_search()` via Tavily; `fetch_url()` with SSRF + DNS-rebinding defence; `sanitize_query()` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/workers.py` | File operation tools (read, write, patch, git_*) |
 | `hal/executor.py` | SSH command runner |
@@ -125,5 +127,5 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
 | `eval/` | Evaluation harness — 24 queries, scorer, baselines |
-| `tests/` | 147 tests (35 intent classifier + 129 offline) |
+| `tests/` | 558 offline tests + 35 intent classifier tests (require Ollama) |
 | `ops/` | Systemd unit files for vllm, watchdog, harvest, telegram |

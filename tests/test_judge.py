@@ -221,3 +221,218 @@ def test_tier_for_list_dir_sensitive():
 def test_tier_for_unknown_action():
     # Unknown action types default to tier 2 (default-deny: explain + approve)
     assert tier_for("some_unknown_action") == 2
+
+
+# ---------------------------------------------------------------------------
+# Judge.record_outcome — audit log outcome entries
+# ---------------------------------------------------------------------------
+
+
+def test_record_outcome_writes_success_entry(tmp_path):
+    """record_outcome appends a JSON outcome entry with status='outcome'."""
+    import json
+
+    from hal.judge import Judge
+
+    log = tmp_path / "audit.log"
+    judge = Judge(audit_log=log)
+    judge.record_outcome("run_command", "ps aux", "success")
+
+    lines = log.read_text().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["status"] == "outcome"
+    assert entry["outcome"] == "success"
+    assert entry["action"] == "run_command"
+    assert entry["detail"] == "ps aux"
+
+
+def test_record_outcome_writes_error_entry(tmp_path):
+    """record_outcome records error outcomes correctly."""
+    import json
+
+    from hal.judge import Judge
+
+    log = tmp_path / "audit.log"
+    judge = Judge(audit_log=log)
+    judge.record_outcome("run_command", "some_cmd", "error")
+
+    entry = json.loads(log.read_text().splitlines()[0])
+    assert entry["outcome"] == "error"
+    assert entry["status"] == "outcome"
+
+
+def test_record_outcome_truncates_long_detail(tmp_path):
+    """detail is capped at 500 chars to match _log() behaviour."""
+    import json
+
+    from hal.judge import Judge
+
+    log = tmp_path / "audit.log"
+    judge = Judge(audit_log=log)
+    long_detail = "x" * 600
+    judge.record_outcome("search_kb", long_detail, "success")
+
+    entry = json.loads(log.read_text().splitlines()[0])
+    assert len(entry["detail"]) == 500
+
+
+# ---------------------------------------------------------------------------
+# Trust evolution — _trust_key, _load_trust_overrides, approve() integration
+# ---------------------------------------------------------------------------
+
+
+def test_trust_key_run_command_uses_first_token():
+    """run_command keys group by first token so 'ps aux' and 'ps -ef' share a bucket."""
+    from hal.judge import _trust_key
+
+    assert _trust_key("run_command", "ps aux") == "run_command:ps"
+    assert _trust_key("run_command", "ps -ef") == "run_command:ps"
+    assert (
+        _trust_key("run_command", "systemctl restart grafana")
+        == "run_command:systemctl"
+    )
+
+
+def test_trust_key_non_command_is_action_type():
+    """Non-run_command actions use their action type as the key."""
+    from hal.judge import _trust_key
+
+    assert _trust_key("search_kb", "some query") == "search_kb"
+    assert _trust_key("get_metrics", "") == "get_metrics"
+
+
+def test_load_trust_overrides_promotes_after_threshold(tmp_path):
+    """An action with >= 10 outcomes and >= 90% success rate earns an override."""
+    import json
+
+    from hal.judge import _TRUST_MIN_SAMPLES, _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    # Write 10 successful outcomes for run_command:systemctl
+    # why: minimum samples exactly at threshold should trigger promotion.
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl status grafana",
+        }
+        for _ in range(_TRUST_MIN_SAMPLES)
+    ]
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    overrides = _load_trust_overrides(log)
+    assert "run_command:systemctl" in overrides
+    assert overrides["run_command:systemctl"] == 0
+
+
+def test_load_trust_overrides_requires_min_samples(tmp_path):
+    """Fewer than _TRUST_MIN_SAMPLES outcomes must not trigger promotion."""
+    import json
+
+    from hal.judge import _TRUST_MIN_SAMPLES, _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl status grafana",
+        }
+        for _ in range(_TRUST_MIN_SAMPLES - 1)
+    ]
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    overrides = _load_trust_overrides(log)
+    assert "run_command:systemctl" not in overrides
+
+
+def test_load_trust_overrides_requires_success_rate(tmp_path):
+    """A success rate below the threshold must not trigger promotion."""
+    import json
+
+    from hal.judge import _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    # 8 successes + 2 errors = 80% success rate — below the 90% threshold.
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl status grafana",
+        }
+    ] * 8 + [
+        {
+            "status": "outcome",
+            "outcome": "error",
+            "action": "run_command",
+            "detail": "systemctl status grafana",
+        }
+    ] * 2
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    overrides = _load_trust_overrides(log)
+    assert "run_command:systemctl" not in overrides
+
+
+def test_load_trust_overrides_ignores_approval_entries(tmp_path):
+    """Only status='outcome' entries count — approval entries are ignored."""
+    import json
+
+    from hal.judge import _TRUST_MIN_SAMPLES, _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    # Mix of approval and outcome entries; only outcomes should count.
+    entries = [
+        {
+            "status": "auto",
+            "action": "run_command",
+            "detail": "systemctl status grafana",
+        }
+    ] * 20 + [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl status grafana",
+        }
+    ] * (_TRUST_MIN_SAMPLES - 1)
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    overrides = _load_trust_overrides(log)
+    # why: approval entries must not inflate the outcome count.
+    assert "run_command:systemctl" not in overrides
+
+
+def test_approve_applies_trust_override_for_tier1(tmp_path):
+    """approve() reduces tier 1 → 0 when trust override exists for the action key."""
+    import json
+
+    from hal.judge import _TRUST_MIN_SAMPLES, Judge
+
+    log = tmp_path / "audit.log"
+    # Pre-populate audit log with enough successful outcomes.
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl status grafana",
+        }
+        for _ in range(_TRUST_MIN_SAMPLES)
+    ]
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    judge = Judge(audit_log=log)
+    # systemctl commands are tier 1 statically; trust override should make it tier 0.
+    # why: the full approve() path must be exercised to confirm overrides are applied.
+    result = judge.approve("run_command", "systemctl status grafana")
+    assert result is True  # auto-approved via trust evolution, no prompt needed
+
+    # The audit log entry should record tier 0 (not tier 1).
+    outcome_entries = [json.loads(line) for line in log.read_text().splitlines()]
+    approval_entry = outcome_entries[-1]  # last entry is the approval log
+    assert approval_entry["tier"] == 0

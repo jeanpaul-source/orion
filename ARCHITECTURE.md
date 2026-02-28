@@ -6,15 +6,15 @@ This document describes Orion's components, data flow, and the design decisions 
 
 ## Component map
 
-```
+```text
 You  (terminal REPL, HTTP server, Telegram bot)
  └─ hal/main.py  [session manager, Rich console, readline history]
       └─ IntentClassifier  [embedding similarity, threshold 0.65, one embed call per query]
             │
-            ├── conversational  → run_conversational()  — LLM reply, no tools, no KB
-            ├── health          → run_health()          — Prometheus query, no tool loop
-            ├── fact            → run_fact()            — pgvector KB search, no tool loop
-            └── agentic         → run_agent()           — full tool loop, up to 8 LLM iterations
+            ├── conversational  → _handle_conversational()  — LLM reply, no tools, no KB
+            ├── health          → _handle_health()          — Prometheus query, no tool loop
+            ├── fact            → _handle_fact()            — pgvector KB search, no tool loop
+            └── agentic         → run_agent()               — full tool loop, up to 8 LLM iterations
                                         │
                      ┌──────────────────┼──────────────────────┐
                      ▼                  ▼                      ▼
@@ -44,11 +44,11 @@ Telegram interface (hal/telegram.py):
 
 ## Data flow per query
 
-```
+```text
 User types query
   → MemoryStore loads last N turns into context (TURN_WINDOW=40)
   → IntentClassifier embeds query via Ollama (nomic-embed-text)
-      → cosine_similarity vs. ~13 example sentences per category
+      → cosine_similarity vs. example sentences per category (13–41 per category; fact: 13, health: 23, conversational: 30, agentic: 41)
       → best score ≥ 0.65 → route to that handler
       → best score < 0.65 → default to agentic (safe fallback)
 
@@ -168,11 +168,11 @@ Tool calls require parsing the full structured response. Streaming the model out
 also parsing tool call JSON from it is complex and fragile. Batch responses are simpler and
 correct. The UX trade-off is acceptable for a terminal REPL.
 
-**KB seeding threshold (0.75 for agentic, 0.45 for fact):**
+**KB seeding threshold (0.75 for agentic, 0.5 for fact):**
 
 The agentic path uses a higher threshold (0.75) to avoid injecting marginally-relevant KB
 docs into the first message of a tool-using loop. At 0.75, only strong matches seed the
-context. The fact path (0.45) is more permissive because its job is explicitly to surface
+context. The fact path (0.5) is more permissive because its job is explicitly to surface
 documented answers — low-confidence results are still shown, but labelled.
 
 ---
@@ -221,17 +221,20 @@ into context.
 All observability is optional and no-op if disabled or unreachable.
 
 **Structured logging** (`hal/logging_utils.py`):
+
 - JSON format when `HAL_LOG_JSON=1` (default); plain text when `0`
 - `session_id` and `trace_id` propagated via Python `contextvars`
 - `HAL_LOG_LEVEL` controls verbosity (default `INFO`)
 
 **Tracing** (`hal/tracing.py`):
+
 - OpenTelemetry spans wrap each REPL turn, intent classify call, LLM call, and tool call
 - OTLP HTTP export to `OTLP_ENDPOINT` (default `http://localhost:4318`)
 - No-op if `opentelemetry` packages not installed or endpoint unreachable
 - Grafana Tempo receiver not yet deployed (planned)
 
 **Metrics** (`hal/prometheus.py`):
+
 - In-memory accumulators (`_counters`, `_gauges`) updated throughout a turn
 - `flush_metrics()` batches all metrics into a single Pushgateway POST at turn end
 - Background heartbeat thread (`start_metrics_heartbeat()`) pushes every 30 seconds
@@ -245,7 +248,7 @@ Metric names: `hal_requests_total{intent, outcome}`, `hal_request_latency_second
 
 ## Knowledge base pipeline
 
-```
+```text
 harvest/collect.py — collectors:
   collect_docker_containers()    → 1 doc per running container
   collect_system_state()         → disk, memory, listening ports, services, Ollama models
