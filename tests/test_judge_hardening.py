@@ -20,7 +20,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hal._unlocked.server import ServerJudge
 from hal.judge import (
     _CMD_RULES,
     _EVASION_PATTERNS,
@@ -31,6 +30,7 @@ from hal.judge import (
     classify_command,
     tier_for,
 )
+from hal.server import ServerJudge
 
 # =========================================================================
 # A. Invariant tests — derived from actual data structures

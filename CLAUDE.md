@@ -115,11 +115,9 @@ Read these before working on the relevant area. They are the source of truth —
 
 ## Current State
 
-Active branch: `reliability/layer-0`. Layer 0 and Layer 1 complete — core agentic loop
-and conversational intent routing both active and smoke-tested. Higher-layer modules are
-locked in `hal/_unlocked/` until each layer's hardening criteria are met.
+Active branch: `docs/reconcile-drift`. Layers 0–4 complete — all modules active; nothing remains in `hal/_unlocked/` except the empty `__init__.py`.
 
-**Layer 0 + 1 (active):**
+**Layers 0–4 (all active):**
 
 - **LLM**: vLLM serving Qwen2.5-32B-Instruct-AWQ (port 8000); Ollama embeddings-only on CPU
 - **Agent loop**: `dispatch_intent()` classifies each query via `IntentClassifier`; four routes:
@@ -133,20 +131,10 @@ locked in `hal/_unlocked/` until each layer's hardening criteria are met.
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log
 - **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am
-- **Interface**: terminal REPL only (all slash commands except `/postmortem`)
+- **Interface**: terminal REPL (all slash commands including `/postmortem`); HTTP + Telegram interfaces active
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
 - **Test suite**: 558 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
-
-**Locked in `hal/_unlocked/` (not active):**
-
-| Module | Layer | Why locked |
-| --- | --- | --- |
-| `postmortem.py` | 3 | Incident report gatherer — depends on graduated security.py; unlock when /postmortem is wired |
-| `server.py`, `telegram.py` | 4 | HTTP + Telegram interfaces — reactivate after REPL is bulletproof |
-
-To graduate a module: `git mv hal/_unlocked/foo.py hal/foo.py`, update imports, run
-`pytest` — the H-2 hardening test will catch any boundary breach.
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

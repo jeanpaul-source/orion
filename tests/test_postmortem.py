@@ -10,8 +10,8 @@ import time
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import hal._unlocked.postmortem as pm
-from hal._unlocked.postmortem import (
+import hal.postmortem as pm
+from hal.postmortem import (
     _audit_section,
     _falco_section,
     _prometheus_section,

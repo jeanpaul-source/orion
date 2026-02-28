@@ -23,6 +23,7 @@ from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
 from hal.logging_utils import set_context, setup_logging
 from hal.memory import MemoryStore
+from hal.postmortem import gather_postmortem_context
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import get_tracer, setup_tracing
 from hal.workers import list_dir, read_file, write_file
@@ -41,6 +42,7 @@ Commands:
   /ls <path>       — list a directory on the server
   /write <path>    — write a file on the server (prompts for content)
   /audit           — show recent audit log
+  /postmortem <desc>   — gather post-incident audit + metrics + Falco evidence
   /kb              — list knowledge base categories
   /remember <fact> — store a fact permanently in the knowledge base
   /search_memory <q> — search past sessions for a keyword
@@ -143,6 +145,31 @@ def cmd_write(path: str, executor: SSHExecutor, judge: Judge) -> None:
         console.print(f"[green]wrote {len(content)} bytes to {path}[/]")
     else:
         console.print("[red]write failed or cancelled[/]")
+
+
+def cmd_postmortem(
+    description: str,
+    prom: PrometheusClient,
+    executor: SSHExecutor,
+    judge: Judge,
+) -> None:
+    if not description:
+        console.print("[yellow]Usage: /postmortem <incident description>[/]")
+        return
+    try:
+        with console.status("gathering post-incident evidence...", spinner="dots"):
+            context = gather_postmortem_context(
+                description=description,
+                window_hours=24,
+                prom=prom,
+                executor=executor,
+                judge=judge,
+            )
+        console.print(
+            Panel(context, title="post-incident evidence", border_style="red")
+        )
+    except Exception as e:
+        console.print(f"[red]postmortem failed: {e}[/]")
 
 
 def cmd_audit(n: int = 20) -> None:
@@ -360,6 +387,8 @@ def main() -> None:
                 cmd_write(user_input[7:].strip(), executor, judge)
             elif user_input == "/audit":
                 cmd_audit()
+            elif user_input.startswith("/postmortem "):
+                cmd_postmortem(user_input[12:].strip(), prom, executor, judge)
             elif user_input == "/kb":
                 cmd_kb(kb)
             elif user_input.startswith("/remember "):

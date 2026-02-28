@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-import hal._unlocked.server as server
 import hal.bootstrap as bootstrap
+import hal.server as server
 from hal.sanitize import strip_tool_call_artifacts
 
 _ns = SimpleNamespace  # short alias used by /chat routing tests

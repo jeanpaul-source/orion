@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hal._unlocked.telegram import (
+from hal.telegram import (
     _get_session_id,
     _sanitize,
     _sessions,
@@ -102,7 +102,7 @@ class TestAuth:
 
     @pytest.fixture(autouse=True)
     def _set_allowed_user(self):
-        import hal._unlocked.telegram as mod
+        import hal.telegram as mod
 
         original = mod.ALLOWED_USER_ID
         mod.ALLOWED_USER_ID = 999
@@ -134,7 +134,7 @@ class TestAuth:
 class TestCmdNew:
     @pytest.fixture(autouse=True)
     def _set_allowed_user(self):
-        import hal._unlocked.telegram as mod
+        import hal.telegram as mod
 
         original = mod.ALLOWED_USER_ID
         mod.ALLOWED_USER_ID = 999
@@ -164,7 +164,7 @@ class TestCmdNew:
 class TestHandleMessage:
     @pytest.fixture(autouse=True)
     def _set_allowed_user(self):
-        import hal._unlocked.telegram as mod
+        import hal.telegram as mod
 
         original = mod.ALLOWED_USER_ID
         mod.ALLOWED_USER_ID = 999
@@ -187,7 +187,7 @@ class TestHandleMessage:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_resp)
 
-        with patch("hal._unlocked.telegram.httpx.AsyncClient") as mock_cls:
+        with patch("hal.telegram.httpx.AsyncClient") as mock_cls:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
             asyncio.run(handle_message(update, None))
@@ -197,7 +197,7 @@ class TestHandleMessage:
     def test_connect_error_shows_offline(self):
         update, thinking = _make_update(user_id=999, text="hello")
 
-        with patch("hal._unlocked.telegram.httpx.AsyncClient") as mock_cls:
+        with patch("hal.telegram.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(
                 side_effect=__import__("httpx").ConnectError("refused")
@@ -217,7 +217,7 @@ class TestHandleMessage:
         mock_response = MagicMock()
         mock_response.status_code = 503
 
-        with patch("hal._unlocked.telegram.httpx.AsyncClient") as mock_cls:
+        with patch("hal.telegram.httpx.AsyncClient") as mock_cls:
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(
                 side_effect=httpx_mod.HTTPStatusError(

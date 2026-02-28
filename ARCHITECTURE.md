@@ -276,7 +276,7 @@ Table: `documents` — columns: `content`, `embedding`, `category`, `file_name`,
 
 ## Security stack
 
-Four workers in `hal/_unlocked/security.py`, all Judge-gated, all optional (fail gracefully if the
+Four workers in `hal/security.py`, all Judge-gated, all optional (fail gracefully if the
 underlying tool is absent):
 
 | Tool | Source | Tier | What it returns |
@@ -286,7 +286,7 @@ underlying tool is absent):
 | `get_traffic_summary` | ntopng — Community REST API at `:3000` | 0 | Top talkers, protocol breakdown |
 | `scan_lan` | Nmap — XML output (`-oX -`) | 1 | LAN host inventory (requires approval) |
 
-**Falco noise filter:** `is_falco_noise()` from `hal/_unlocked/falco_noise.py` suppresses known false
+**Falco noise filter:** `is_falco_noise()` from `hal/falco_noise.py` suppresses known false
 positives (e.g., `unix_chkpwd`, `pg_isready` reading `/etc/shadow`). Rules live in
 `NOISE_RULES` as `(proc_name, fd_name_substring)` data tuples — add new entries there.
 Do not suppress rules globally in Falco config.

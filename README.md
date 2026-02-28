@@ -121,8 +121,8 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/executor.py` | SSH command runner |
 | `hal/prometheus.py` | PromQL client + Pushgateway metrics |
 | `hal/knowledge.py` | pgvector KB search client |
-| `hal/_unlocked/server.py` | FastAPI HTTP server — `/chat` + `/health` |
-| `hal/_unlocked/telegram.py` | Telegram bot — polls API, POSTs to `/chat`, single-user auth |
+| `hal/server.py` | FastAPI HTTP server — `/chat` + `/health` |
+| `hal/telegram.py` | Telegram bot — polls API, POSTs to `/chat`, single-user auth |
 | `hal/trust_metrics.py` | Audit log parser + `get_action_stats` tool |
 | `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
