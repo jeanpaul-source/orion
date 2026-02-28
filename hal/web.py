@@ -182,7 +182,7 @@ def _validate_url(url: str) -> str:
         raise ValueError(f"DNS resolution failed for {hostname}")
 
     for family, _type, _proto, _canon, sockaddr in addrinfos:
-        ip = sockaddr[0]
+        ip: str = sockaddr[0]  # type: ignore[assignment]  # getaddrinfo always str
         if _is_private_ip(ip):
             raise ValueError(
                 f"DNS for {hostname} resolved to private IP {ip} — blocked (possible SSRF/rebinding)."
