@@ -208,6 +208,7 @@ Adjacent session (ddf4eafc, 4 minutes later): same query "hows the lab today?" �
 ### What is actually working
 
 Observability additions (Feb 24, 2026):
+
 - Structured JSON logging with session_id and trace correlation (optional)
 - OpenTelemetry spans for each turn and tool call (no-op if OTel not installed)
 - Optional Prometheus Pushgateway metrics: hal_requests_total, hal_request_latency_seconds, hal_tool_calls_total
@@ -450,6 +451,7 @@ Two failure patterns seen in the Telegram chat:
 ### Three-layer fix (commit `c48c66a`)
 
 **Layer 1 — system prompt (`hal/main.py`):** Two new RULES:
+
 - "Never simulate a tool call or fabricate shell/command output in a prose response. If you need live data but cannot call a tool, say 'I'd need to check [X] for that — ask me directly' and stop."
 - "Only use web_search for questions explicitly about external software, CVEs, or public releases. If asked about a topic with no homelab context, ask the user to clarify."
 
@@ -531,6 +533,7 @@ total requests stat, total tool calls stat, requests by intent (bargauge). UID: 
 ### Ruff pre-commit enforcement
 
 The ruff pre-commit hook blocked pushes 3 times this session:
+
 1. `hal/agent.py` I001 — `tm_get_action_stats` import was out of alphabetical order
 2. `hal/prometheus.py` E402 — `import threading` was placed after module-level code mid-file
 3. `hal/trust_metrics.py` I001 + F401 — stdlib imports below third-party; `List`/`Tuple` unused;
