@@ -540,6 +540,88 @@ def tier_for(action_type: str, detail: str = "") -> int:
     return _ACTION_TIERS.get(action_type, 2)
 
 
+# ---------------------------------------------------------------------------
+# Trust evolution helpers
+# ---------------------------------------------------------------------------
+
+# Minimum outcome samples required before a tier reduction is considered.
+# why: too few samples means a lucky streak can reduce trust prematurely.
+_TRUST_MIN_SAMPLES = 10
+
+# Minimum success rate (0.0–1.0) required to reduce tier 1 → tier 0.
+# why: 90% allows for the occasional transient error without blocking evolution,
+# while still rejecting commands that fail 1-in-5 times.
+_TRUST_MIN_SUCCESS_RATE = 0.90
+
+
+def _trust_key(action_type: str, detail: str) -> str:
+    """Compute a stable grouping key for trust tracking.
+
+    For run_command, uses 'run_command:<first_token>' so 'ps aux' and
+    'ps -ef' both contribute to the same 'ps' trust bucket.
+    For all other action types, the key is the action type itself.
+
+    # why: grouping by first token lets trust accumulate across argument
+    # variations of the same command (e.g. systemctl restart X vs Y) rather
+    # than requiring each exact invocation to independently earn trust.
+    """
+    if action_type == "run_command":
+        first = detail.strip().split()[0] if detail.strip() else detail
+        return f"run_command:{first}"
+    return action_type
+
+
+def _load_trust_overrides(audit_log: Path) -> dict[str, int]:
+    """Read audit log outcome entries and return evolved tier overrides.
+
+    Returns {trust_key: 0} for any action that has >= _TRUST_MIN_SAMPLES
+    outcome entries with success rate >= _TRUST_MIN_SUCCESS_RATE and a
+    static tier of exactly 1. Tier 2+ are never reduced.
+
+    # why: only tier-1 actions (reversible modifications) are candidates —
+    # tier 2 (config changes) and tier 3 (destructive) require structural
+    # policy approval, not just a track record.
+    """
+    if not audit_log.exists():
+        return {}
+
+    counts: dict[str, list[bool]] = {}
+    try:
+        with open(audit_log) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("status") != "outcome":
+                    # why: only outcome entries carry execution results;
+                    # approval entries tell us policy, not what happened.
+                    continue
+                key = _trust_key(entry.get("action", ""), entry.get("detail", ""))
+                success = entry.get("outcome") == "success"
+                counts.setdefault(key, []).append(success)
+    except OSError:
+        return {}
+
+    overrides: dict[str, int] = {}
+    for key, results in counts.items():
+        if len(results) < _TRUST_MIN_SAMPLES:
+            continue
+        rate = sum(results) / len(results)
+        if rate < _TRUST_MIN_SUCCESS_RATE:
+            continue
+        # Only promote to tier 0 — the approve() caller already gates application
+        # to tier == 1, so there is no risk of reducing tier 2/3 here.
+        # why: dropping the tier_for() check avoids a false negative where
+        # tier_for("run_command", "") returns 0 (empty detail → no command to classify)
+        # which would incorrectly exclude all run_command trust keys.
+        overrides[key] = 0
+    return overrides
+
+
 class Judge:
     """Policy gate: classify → prompt if needed → log every decision."""
 
@@ -551,6 +633,13 @@ class Judge:
         self.audit_log = audit_log
         self.llm = llm
         self.audit_log.parent.mkdir(parents=True, exist_ok=True)
+        # Cache computed overrides and the log size at load time.
+        # why: recomputing on every approve() call would re-read the entire
+        # audit log on each action — cache it and only reload when the log grows.
+        self._trust_overrides: dict[str, int] = _load_trust_overrides(self.audit_log)
+        self._audit_log_size: int = (
+            self.audit_log.stat().st_size if self.audit_log.exists() else 0
+        )
 
     def _llm_reason(self, action_type: str, detail: str, reason: str) -> str | None:
         """Ask the LLM for a one-sentence risk assessment. Returns None on failure."""
@@ -579,6 +668,19 @@ class Judge:
         except Exception:
             return None
 
+    def _refresh_trust_overrides(self) -> None:
+        """Reload trust overrides if the audit log has grown since last load.
+
+        # why: checking file size is cheaper than reading the whole log on
+        # every approve() call, and new outcome entries only append to the end.
+        """
+        if not self.audit_log.exists():
+            return
+        current_size = self.audit_log.stat().st_size
+        if current_size != self._audit_log_size:
+            self._trust_overrides = _load_trust_overrides(self.audit_log)
+            self._audit_log_size = current_size
+
     def approve(
         self,
         action_type: str,
@@ -589,6 +691,15 @@ class Judge:
         """Gate an action. Returns True if approved to proceed."""
         if tier is None:
             tier = tier_for(action_type, detail)
+
+        # Apply trust evolution: a tier-1 action with a strong track record
+        # is reduced to tier 0 so the operator isn't prompted for proven-safe work.
+        # why: trust must be earned through outcomes, not assumed from static rules.
+        if tier == 1:
+            self._refresh_trust_overrides()
+            key = _trust_key(action_type, detail)
+            if key in self._trust_overrides:
+                tier = self._trust_overrides[key]
 
         if tier == 0:
             self._log(
