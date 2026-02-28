@@ -115,7 +115,7 @@ Read these before working on the relevant area. They are the source of truth —
 
 ## Current State
 
-Active branch: `docs/reconcile-drift`. Layers 0–4 complete — all modules active; nothing remains in `hal/_unlocked/` except the empty `__init__.py`.
+Active branch: `reliability/layer-0`. Layers 0–4 complete — all modules active; nothing remains in `hal/_unlocked/` except the empty `__init__.py`.
 
 **Layers 0–4 (all active):**
 

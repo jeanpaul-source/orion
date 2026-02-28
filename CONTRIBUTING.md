@@ -30,12 +30,19 @@ This applies to human contributors as much as AI ones.
 ```bash
 git clone https://github.com/jeanpaul-source/orion
 cd orion
+make dev-setup          # creates venv, installs deps, wires all hooks
+cp .env.example .env
+# Fill in PGVECTOR_DSN password
+```
+
+Or step by step:
+
+```bash
 python -m venv .venv && source .venv/bin/activate
 pip install pip-tools
 pip-sync requirements.lock requirements-dev.lock   # reproducible install from lock files
 cp .env.example .env
-# Fill in PGVECTOR_DSN password
-.venv/bin/pre-commit install          # wire lint+format hooks into git
+.venv/bin/pre-commit install --install-hooks --overwrite
 ```
 
 To update dependencies after editing `requirements.txt` or `requirements-dev.txt`:
@@ -101,14 +108,15 @@ If any test regresses, do not push. Fix it first.
 ## Linting and formatting
 
 Ruff (lint + format) is enforced via pre-commit hooks and CI. Hooks fire on every `git commit`.
-Markdown linting (`markdownlint-cli2`) also runs as a pre-commit hook. Rules are in `.markdownlint.jsonc`.
+Markdown linting (`markdownlint-cli2`) also runs as a pre-commit hook. Rules are in `.markdownlint-cli2.yaml`.
 
 ```bash
 make lint       # ruff check — catch errors and import issues
 make lint-md    # markdownlint-cli2 — markdown formatting
 make format     # ruff format — apply formatting
-make typecheck  # mypy — type check hal/ (warn-only; 12 errors in baseline)
-make coverage   # pytest-cov — show coverage report for hal/ (baseline: 34%)
+make typecheck  # mypy — type check hal/ (0 errors in baseline)
+make coverage   # pytest-cov — show coverage report for hal/ (baseline: 62%)
+make doc-drift  # check for documentation/code drift
 ```
 
 Or directly:
@@ -126,12 +134,14 @@ Three common lint failure patterns:
 - **E402** — import placed after module-level code (usually intentional `sys.path` manipulation — add to `per-file-ignores` in `pyproject.toml`)
 - **F401** — unused import (delete it)
 
-Commit readiness checklist:
+Commit readiness checklist (`make check` runs all of these):
 
 - `make lint` passes
 - `make lint-md` passes
 - `make format` produces no diffs
-- `make test` passes (all 558 offline tests)
+- `make typecheck` passes (0 errors)
+- `make test` passes (all offline tests)
+- `make doc-drift` passes
 
 ---
 
@@ -223,14 +233,21 @@ commit view. It's standard practice for AI-assisted work and makes authorship ho
 **`main` is always deployable.** The server runs `git pull` on `main`. A broken commit
 on `main` means the server pulls broken code.
 
-Rule: tests and lint pass locally before `git push`.
+**PRs required to merge to `main`.** The `main-protection` ruleset requires CI to pass
+before merge. Push to a feature branch, create a PR, let CI run, then merge:
 
-Feature branches are optional — use one when exploring something that might not work and
-you don't want to break `main` mid-experiment. When the experiment succeeds, squash it
-into a clean commit on `main` and delete the branch. When it fails, delete the branch
-without merging.
+```bash
+git push origin feat/your-branch
+# Create PR on GitHub — CI runs automatically
+# Merge when green
+```
 
-No PRs required for solo work.
+For rapid solo iteration, you can still push feature branches freely. Direct push to
+`main` is blocked by ruleset. The repository admin bypass actor allows emergency
+direct pushes when genuinely needed.
+
+Feel free to use long-lived feature branches. Squash to a clean commit before merging
+when the history is noisy.
 
 ---
 
