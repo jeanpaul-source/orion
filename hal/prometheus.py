@@ -97,9 +97,9 @@ class PrometheusClient:
                 f"{self.base_url}/api/v1/query_range",
                 params={
                     "query": promql,
-                    "start": start,
-                    "end": end,
-                    "step": step,
+                    "start": str(start),
+                    "end": str(end),
+                    "step": str(step),
                 },
                 timeout=10,
             )
