@@ -89,12 +89,16 @@ async def cmd_start(update: Update, context) -> None:  # noqa: ARG001
     """/start — greeting."""
     if not _authorized(update):
         return
+    if update.message is None:
+        return
     await update.message.reply_text("HAL online. Send any message.")
 
 
 async def cmd_new(update: Update, context) -> None:  # noqa: ARG001
     """/new — reset session."""
     if not _authorized(update):
+        return
+    if update.effective_chat is None or update.message is None:
         return
     chat_id = update.effective_chat.id
     _sessions[chat_id] = f"tg-{chat_id}-{int(time.time())}"
@@ -105,7 +109,7 @@ async def handle_message(update: Update, context) -> None:  # noqa: ARG001
     """Process a plain-text message: thinking → POST /chat → edit reply."""
     if not _authorized(update):
         return
-    if not update.message or not update.message.text:
+    if not update.message or not update.message.text or update.effective_chat is None:
         return
 
     thinking = await update.message.reply_text("thinking\u2026")
