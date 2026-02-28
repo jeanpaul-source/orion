@@ -1,4 +1,4 @@
-.PHONY: lint lint-md format test test-full coverage typecheck check install-hooks
+.PHONY: lint lint-md format test test-full coverage typecheck check install-hooks dev-setup doc-drift
 
 lint:
 	.venv/bin/ruff check hal/ tests/ harvest/ eval/
@@ -21,7 +21,18 @@ coverage:
 typecheck:
 	.venv/bin/mypy hal/
 
-check: lint typecheck test
+doc-drift:
+	.venv/bin/python scripts/check_doc_drift.py
+
+check: lint typecheck test doc-drift
 
 install-hooks:
-	.venv/bin/pre-commit install
+	.venv/bin/pre-commit install --install-hooks --overwrite
+
+dev-setup: ## Fresh clone → full enforcement in one command
+	python3 -m venv .venv
+	.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+	.venv/bin/pre-commit install --install-hooks --overwrite
+	@echo ""
+	@echo "Dev environment ready. Hooks installed."
+	@echo "  Run 'make check' to verify everything passes."
