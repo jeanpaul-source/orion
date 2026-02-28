@@ -11,6 +11,7 @@ Keep it updated when things change.
 **OS:** Fedora Linux 43 (Server Edition)
 
 **Hardware:**
+
 - **CPU:** Intel Core Ultra 7 265K (20 cores)
 - **RAM:** 62 GB DDR5
 - **GPU:** NVIDIA RTX 3090 Ti (24 GB VRAM)

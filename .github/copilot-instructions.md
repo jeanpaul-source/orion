@@ -19,7 +19,7 @@ not the full reference. For depth, read the dedicated docs:
 Every query passes through `hal/intent.py` (embedding classifier, threshold 0.65)
 **before** the LLM sees it. Four routes:
 
-```
+```text
 conversational → run_conversational() — direct LLM reply, no tools, no KB
 health         → run_health()         — Prometheus only, no tool loop
 fact           → run_fact()           — pgvector KB search only, no tool loop
@@ -54,6 +54,7 @@ tier assignment rules.
 ## Conventions
 
 **Before every code change** (from CLAUDE.md — no exceptions):
+
 - State root cause (not symptom), proposed change, why it's correct long-term, confidence level
 - Wait for approval
 - Make one change, verify it works, then move to the next
@@ -63,6 +64,7 @@ whether the component itself is wrong. Band-aids already in the codebase are doc
 `SESSION_FINDINGS.md` (P1–P5) — do not add more.
 
 **Git workflow** (from CONTRIBUTING.md):
+
 - Conventional Commits: `feat|fix|docs|refactor|test|chore: subject`
 - One logical change per commit — tests pass + ruff passes + one thing changed
 - `main` is always deployable; server runs `git pull main`
