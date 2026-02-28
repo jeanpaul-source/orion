@@ -133,11 +133,11 @@ locked in `hal/_unlocked/` until each layer's hardening criteria are met.
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log
 - **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am
-- **Interface**: terminal REPL only (all slash commands except `/postmortem`, `/web_stats`)
+- **Interface**: terminal REPL only (all slash commands except `/postmortem`)
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 546 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 558 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Locked in `hal/_unlocked/` (not active):**
 
