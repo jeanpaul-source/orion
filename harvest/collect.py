@@ -138,7 +138,7 @@ def collect_docker_containers() -> list[dict]:
     return docs
 
 
-def collect_system_state() -> list[dict]:
+def collect_system_state(ollama_host: str = "http://localhost:11434") -> list[dict]:
     """Disk, memory, listening ports, running services."""
     docs = []
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -208,7 +208,7 @@ def collect_system_state() -> list[dict]:
 
     # Ollama models
     models = _run(
-        "curl -s http://localhost:11434/api/tags | python3 -c \"import json,sys; d=json.load(sys.stdin); [print(m['name'], m['size']) for m in d['models']]\" 2>/dev/null"
+        f"curl -s {ollama_host}/api/tags | python3 -c \"import json,sys; d=json.load(sys.stdin); [print(m['name'], m['size']) for m in d['models']]\" 2>/dev/null"
     )
     if models:
         docs.append(
@@ -235,7 +235,7 @@ def collect_hardware() -> list[dict]:
     os_info = _run("cat /etc/os-release | grep -E '^NAME|^VERSION='")
     storage = _run("lsblk -d -o NAME,SIZE,MODEL,TYPE | grep disk")
 
-    content = f"""Lab hardware: the-lab (192.168.5.10)
+    content = f"""Lab hardware
 
 OS: {os_info}
 Kernel: {kernel}
@@ -271,7 +271,6 @@ def collect_config_files() -> list[dict]:
         ("monitoring-stack/docker-compose.yml", "lab-infrastructure"),
         ("monitoring-stack/prometheus.yml", "lab-infrastructure"),
         ("pgvector-kb/docker-compose.yml", "lab-infrastructure"),
-        ("agent-zero/docker-compose.yml", "lab-infrastructure"),
     ]
 
     for rel_path, category in configs:
@@ -405,11 +404,11 @@ def collect_static_docs(root: Path = _STATIC_DOCS_ROOT) -> list[dict]:
     return docs
 
 
-def collect_all() -> list[dict]:
+def collect_all(ollama_host: str = "http://localhost:11434") -> list[dict]:
     collectors = [
         ("ground truth", collect_ground_truth),
         ("docker containers", collect_docker_containers),
-        ("system state", collect_system_state),
+        ("system state", lambda: collect_system_state(ollama_host)),
         ("hardware", collect_hardware),
         ("config files", collect_config_files),
         ("systemd units", collect_systemd_units),
