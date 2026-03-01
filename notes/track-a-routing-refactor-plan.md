@@ -9,15 +9,13 @@
 
 ## ⚠️ CURRENT POSITION (read this first after any context reset)
 
-**Branch:** `feat/routing-refactor`  
-**Last commit:** `359b55e` — `feat(routing): binary dispatch + metrics pre-seed in run_agent`  
-**Test status:** 558 passed, 0 failed, lint clean  
-**Working tree:** clean (one unrelated unstaged file: `notes/new_02-26-26`)  
+**Branch:** `main` (merged)  
+**Status:** COMPLETE — both items delivered, branch merged  
+**Test status:** 589 passed, 0 failed, lint clean  
 
-**Item 1 is done. Item 2 is next and requires operator approval before any code change.**
-
-Item 2 proposal is in section 3 below. The exact files and lines to delete are
-called out there. Do not proceed past reading until the operator says "Item 2 approved".
+Item 1 (binary dispatch + pre-seed) and Item 2 (dead handler removal) are both done.
+`_handle_health()` and `_handle_fact()` no longer exist in the codebase.
+This document is retained for historical context only.
 
 ---
 

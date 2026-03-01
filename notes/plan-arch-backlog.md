@@ -1,7 +1,7 @@
 # Plan: Architectural Backlog — Lab-Specific Hardcodings
 
 Created: 2026-03-01
-Status: ready for implementation
+Status: Items 3 and 4 complete; Items 1 and 2 remain (not yet started)
 
 ---
 

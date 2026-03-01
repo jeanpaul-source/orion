@@ -17,16 +17,17 @@ not the full reference. For depth, read the dedicated docs:
 ## Architecture
 
 Every query passes through `hal/intent.py` (embedding classifier, threshold 0.65)
-**before** the LLM sees it. Four routes:
+**before** the LLM sees it. Two routes:
 
 ```text
-conversational → run_conversational() — direct LLM reply, no tools, no KB
-health         → run_health()         — Prometheus only, no tool loop
-fact           → run_fact()           — pgvector KB search only, no tool loop
-agentic        → run_agent()          — full VLLMClient tool loop, Judge-gated
+conversational → _handle_conversational() — single LLM call, tools=[], no KB, no Prometheus
+everything else → run_agent()             — full VLLMClient tool loop, Judge-gated
 ```
 
-Data flow: `hal/main.py` → `IntentClassifier` → one of four handlers in `hal/agent.py`
+health/fact intents map to `run_agent()` — KB context (≥0.75 score) and a live Prometheus
+snapshot are pre-seeded at iteration 0, so simple queries resolve without a tool call.
+
+Data flow: `hal/main.py` → `IntentClassifier` → `dispatch_intent()` in `hal/bootstrap.py`
 → `VLLMClient` (chat) + `OllamaClient` (embeddings only) → `Judge` gates every tool call.
 
 ---

@@ -1,8 +1,8 @@
 # Enforcement Design v3 — Final Draft
 
 > **Date:** 2026-02-28
-> **Branch:** `reliability/layer-0`
-> **Status:** Awaiting operator approval before implementation
+> **Branch:** `reliability/layer-0` (merged to main)
+> **Status:** IMPLEMENTED — pre-commit hooks + CI active; this document is retained for historical context
 
 ---
 
