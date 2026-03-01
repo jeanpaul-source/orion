@@ -8,9 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from hal.trust_metrics import (
+    OutcomeEvent,
     aggregate_stats,
     get_action_stats,
     load_audit_log,
+    load_outcome_log,
 )
 
 # Original sample log in legacy pipe format is now replaced with JSON equivalents.
@@ -205,3 +207,101 @@ def test_mixed_json_and_legacy_log_legacy_lines_skipped(tmp_path):
     # Legacy line is silently skipped; only the JSON line is parsed
     assert len(events) == 1
     assert events[0].action_type == "get_metrics"
+
+
+# ---------------------------------------------------------------------------
+# Outcome entry tests
+# ---------------------------------------------------------------------------
+
+_OUTCOME_LOG = """
+{"ts": "2026-02-25T15:00:00+00:00", "status": "outcome", "outcome": "success", "action": "run_command", "detail": "systemctl restart vllm"}
+{"ts": "2026-02-25T15:01:00+00:00", "status": "outcome", "outcome": "success", "action": "run_command", "detail": "systemctl restart grafana"}
+{"ts": "2026-02-25T15:02:00+00:00", "status": "outcome", "outcome": "error",   "action": "run_command", "detail": "docker restart broken"}
+{"ts": "2026-02-25T15:03:00+00:00", "status": "outcome", "outcome": "success", "action": "write_file",  "detail": "/etc/myconfig"}
+{"ts": "2026-02-25T15:04:00+00:00", "tier": 1, "status": "approved",           "action": "run_command", "detail": "ps aux"}
+""".strip()
+
+
+def _write_outcome_audit(tmp_path: Path) -> Path:
+    p = tmp_path / "outcome.log"
+    p.write_text(_OUTCOME_LOG + "\n", encoding="utf-8")
+    return p
+
+
+def test_load_outcome_log_yields_only_outcome_entries(tmp_path):
+    p = _write_outcome_audit(tmp_path)
+    outcomes = list(load_outcome_log(p))
+    # 4 outcome entries; the approved entry is NOT an outcome
+    assert len(outcomes) == 4
+    assert all(isinstance(ev, OutcomeEvent) for ev in outcomes)
+    assert all(ev.outcome in ("success", "error") for ev in outcomes)
+
+
+def test_load_outcome_log_does_not_include_approval_entries(tmp_path):
+    p = _write_outcome_audit(tmp_path)
+    outcomes = list(load_outcome_log(p))
+    # "ps aux" is in the approval entry — it must not appear in outcomes
+    # (all outcome entries are run_command or write_file; ps is only in the approval)
+    assert all(ev.detail != "ps aux" for ev in outcomes)
+
+
+def test_load_outcome_log_action_class_extracted(tmp_path):
+    p = _write_outcome_audit(tmp_path)
+    outcomes = list(load_outcome_log(p))
+    classes = {ev.action_class for ev in outcomes if ev.action_class}
+    assert "systemctl restart" in classes
+    assert "docker restart" in classes
+
+
+def test_load_outcome_log_missing_file_returns_empty(tmp_path):
+    outcomes = list(load_outcome_log(tmp_path / "nonexistent.log"))
+    assert outcomes == []
+
+
+def test_get_action_stats_includes_outcome_block(tmp_path, monkeypatch):
+    p = _write_outcome_audit(tmp_path)
+    monkeypatch.setenv("ORION_AUDIT_LOG", str(p))
+    stats = get_action_stats("systemctl restart")
+    assert "outcomes" in stats
+    outcomes = stats["outcomes"]
+    assert outcomes["total"] == 2
+    assert outcomes["success"] == 2
+    assert outcomes["error"] == 0
+    assert outcomes["success_rate"] == 1.0
+
+
+def test_get_action_stats_outcome_counts_errors(tmp_path, monkeypatch):
+    p = _write_outcome_audit(tmp_path)
+    monkeypatch.setenv("ORION_AUDIT_LOG", str(p))
+    stats = get_action_stats("docker restart")
+    outcomes = stats["outcomes"]
+    assert outcomes["total"] == 1
+    assert outcomes["success"] == 0
+    assert outcomes["error"] == 1
+    assert outcomes["success_rate"] == 0.0
+
+
+def test_get_action_stats_outcome_zero_when_no_outcome_entries(tmp_path, monkeypatch):
+    """Queries that match only approval entries return outcomes block with all zeros."""
+    p = tmp_path / "approvals_only.log"
+    p.write_text(
+        '{"ts": "2026-02-25T14:05:00+00:00", "tier": 1, "status": "approved", "action": "run_command", "detail": "docker restart grafana"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ORION_AUDIT_LOG", str(p))
+    stats = get_action_stats("docker restart")
+    assert stats["total"] == 1
+    assert stats["outcomes"]["total"] == 0
+    assert stats["outcomes"]["success_rate"] == 0.0
+
+
+def test_outcome_entries_do_not_bleed_into_approval_totals(tmp_path, monkeypatch):
+    """Outcome entries must not inflate the approved/denied/total counts."""
+    p = _write_outcome_audit(tmp_path)
+    monkeypatch.setenv("ORION_AUDIT_LOG", str(p))
+    # Only one approval-type entry exists for run_command (the 'ps aux' line)
+    stats = get_action_stats("ps aux")
+    assert stats["total"] == 1
+    assert stats["approved"] == 1
+    # outcomes: no outcome entry for 'ps aux'
+    assert stats["outcomes"]["total"] == 0

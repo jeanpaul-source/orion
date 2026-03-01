@@ -3,15 +3,20 @@
 
 Provides:
 - load_audit_log(path): parse ~/.orion/audit.log entries into AuditEvent objects
+- load_outcome_log(path): parse outcome entries (status=="outcome") into OutcomeEvent objects
 - aggregate_stats(events): aggregate counts by tool and by action_class
 - get_action_stats(pattern, path=None): filter+aggregate by a substring/regex pattern
 
 Audit log format (from hal/judge.py::_log):
   JSON lines (one JSON object per line).
 
-JSON fields:
+JSON fields (approval entries):
   ts, tier, status (auto|approved|denied), action, detail, reason,
   session_id, turn_id, trace_id, span_id (all optional except ts/tier/status/action)
+
+JSON fields (outcome entries — written by judge.record_outcome):
+  ts, status=="outcome", outcome ("success"|"error"), action, detail,
+  session_id, turn_id, trace_id, span_id (all optional except ts/status/outcome/action)
 """
 
 from __future__ import annotations
@@ -38,6 +43,15 @@ class AuditEvent:
     detail: str
     reason: str | None = None
     action_class: str | None = None  # normalized class for run_command
+
+
+@dataclass(frozen=True)
+class OutcomeEvent:
+    ts: datetime
+    action_type: str
+    detail: str
+    outcome: str  # "success" | "error"
+    action_class: str | None = None  # normalized class (same logic as AuditEvent)
 
 
 @dataclass
@@ -172,33 +186,87 @@ def _parse_json_line(line: str) -> Optional[AuditEvent]:
     )
 
 
+def _resolve_log_path(path: Path | str | None) -> Path:
+    """Resolve audit log path from argument, env var, or default."""
+    if path is None:
+        env_path = os.getenv("ORION_AUDIT_LOG")
+        if env_path:
+            return Path(env_path)
+        return Path.home() / ".orion" / "audit.log"
+    return Path(path)
+
+
 def load_audit_log(path: Path | str | None = None) -> Iterator[AuditEvent]:
     """Yield parsed AuditEvent entries from the audit log.
 
     If path is None, use env ORION_AUDIT_LOG or default ~/.orion/audit.log.
     Skips unreadable/malformed lines silently.
     """
-    if path is None:
-        env_path = os.getenv("ORION_AUDIT_LOG")
-        if env_path:
-            path = Path(env_path)
-        else:
-            path = Path.home() / ".orion" / "audit.log"
-    else:
-        path = Path(path)
+    resolved = _resolve_log_path(path)
 
-    if not path.exists():
+    if not resolved.exists():
         return iter(())
 
     def _iter() -> Iterator[AuditEvent]:
         try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            with open(resolved, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     ev = _parse_line(line)
                     if ev is not None:
                         yield ev
         except Exception:
-            # On any unexpected IO error, return no events
+            return
+
+    return _iter()
+
+
+def load_outcome_log(path: Path | str | None = None) -> Iterator[OutcomeEvent]:
+    """Yield OutcomeEvent entries (status=="outcome") from the audit log.
+
+    These are written by judge.record_outcome() after a tool executes and carry
+    the execution result ("success" or "error"). Approval entries are ignored.
+
+    If path is None, use env ORION_AUDIT_LOG or default ~/.orion/audit.log.
+    Skips unreadable/malformed lines silently.
+    """
+    resolved = _resolve_log_path(path)
+
+    if not resolved.exists():
+        return iter(())
+
+    def _iter() -> Iterator[OutcomeEvent]:
+        try:
+            with open(resolved, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped or not stripped.startswith("{"):
+                        continue
+                    try:
+                        obj = json.loads(stripped)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    if obj.get("status") != "outcome":
+                        continue
+                    try:
+                        ts = datetime.fromisoformat(obj["ts"])
+                    except (KeyError, ValueError, TypeError):
+                        continue
+                    action_type = obj.get("action", "").strip()
+                    if not action_type:
+                        continue
+                    outcome = obj.get("outcome", "").strip()
+                    if outcome not in ("success", "error"):
+                        continue
+                    detail = obj.get("detail", "")
+                    action_class = _extract_action_class(action_type, detail)
+                    yield OutcomeEvent(
+                        ts=ts,
+                        action_type=action_type,
+                        detail=detail,
+                        outcome=outcome,
+                        action_class=action_class,
+                    )
+        except Exception:
             return
 
     return _iter()
@@ -289,6 +357,30 @@ def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, 
 
     confidence = (approved / total) if total > 0 else 0.0
 
+    # --- Outcome data ---
+    # Load outcome entries separately; match by the same pattern.
+    # why: outcome entries have status=="outcome" and are silently dropped
+    # by _parse_json_line, so they do not appear in the approval events above.
+    out_total = 0
+    out_success = 0
+    out_error = 0
+    for oev in load_outcome_log(path):
+        haystacks = [oev.action_type, oev.detail]
+        if oev.action_class:
+            haystacks.append(oev.action_class)
+        if use_regex and regex is not None:
+            match = any(regex.search(h or "") for h in haystacks)
+        else:
+            match = any((needle in (h or "").lower()) for h in haystacks)
+        if match:
+            out_total += 1
+            if oev.outcome == "success":
+                out_success += 1
+            else:
+                out_error += 1
+
+    out_success_rate = (out_success / out_total) if out_total > 0 else 0.0
+
     return {
         "pattern": pattern,
         "total": total,
@@ -299,4 +391,10 @@ def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, 
         "by_tool": agg["by_tool"],
         "by_action_class": agg["by_action_class"],
         "confidence": round(confidence, 4),
+        "outcomes": {
+            "total": out_total,
+            "success": out_success,
+            "error": out_error,
+            "success_rate": round(out_success_rate, 4),
+        },
     }
