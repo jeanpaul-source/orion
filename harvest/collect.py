@@ -262,19 +262,24 @@ Storage:
     ]
 
 
-def collect_config_files() -> list[dict]:
-    """Read actual config files from /opt/homelab-infrastructure/."""
+def collect_config_files(
+    infra_base: str = "/opt/homelab-infrastructure",
+) -> list[dict]:
+    """Read config files from the infra base directory.
+
+    Discovers docker-compose.yml and prometheus.yml files via glob so new
+    stacks are picked up automatically without source changes.
+    """
     docs = []
-    base = Path("/opt/homelab-infrastructure")
+    base = Path(infra_base)
 
-    configs = [
-        ("monitoring-stack/docker-compose.yml", "lab-infrastructure"),
-        ("monitoring-stack/prometheus.yml", "lab-infrastructure"),
-        ("pgvector-kb/docker-compose.yml", "lab-infrastructure"),
-    ]
+    # Discover compose + prometheus configs under any subdirectory
+    config_globs = ["*/docker-compose.yml", "*/prometheus.yml"]
+    found: list[Path] = []
+    for pattern in config_globs:
+        found.extend(sorted(base.glob(pattern)))
 
-    for rel_path, category in configs:
-        full_path = base / rel_path
+    for full_path in found:
         content = _read(str(full_path))
         if not content:
             continue
@@ -282,7 +287,7 @@ def collect_config_files() -> list[dict]:
             _doc(
                 file_path=str(full_path),
                 file_name=full_path.name,
-                category=category,
+                category="lab-infrastructure",
                 content=f"# {full_path}\n\n{content}",
                 metadata={"source_path": str(full_path)},
                 doc_tier="live-state",
@@ -305,10 +310,11 @@ def collect_config_files() -> list[dict]:
     return docs
 
 
-def collect_systemd_units() -> list[dict]:
+def collect_systemd_units(
+    units: tuple[str, ...] = ("ollama.service", "pgvector-kb-api.service"),
+) -> list[dict]:
     """Read key systemd unit files."""
     docs = []
-    units = ["ollama.service", "pgvector-kb-api.service"]
 
     for unit in units:
         content = _run(f"systemctl cat {unit} 2>/dev/null")
@@ -404,15 +410,21 @@ def collect_static_docs(root: Path = _STATIC_DOCS_ROOT) -> list[dict]:
     return docs
 
 
-def collect_all(ollama_host: str = "http://localhost:11434") -> list[dict]:
+def collect_all(
+    ollama_host: str = "http://localhost:11434",
+    infra_base: str = "/opt/homelab-infrastructure",
+    static_docs_root: str = "/data/orion/orion-data/documents/raw",
+    harvest_systemd_units: str = "ollama.service pgvector-kb-api.service",
+) -> list[dict]:
+    units = tuple(harvest_systemd_units.split())
     collectors = [
         ("ground truth", collect_ground_truth),
         ("docker containers", collect_docker_containers),
         ("system state", lambda: collect_system_state(ollama_host)),
         ("hardware", collect_hardware),
-        ("config files", collect_config_files),
-        ("systemd units", collect_systemd_units),
-        ("static docs", collect_static_docs),
+        ("config files", lambda: collect_config_files(infra_base)),
+        ("systemd units", lambda: collect_systemd_units(units)),
+        ("static docs", lambda: collect_static_docs(Path(static_docs_root))),
     ]
     all_docs = []
     for name, fn in collectors:

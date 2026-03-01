@@ -36,7 +36,12 @@ def main() -> None:
 
     # Collect
     print("Collecting lab state...")
-    docs = collect_all(ollama_host=config.ollama_host)
+    docs = collect_all(
+        ollama_host=config.ollama_host,
+        infra_base=config.infra_base,
+        static_docs_root=config.static_docs_root,
+        harvest_systemd_units=config.harvest_systemd_units,
+    )
     print(f"  total: {len(docs)} documents\n")
 
     if not docs:
