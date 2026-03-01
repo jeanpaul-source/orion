@@ -16,9 +16,13 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PGVECTOR_DSN", "postgresql://kb_user:pw@localhost:5432/knowledge_base"
     )
     monkeypatch.setenv("PROMETHEUS_URL", "http://localhost:9091")
+    monkeypatch.setenv("LAB_HOST", "192.168.5.10")
+    monkeypatch.setenv("LAB_USER", "jp")
 
 
-@pytest.mark.parametrize("missing", ["OLLAMA_HOST", "PGVECTOR_DSN", "PROMETHEUS_URL"])
+@pytest.mark.parametrize(
+    "missing", ["OLLAMA_HOST", "PGVECTOR_DSN", "PROMETHEUS_URL", "LAB_HOST", "LAB_USER"]
+)
 def test_load_raises_when_required_env_var_missing(
     monkeypatch: pytest.MonkeyPatch, missing: str
 ) -> None:
