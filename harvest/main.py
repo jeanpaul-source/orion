@@ -14,6 +14,7 @@ import hal.config as cfg
 from hal.llm import OllamaClient
 from harvest.collect import collect_all
 from harvest.ingest import ingest
+from harvest.snapshot import build_snapshot, write_snapshot
 
 
 def main() -> None:
@@ -74,6 +75,8 @@ def main() -> None:
             stamp.parent.mkdir(parents=True, exist_ok=True)
             stamp.write_text(datetime.now().isoformat(timespec="seconds"))
 
-
-if __name__ == "__main__":
-    main()
+            repo_root = Path(__file__).resolve().parent.parent
+            snapshot_path = repo_root / "knowledge" / "harvest_snapshot.json"
+            snapshot = build_snapshot(docs, config.infra_base)
+            write_snapshot(snapshot_path, snapshot)
+            print(f"  snapshot: {snapshot_path}")
