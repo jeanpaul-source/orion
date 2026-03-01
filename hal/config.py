@@ -20,6 +20,14 @@ class Config:
     telegram_bot_token: str  # from @BotFather — empty string disables bot
     telegram_allowed_user_id: int  # Telegram numeric user ID; 0 = reject all
     tavily_api_key: str  # Tavily web search — empty string disables web_search tool
+    # Harvest topology — override only when your lab layout differs from defaults
+    infra_base: (
+        str  # base dir for compose/config files; default /opt/homelab-infrastructure
+    )
+    static_docs_root: (
+        str  # pre-scraped documents root; default /data/orion/orion-data/documents/raw
+    )
+    harvest_systemd_units: str  # space-separated unit names to ingest; default "ollama.service pgvector-kb-api.service"
 
 
 def _required_env(name: str) -> str:
@@ -48,4 +56,11 @@ def load() -> Config:
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_allowed_user_id=int(os.getenv("TELEGRAM_ALLOWED_USER_ID", "0")),
         tavily_api_key=os.getenv("TAVILY_API_KEY", ""),
+        infra_base=os.getenv("INFRA_BASE", "/opt/homelab-infrastructure"),
+        static_docs_root=os.getenv(
+            "STATIC_DOCS_ROOT", "/data/orion/orion-data/documents/raw"
+        ),
+        harvest_systemd_units=os.getenv(
+            "HARVEST_SYSTEMD_UNITS", "ollama.service pgvector-kb-api.service"
+        ),
     )
