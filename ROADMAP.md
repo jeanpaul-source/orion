@@ -196,6 +196,29 @@ Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, 
   usage guard, and `--hours` parsing.
 - Test count: 544 → 552 (all offline, ruff clean)
 
+### Feb 26–Mar 1, 2026 — Reliability layer, routing refactor, end-state capabilities
+
+- **Track A routing refactor** — collapsed four dispatch paths into two:
+  `conversational → _handle_conversational()` (no tools, no KB); everything else →
+  `run_agent()` (full tool loop). KB context (≥0.75) and a live Prometheus snapshot pre-seeded
+  at iteration 0 — simple health/fact queries resolve without a tool call; boundary queries
+  have tools available. Deleted dead `_handle_health()` and `_handle_fact()` handlers.
+- **Enforcement design v3** — ruff + ruff-format + markdownlint-cli2 + mypy pre-commit hooks
+  enforced on every `git commit`; pre-push test run; `.github/workflows/test.yml` CI;
+  doc-drift check in `scripts/check_doc_drift.py`
+- **Trust metrics outcome tracking** — `record_outcome()` in `judge.py` writes success/error
+  entries to `audit.log`; `_load_trust_overrides()` auto-promotes tier 1 → tier 0 for actions
+  with ≥10 samples and ≥90% success rate; `trust_metrics.py` extended with `OutcomeEvent`,
+  `load_outcome_log()`, and outcomes block in `get_action_stats()`
+- **Proactive trend alerting** (end-state #3 complete) — `_check_trends()` in `watchdog.py`
+  calls `prom.trend('1h')` for 6 metrics; fires ntfy when `direction=='rising'` and
+  `delta_per_hour >= threshold`; four operator-configurable thresholds in `Config`
+- **Temporal snapshot** (end-state #2 complete) — `harvest/snapshot.py` builds structured JSON
+  from collected docs (containers, services, disks, ports, ollama_models, config_hashes,
+  systemd_units); written to `knowledge/harvest_snapshot.json` (git-tracked) after each
+  successful harvest; git history is the diff layer
+- Test count: 552 → 589 (all offline, ruff clean)
+
 ---
 
 ## Backlog (immediate)
@@ -207,24 +230,47 @@ Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, 
 
 ## Architectural backlog (Path C — stop hardcoding lab-specific values)
 
-The architecture is clean and generic. The implementation has five lab-specific hardcodings
-that should be externalized so HAL can redeploy on a second machine without source edits:
+The architecture is clean and generic. The implementation has lab-specific hardcodings
+that should be externalized so HAL can redeploy on a second machine without source edits.
 
-1. **Template the system prompt** from `Config` fields — lab host, services, ports are
-   currently baked into `hal/main.py:SYSTEM_PROMPT` as string literals. They should be
-   dynamically constructed from `config.py` so the system prompt is always accurate.
+1. **Template the system prompt** from `Config` fields — `hal/bootstrap.py:get_system_prompt()`
+   contains literal hardware specs, interface names (`enp130s0`), mount points, and version
+   numbers that will silently be wrong if the server changes.
 
-2. **Externalize Judge patterns** — `_CMD_RULES`, `SENSITIVE_PATHS`, and the safe command
-   whitelist in `hal/judge.py` are Python dicts in source. Move them to `hal/judge_rules.py`
-   or a config section so they can be tuned per deployment without touching shared code.
+   *Constraints:* System prompt is one large f-string; any refactor must not degrade prompt
+   quality (it is the primary LLM behavior driver). Hardware specs can't easily come from
+   `.env` — needs KB or a separate config section. Port numbers exist in `Config` (derivable
+   from URLs). Template change may require test updates in `test_agent_loop.py` and
+   `test_server.py`.
 
-3. **Remove hardcoded defaults** from `config.py` — `192.168.5.10`, `jp`, and absolute paths
-   should not be in code defaults. If `.env` is missing, fail loudly rather than silently
-   connecting to a different machine's IP.
+   *Open questions:* How much hardware spec stays inline vs. sourced from KB via `search_kb`?
+   Should `get_system_prompt()` accept a `Config` param, or introduce a separate "lab profile"
+   concept?
 
-4. **Pluggable harvest collectors** — `harvest/collect.py` collectors use hardcoded command
-   formats, absolute paths, and parse Fedora/systemd-specific output. Abstract the interface
-   so collectors can register by name and fail gracefully if the underlying tool is absent.
+2. **Externalize Judge patterns** — `_CMD_RULES`, `_SENSITIVE_PATHS`, and `_SAFE_FIRST_TOKENS`
+   in `hal/judge.py` are Python literals. Adding a site-specific safe command requires editing
+   shared policy code.
+
+   *Constraints:* A missing/malformed rules file must fail loud — silent auto-approve is worse
+   than hardcoding. Tests in `test_judge.py` and `test_judge_hardening.py` test specific command
+   strings; they must be rewritten to load the external file. Git write blocking
+   (`_GIT_WRITE_SUBCOMMANDS`) and `_EVASION_PATTERNS` are universal security policy and should
+   stay in source regardless.
+
+   *Open questions:* YAML vs. separate Python module vs. Config section? Only site-specific
+   entries go external (e.g. `_SENSITIVE_PATHS`), or all rule structures?
+
+   *Pending follow-up (prerequisite for removing from source):* `/run/homelab-secrets` is the
+   only site-specific entry in `_SENSITIVE_PATHS`. Before removing it from `judge.py`: add
+   `JUDGE_EXTRA_SENSITIVE_PATHS=/run/homelab-secrets` to the server's `.env`, confirm it is
+   picked up, then remove the literal. One commit.
+
+3. ~~**Remove hardcoded defaults** from `config.py`~~ ✓ done — `LAB_HOST` and `LAB_USER`
+   now use `_required_env()` and raise `RuntimeError` if unset.
+
+4. ~~**Pluggable harvest collectors**~~ ✓ done — `collect_config_files()` uses glob patterns;
+   per-collector `try/except` in `collect_all()` provides graceful degradation;
+   `collect_system_state()` receives `ollama_host` as an argument.
 
 ---
 
@@ -239,31 +285,31 @@ envelope and report what it did. That's the line between "assistant" and "agent.
 
 HAL observes a container crash-loop, diagnoses it (reads logs), restarts it (tier 1
 auto-approved because it's a known-safe action for this service based on N clean prior runs),
-verifies it recovered, and sends a summary. The key: it tracks action outcomes and adjusts
-which actions are auto-approved over time.
+verifies it recovered, and sends a summary.
 
-`trust_metrics.py` + `audit.log` already have all the raw material for the trust side.
-The missing piece: a feedback mechanism that records whether an action *succeeded* (not just
-whether it was *approved*), and a policy that adjusts tier thresholds based on the success
-rate.
+**Trust accounting layer ✓ delivered Mar 1, 2026.** `record_outcome()` in `judge.py` writes
+success/error entries to `audit.log`; `_load_trust_overrides()` auto-promotes proven-safe tier-1
+actions to tier 0; `trust_metrics.py` surfaces outcome stats via `get_action_stats()`. Remaining
+piece: a background loop that *proactively detects* crash-loops and triggers remediation without
+operator prompting. The watchdog alerts via ntfy but does not act autonomously.
 
-### 2. Temporal awareness
+### 2. Temporal awareness ✓ delivered Mar 1, 2026
 
-"What changed since Tuesday?" across all layers — Docker, systemd, files, KB, Prometheus.
+`knowledge/harvest_snapshot.json` (git-tracked) is written on each successful harvest run.
+Schema: `harvested_at`, `containers`, `services`, `disks`, `ports`, `ollama_models`,
+`config_hashes`, `systemd_units` — all lists sorted for stable diffs. Git history is the
+diff layer: `git diff HEAD@{2026-03-08} -- knowledge/harvest_snapshot.json` answers
+"what changed since Tuesday?" for container/service/disk/config state. Metric temporal
+awareness via `get_trend` (Prometheus time-series). A dedicated `get_snapshot_diff` tool
+is a follow-on, not yet implemented.
 
-This requires HAL to know what state looked like at time T. The harvest pipeline already
-produces timestamped snapshots. The missing piece: a diff query that compares the current
-KB snapshot against the previous one and surfaces meaningful changes.
+### 3. Proactive pattern detection ✓ delivered Mar 1, 2026
 
-### 3. Proactive pattern detection
-
-The watchdog fires on thresholds. A better version: HAL notices that disk on /docker is
-growing at the same rate it was before the last runout, and tells you before the alert fires.
-
-`get_trend` tool delivered (Feb 26, 2026) — wraps PromQL range queries, returns
-rising/falling/stable summaries with delta and rate-per-hour. Covers the reactive side:
-"is /docker disk growing fast?" answered on demand. Remaining proactive piece: a background
-loop that watches key trends automatically and fires ntfy before thresholds hit.
+`_check_trends()` in `watchdog.py` watches 6 metrics (disk_root, disk_docker, disk_data,
+mem, swap, gpu_vram) via `prom.trend('1h')`. Fires ntfy when `direction=='rising'` and
+`delta_per_hour >= threshold`. Four thresholds operator-configurable via `.env`
+(`WATCHDOG_DISK_RATE_PCT_PER_HOUR` etc., defaults 5%/hr disk, 5%/hr mem, 10%/hr swap,
+5%/hr VRAM). `get_trend` tool covers the reactive (on-demand query) side.
 
 ### 4. Post-incident synthesis ✓ delivered Feb 26, 2026
 
@@ -274,15 +320,12 @@ Falco events, and session history, and writes a brief post-mortem.
 trends, and Falco events into a context block, then invokes the agent loop with a
 postmortem-scoped system prompt. See `hal/postmortem.py` and the `/postmortem` REPL command.
 
-### 5. Trust evolution
+### 5. Trust evolution ✓ analytics layer delivered Mar 1, 2026
 
-Trust tiers are currently static (assigned by pattern). The adult version: tiers are earned
-and revoked based on outcomes.
-
-A service that HAL has safely restarted 20 times should get automatic tier-0 restart
-approval. A command that failed twice should drop to tier 2 and require re-approval. This
-is directly computable from `audit.log` + outcome recording — `trust_metrics.py` already
-parses the log; it just needs outcome tracking wired in.
+Outcome tracking wired in (see end-state #1). `trust_metrics.py` `get_action_stats()`
+now includes per-key success/error counts, success rate, and a flag showing whether the
+≥90% / ≥10-sample trust threshold is met. Tier demotion on repeated failure is not yet
+implemented — the current model only promotes (tier 1 → tier 0), never demotes.
 
 ---
 

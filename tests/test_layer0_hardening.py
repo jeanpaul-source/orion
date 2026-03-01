@@ -219,7 +219,7 @@ def test_health_query_routes_to_run_agent_with_metrics_seeded():
     # can call read_file or search_kb without hitting a tools=[] gate.
     #
     # This replaces test_health_query_uses_prometheus_not_tool_loop which tested the
-    # now-removed _handle_health() path. See notes/track-a-routing-refactor-plan.md.
+    # now-removed _handle_health() path. See ROADMAP.md (architectural backlog section).
     #
     # Verified against bootstrap.py + agent.py:
     #   - dispatch_intent() routes health intent to run_agent() (not _handle_health)
@@ -274,7 +274,7 @@ def test_health_query_routes_to_run_agent_with_metrics_seeded():
     tools_arg = llm.chat_with_tools.call_args[0][1]
     assert tools_arg != [], (
         "Health path must have tool access (tools != []). "
-        "A tools=[] gate was re-introduced — see notes/track-a-routing-refactor-plan.md."
+        "A tools=[] gate was re-introduced — see ROADMAP.md (architectural backlog section)."
     )
 
     # The metrics snapshot must appear in the augmented user message.
@@ -362,7 +362,7 @@ def test_fact_query_routes_to_run_agent_with_kb_seeded():
     # get_metrics or run_command without hitting a tools=[] gate.
     #
     # This replaces test_fact_query_uses_kb_not_tool_loop which tested the
-    # now-removed _handle_fact() path. See notes/track-a-routing-refactor-plan.md.
+    # now-removed _handle_fact() path. See ROADMAP.md (architectural backlog section).
     #
     # Verified against bootstrap.py + agent.py:
     #   - dispatch_intent() routes fact intent to run_agent() (not _handle_fact)
@@ -423,7 +423,7 @@ def test_fact_query_routes_to_run_agent_with_kb_seeded():
     tools_arg = llm.chat_with_tools.call_args[0][1]
     assert tools_arg != [], (
         "Fact path must have tool access (tools != []). "
-        "A tools=[] gate was re-introduced — see notes/track-a-routing-refactor-plan.md."
+        "A tools=[] gate was re-introduced — see ROADMAP.md (architectural backlog section)."
     )
 
     # KB context must have been injected into the augmented user message.
