@@ -629,9 +629,13 @@ class Judge:
         self,
         audit_log: Path = AUDIT_LOG,
         llm: VLLMClient | None = None,
+        extra_sensitive_paths: tuple[str, ...] = (),
     ):
         self.audit_log = audit_log
         self.llm = llm
+        self._extra_sensitive: tuple[str, ...] = tuple(
+            os.path.expanduser(p) for p in extra_sensitive_paths if p
+        )
         self.audit_log.parent.mkdir(parents=True, exist_ok=True)
         # Cache computed overrides and the log size at load time.
         # why: recomputing on every approve() call would re-read the entire
@@ -668,6 +672,31 @@ class Judge:
         except Exception:
             return None
 
+    def _extra_tier(self, action_type: str, detail: str) -> int:
+        """Return the minimum tier imposed by extra_sensitive_paths for this action.
+
+        Additive-only: results are max()'d with the base tier in approve().
+        """
+        if not self._extra_sensitive:
+            return 0
+        canonical = os.path.realpath(os.path.expanduser(detail)) if detail else ""
+        if action_type in ("read_file", "list_dir"):
+            if any(canonical.startswith(p) for p in self._extra_sensitive):
+                return 1
+        elif action_type == "write_file":
+            if any(canonical.startswith(p) for p in self._extra_sensitive):
+                return 3
+        elif action_type == "run_command":
+            # Check each token of the command for path matches
+            for token in detail.strip().split()[1:]:
+                if "=" in token:
+                    token = token.split("=", 1)[1]
+                if token.startswith("/") or token.startswith("~"):
+                    t = os.path.realpath(os.path.expanduser(token))
+                    if any(t.startswith(p) for p in self._extra_sensitive):
+                        return 1
+        return 0
+
     def _refresh_trust_overrides(self) -> None:
         """Reload trust overrides if the audit log has grown since last load.
 
@@ -691,6 +720,9 @@ class Judge:
         """Gate an action. Returns True if approved to proceed."""
         if tier is None:
             tier = tier_for(action_type, detail)
+
+        # Additive extension: extra_sensitive_paths can only raise the tier.
+        tier = max(tier, self._extra_tier(action_type, detail))
 
         # Apply trust evolution: a tier-1 action with a strong track record
         # is reduced to tier 0 so the operator isn't prompted for proven-safe work.

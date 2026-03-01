@@ -301,7 +301,12 @@ def main() -> None:
     kb = KnowledgeBase(config.pgvector_dsn, embed)
     prom = PrometheusClient(config.prometheus_url)
     executor = SSHExecutor(config.lab_host, config.lab_user)
-    judge = Judge(llm=llm)
+    judge = Judge(
+        llm=llm,
+        extra_sensitive_paths=tuple(
+            p for p in config.judge_extra_sensitive_paths.split(":") if p.strip()
+        ),
+    )
     mem = MemoryStore()
     # why: build classifier after embed is ready; failures degrade to agentic routing
     classifier = IntentClassifier(embed)

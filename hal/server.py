@@ -120,7 +120,14 @@ async def lifespan(app: FastAPI):  # noqa: RUF029
                 "kb": KnowledgeBase(config.pgvector_dsn, embed),
                 "prom": PrometheusClient(config.prometheus_url),
                 "executor": SSHExecutor(config.lab_host, config.lab_user),
-                "judge": ServerJudge(llm=llm),
+                "judge": ServerJudge(
+                    llm=llm,
+                    extra_sensitive_paths=tuple(
+                        p
+                        for p in config.judge_extra_sensitive_paths.split(":")
+                        if p.strip()
+                    ),
+                ),
                 # MemoryStore (SQLite) is NOT stored here — SQLite connections
                 # cannot be shared across threads.  A fresh MemoryStore is
                 # opened per-request inside asyncio.to_thread().

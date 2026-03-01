@@ -33,6 +33,10 @@ class Config:
     lab_hardware_summary: (
         str  # one-line hardware description for system prompt; empty = omit from prompt
     )
+    # Judge extensions — additive only; cannot weaken base security rules
+    judge_extra_sensitive_paths: (
+        str  # colon-separated absolute path prefixes to treat as sensitive; default ""
+    )
 
 
 def _required_env(name: str) -> str:
@@ -70,4 +74,5 @@ def load() -> Config:
         ),
         lab_hostname=os.getenv("LAB_HOSTNAME", ""),
         lab_hardware_summary=os.getenv("LAB_HARDWARE_SUMMARY", ""),
+        judge_extra_sensitive_paths=os.getenv("JUDGE_EXTRA_SENSITIVE_PATHS", ""),
     )
