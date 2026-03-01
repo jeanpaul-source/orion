@@ -4,7 +4,7 @@ Extracted from hal/main.py so that hal/server.py does not import the REPL
 entrypoint.  hal/main.py and hal/server.py both import from here.
 
 Provides:
-  get_system_prompt()  — build the system prompt with today's date injected
+  get_system_prompt(config)  — build the system prompt with today's date and config values injected
   setup_clients()      — connect to vLLM and Ollama; return clients + any tunnels
   dispatch_intent()    — route a classified query to the correct handler
 """
@@ -39,9 +39,23 @@ _console = Console()
 # ---------------------------------------------------------------------------
 
 
-def get_system_prompt() -> str:
-    """Return the system prompt with today's date injected."""
+def get_system_prompt(config: cfg.Config) -> str:
+    """Return the system prompt with today's date and config values injected."""
     today = datetime.now().strftime("%A, %B %d, %Y")
+    _vllm_port = urlparse(config.vllm_url).port or 8000
+    _ollama_port = urlparse(config.ollama_host).port or 11434
+    _prom_port = urlparse(config.prometheus_url).port or 9091
+    _ntopng_port = urlparse(config.ntopng_url).port or 3000
+    _host_display = (
+        f"{config.lab_hostname} ({config.lab_host})"
+        if config.lab_hostname
+        else config.lab_host
+    )
+    _hardware_line = (
+        f"Hardware: {config.lab_hardware_summary}\n\n"
+        if config.lab_hardware_summary
+        else ""
+    )
     return f"""\
 You are HAL — the intelligence layer of a personal homelab. \
 You are not Qwen, Claude, or any other model. You are HAL. Never break this identity. \
@@ -64,15 +78,13 @@ with ~19,900 doc chunks covering lab configs, official docs, and harvested state
    • get_traffic_summary   → live flows and bandwidth (ntopng)
    • scan_lan <subnet>     → LAN host discovery (Nmap, tier-1 approval)
 
-── LAB HOST: the-lab (192.168.5.10) ──────────────────────────────────
-Hardware: Intel Core Ultra 7 265K (20 cores) · 62 GB DDR5 · RTX 3090 Ti (24 GB VRAM) · \
-Samsung 990 PRO 2TB (/) · 2× WD SN850X 2TB (/docker, /data/projects)
-
+── LAB HOST: {_host_display} ──────────────────────────────────────────────────────
+{_hardware_line}\
 Core services:
-  vLLM :8000           — your own LLM backend (Qwen2.5-32B-Instruct-AWQ, user systemd)
-  Ollama :11434        — embeddings only (nomic-embed-text, bare-metal systemd, GPU=0 forced). \
+  vLLM :{_vllm_port}           — your own LLM backend ({config.chat_model}, user systemd)
+  Ollama :{_ollama_port}        — embeddings only (nomic-embed-text, bare-metal systemd, GPU=0 forced). \
 IMPORTANT: Ollama is bare-metal. Never use docker commands for Ollama.
-  Prometheus :9091     — metrics (Docker, compose at /opt/homelab-infrastructure/monitoring-stack/)
+  Prometheus :{_prom_port}     — metrics (Docker, compose at {config.infra_base}/monitoring-stack/)
   Grafana :3001        — dashboards (Docker, same compose stack)
   Pushgateway :9092    — HAL's own metrics accumulator (Docker, same compose stack)
   pgvector :5432       — knowledge base (Docker, PostgreSQL+pgvector, DB: knowledge_base)
@@ -82,7 +94,7 @@ Monitoring infrastructure:
   node-exporter        — internal to Docker monitoring network; pid:host, --path.rootfs=/rootfs, \
 textfile collector reads /var/lib/node-exporter/textfiles/ for GPU metrics
   gpu-metrics timer    — runs nvidia-smi every 15s, writes .prom file for node-exporter
-  ntopng :3000         — live traffic flows (Docker, interface enp130s0, login disabled)
+  ntopng :{_ntopng_port}         — live traffic flows (Docker, interface enp130s0, login disabled)
 
 Security stack:
   Falco (eBPF)         — runtime alerts → /var/log/falco/events.json (system systemd)

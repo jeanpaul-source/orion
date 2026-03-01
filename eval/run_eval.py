@@ -27,12 +27,12 @@ from rich.console import Console
 # ── HAL imports ─────────────────────────────────────────────────────────────
 import hal.config as cfg
 from hal.agent import run_agent
+from hal.bootstrap import get_system_prompt
 from hal.executor import SSHExecutor
 from hal.intent import IntentClassifier  # why: intent.py graduated to Layer 1
 from hal.judge import Judge, tier_for
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
-from hal.main import get_system_prompt
 from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient
 from hal.tracing import setup_tracing
@@ -211,7 +211,7 @@ def main(argv: list[str] | None = None) -> None:
     console.print("[dim]Building intent classifier...[/]")
     classifier = IntentClassifier(embed)
 
-    SYSTEM = get_system_prompt()
+    SYSTEM = get_system_prompt(config)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     results: list[dict] = []

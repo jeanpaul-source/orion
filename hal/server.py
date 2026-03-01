@@ -210,7 +210,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 judge,
                 mem,
                 session_id,
-                get_system_prompt(),
+                get_system_prompt(config),
                 console,
                 ntopng_url=config.ntopng_url,
                 tavily_api_key=config.tavily_api_key,

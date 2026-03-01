@@ -142,7 +142,18 @@ def test_chat_happy_path_returns_response_session_and_intent(monkeypatch) -> Non
     server._state.clear()
     server._state.update(
         {
-            "config": SimpleNamespace(ntopng_url="http://ntopng", tavily_api_key="k"),
+            "config": SimpleNamespace(
+                ntopng_url="http://ntopng",
+                tavily_api_key="k",
+                vllm_url="http://localhost:8000",
+                ollama_host="http://localhost:11434",
+                prometheus_url="http://localhost:9091",
+                chat_model="test-model",
+                infra_base="/opt/infra",
+                lab_hostname="test-lab",
+                lab_hardware_summary="",
+                lab_host="127.0.0.1",
+            ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),
@@ -207,7 +218,18 @@ def test_chat_routes_agentic_intent_and_returns_response(monkeypatch) -> None:
     server._state.clear()
     server._state.update(
         {
-            "config": _ns(ntopng_url="http://ntopng", tavily_api_key="k"),
+            "config": _ns(
+                ntopng_url="http://ntopng",
+                tavily_api_key="k",
+                vllm_url="http://localhost:8000",
+                ollama_host="http://localhost:11434",
+                prometheus_url="http://localhost:9091",
+                chat_model="test-model",
+                infra_base="/opt/infra",
+                lab_hostname="test-lab",
+                lab_hardware_summary="",
+                lab_host="127.0.0.1",
+            ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),
@@ -270,7 +292,18 @@ def test_chat_routes_health_intent_and_returns_response(monkeypatch) -> None:
     server._state.clear()
     server._state.update(
         {
-            "config": _ns(ntopng_url="http://ntopng", tavily_api_key=""),
+            "config": _ns(
+                ntopng_url="http://ntopng",
+                tavily_api_key="",
+                vllm_url="http://localhost:8000",
+                ollama_host="http://localhost:11434",
+                prometheus_url="http://localhost:9091",
+                chat_model="test-model",
+                infra_base="/opt/infra",
+                lab_hostname="test-lab",
+                lab_hardware_summary="",
+                lab_host="127.0.0.1",
+            ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),
@@ -341,7 +374,18 @@ def test_chat_strips_fenced_tool_call_blocks_from_agentic_response(monkeypatch) 
     server._state.clear()
     server._state.update(
         {
-            "config": _ns(ntopng_url="http://ntopng", tavily_api_key="k"),
+            "config": _ns(
+                ntopng_url="http://ntopng",
+                tavily_api_key="k",
+                vllm_url="http://localhost:8000",
+                ollama_host="http://localhost:11434",
+                prometheus_url="http://localhost:9091",
+                chat_model="test-model",
+                infra_base="/opt/infra",
+                lab_hostname="test-lab",
+                lab_hardware_summary="",
+                lab_host="127.0.0.1",
+            ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),

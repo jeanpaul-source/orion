@@ -28,6 +28,11 @@ class Config:
         str  # pre-scraped documents root; default /data/orion/orion-data/documents/raw
     )
     harvest_systemd_units: str  # space-separated unit names to ingest; default "ollama.service pgvector-kb-api.service"
+    # Prompt identity — override to describe your specific lab
+    lab_hostname: str  # human-readable host name shown in system prompt, e.g. "the-lab"; empty = use lab_host IP only
+    lab_hardware_summary: (
+        str  # one-line hardware description for system prompt; empty = omit from prompt
+    )
 
 
 def _required_env(name: str) -> str:
@@ -63,4 +68,6 @@ def load() -> Config:
         harvest_systemd_units=os.getenv(
             "HARVEST_SYSTEMD_UNITS", "ollama.service pgvector-kb-api.service"
         ),
+        lab_hostname=os.getenv("LAB_HOSTNAME", ""),
+        lab_hardware_summary=os.getenv("LAB_HARDWARE_SUMMARY", ""),
     )
