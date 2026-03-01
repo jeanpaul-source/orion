@@ -129,11 +129,11 @@ Active branch: `reliability/layer-0`. Layers 0–4 complete — all modules acti
   LLM errors return early without writing to history (history-poisoning bug fixed).
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log
-- **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am
+- **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am; each successful harvest writes `knowledge/harvest_snapshot.json` (git-tracked) for temporal diff queries
 - **Interface**: terminal REPL (all slash commands including `/postmortem`); HTTP + Telegram interfaces active
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 558 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 589 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.
