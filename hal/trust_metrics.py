@@ -1,4 +1,5 @@
 """Trust metrics — parse Judge audit log and compute simple action statistics.
+# why locked: Layer 3 — audit log analytics; depends on stable Judge audit format
 
 Provides:
 - load_audit_log(path): parse ~/.orion/audit.log entries into AuditEvent objects
@@ -21,7 +22,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, Optional
+from typing import Any, Dict, Iterable, Iterator, Optional
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -239,7 +240,7 @@ def aggregate_stats(
 # ---------------------------------------------------------------------------
 
 
-def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, object]:
+def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, Any]:
     """Return aggregated stats for events matching a pattern.
 
     Pattern behavior:

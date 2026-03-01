@@ -1,4 +1,5 @@
 """Web access for HAL — search (Level 0) and page fetch (Level 1).
+# why locked: Layer 3 — web_search and fetch_url; SSRF protection must be re-audited when unlocking
 
 Privacy guard: RFC1918 addresses and private hostnames are stripped from
 outbound queries before they reach the Tavily API.
@@ -181,7 +182,7 @@ def _validate_url(url: str) -> str:
         raise ValueError(f"DNS resolution failed for {hostname}")
 
     for family, _type, _proto, _canon, sockaddr in addrinfos:
-        ip = sockaddr[0]
+        ip: str = sockaddr[0]  # type: ignore[assignment]  # getaddrinfo always str
         if _is_private_ip(ip):
             raise ValueError(
                 f"DNS for {hostname} resolved to private IP {ip} — blocked (possible SSRF/rebinding)."

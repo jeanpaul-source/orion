@@ -5,7 +5,7 @@ from datetime import datetime
 try:
     import numpy as np
 except ModuleNotFoundError:  # pragma: no cover
-    np = None
+    np = None  # type: ignore[assignment]
 
 import psycopg2
 import psycopg2.extras

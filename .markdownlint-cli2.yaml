@@ -1,0 +1,10 @@
+# Scan all .md files except notes/ (scratch/journal area) and .venv/
+globs:
+  - "**/*.md"
+  - "!notes/**"
+  - "!.venv/**"
+
+config:
+  # Relaxations for documentation style
+  MD013: false          # line length — docs have long URLs
+  MD033: false          # inline HTML — needed for some formatting

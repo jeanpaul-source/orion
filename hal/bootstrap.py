@@ -18,8 +18,11 @@ from urllib.parse import urlparse
 from rich.console import Console
 
 import hal.config as cfg
-from hal.agent import run_agent, run_conversational, run_fact, run_health
+from hal.agent import run_agent
 from hal.executor import SSHExecutor
+from hal.intent import (
+    IntentClassifier,  # why: Layer 1 — needed for conversational routing in dispatch_intent
+)
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import OllamaClient, VLLMClient
@@ -175,6 +178,17 @@ def _connect(
         )
         sys.exit(1)
 
+    # Also skip if lab_host is local — even if the service URL contains the server's
+    # IP (e.g. VLLM_URL=http://192.168.5.10:8000), tunnelling to localhost still
+    # can't help: we're already on the machine and the port is simply closed.
+    # why: lab_host=localhost means HAL is running on the server itself;
+    # the URL check above only catches http://localhost:... not http://192.168.x.x:...
+    if lab_host in ("localhost", "127.0.0.1", "::1"):
+        _console.print(
+            f"[red]{name} is not reachable on {host}:{port} — is it running?[/]"
+        )
+        sys.exit(1)
+
     _console.print(f"[yellow]{name} not directly reachable — trying SSH tunnel...[/]")
     tunnel = SSHTunnel(lab_user, lab_host, port, default_port)
     try:
@@ -223,8 +237,42 @@ def setup_clients(
 # ---------------------------------------------------------------------------
 
 
+def _handle_conversational(
+    user_input: str,
+    history: list,
+    llm: VLLMClient,
+    mem: MemoryStore,
+    session_id: str,
+    system_prompt: str,
+    console: Console,
+) -> str:
+    """Respond to greetings and acknowledgements with a single LLM call, no tools.
+
+    # why: conversational turns (hello, thanks, ok) need no tool calls, no KB lookup,
+    # and no Prometheus queries — routing them through run_agent wastes at least one
+    # extra LLM round-trip and can trigger spurious tool calls.
+    """
+    working = list(history) + [{"role": "user", "content": user_input}]
+    try:
+        msg = llm.chat_with_tools(working, [], system=system_prompt)
+    except Exception as e:
+        # LLM error — same contract as run_agent: do NOT write to history.
+        # why: error strings in history corrupt every subsequent turn (H-1 contract).
+        err = f"LLM unavailable: {e}"
+        console.print(f"\n[bold red]hal>[/] {err}")
+        return err
+    response = (msg.get("content") or "").strip()
+    console.print(f"\n[bold cyan]hal>[/] {response}")
+    history.append({"role": "user", "content": user_input})
+    history.append({"role": "assistant", "content": response})
+    mem.save_turn(session_id, "user", user_input)
+    mem.save_turn(session_id, "assistant", response)
+    if len(history) > 40:
+        history[:] = history[-40:]
+    return response
+
+
 def dispatch_intent(
-    intent: str,
     user_input: str,
     history: list,
     llm: VLLMClient,
@@ -237,41 +285,43 @@ def dispatch_intent(
     system_prompt: str,
     console: Console,
     *,
+    classifier: IntentClassifier | None = None,
     ntopng_url: str = "",
     tavily_api_key: str = "",
 ) -> str:
-    """Route a pre-classified query to the correct handler and return the response string.
+    """Route a query to one of two paths based on intent classification.
 
-    Replaces the identical if/elif/else blocks that previously appeared in:
-      - hal/main.py REPL loop
-      - hal/main.py --print mode
-      - hal/server.py _run()
+    Path 1 — conversational (fast): greetings and acknowledgements skip the
+    tool loop entirely. No KB lookup, no Prometheus call, one LLM round-trip.
+
+    Path 2 — capable (everything else): health, fact, and agentic queries all
+    enter run_agent, which has full tool access and pre-seeds context from both
+    KB and a live Prometheus snapshot before the first LLM call. Simple health
+    and fact queries resolve in iteration 1 (context already injected); boundary
+    queries that need tools can call them without restriction.
+
+    # why: collapsing health/fact into run_agent removes the capability gate that
+    # caused boundary queries to get shallow answers. See notes/track-a-routing-
+    # refactor-plan.md Item 1 for the full root-cause analysis.
     """
-    if intent == "conversational":
-        return run_conversational(
-            user_input, history, llm, mem, session_id, system_prompt, console
-        )
-    elif intent == "health":
-        return run_health(
-            user_input, history, llm, prom, mem, session_id, system_prompt, console
-        )
-    elif intent == "fact":
-        return run_fact(
-            user_input, history, llm, kb, mem, session_id, system_prompt, console
-        )
-    else:
-        return run_agent(
-            user_input,
-            history,
-            llm,
-            kb,
-            prom,
-            executor,
-            judge,
-            mem,
-            session_id,
-            system_prompt,
-            console,
-            ntopng_url=ntopng_url,
-            tavily_api_key=tavily_api_key,
-        )
+    if classifier is not None:
+        intent, _confidence = classifier.classify(user_input)
+        if intent == "conversational":
+            return _handle_conversational(
+                user_input, history, llm, mem, session_id, system_prompt, console
+            )
+    return run_agent(
+        user_input,
+        history,
+        llm,
+        kb,
+        prom,
+        executor,
+        judge,
+        mem,
+        session_id,
+        system_prompt,
+        console,
+        ntopng_url=ntopng_url,
+        tavily_api_key=tavily_api_key,
+    )

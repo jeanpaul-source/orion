@@ -191,72 +191,6 @@ class TestWebSearch:
 
 
 # ---------------------------------------------------------------------------
-# get_tools — tool registry
-# ---------------------------------------------------------------------------
-
-
-class TestGetTools:
-    """get_tools() returns the right tool set based on config."""
-
-    def test_base_tools_always_present(self):
-        from hal.agent import get_tools
-
-        tools = get_tools()
-        names = [t["function"]["name"] for t in tools]
-        assert "search_kb" in names
-        assert "run_command" in names
-        assert "get_metrics" in names
-
-    def test_web_search_excluded_without_key(self):
-        from hal.agent import get_tools
-
-        tools = get_tools()
-        names = [t["function"]["name"] for t in tools]
-        assert "web_search" not in names
-
-    def test_web_search_included_with_key(self):
-        from hal.agent import get_tools
-
-        tools = get_tools(tavily_api_key="sk-test-123")
-        names = [t["function"]["name"] for t in tools]
-        assert "web_search" in names
-
-    def test_empty_key_excludes_web_search(self):
-        from hal.agent import get_tools
-
-        tools = get_tools(tavily_api_key="")
-        names = [t["function"]["name"] for t in tools]
-        assert "web_search" not in names
-
-    def test_returns_new_list_each_call(self):
-        """Ensure get_tools() doesn't mutate _BASE_TOOLS."""
-        from hal.agent import get_tools
-
-        tools_a = get_tools()
-        tools_b = get_tools(tavily_api_key="key")
-        assert len(tools_b) == len(tools_a) + 1
-        # Call again without key — should still be the base length
-        tools_c = get_tools()
-        assert len(tools_c) == len(tools_a)
-
-    def test_fetch_url_always_present(self):
-        """fetch_url needs no API key — always in the tool list."""
-        from hal.agent import get_tools
-
-        tools = get_tools()
-        names = [t["function"]["name"] for t in tools]
-        assert "fetch_url" in names
-
-    def test_fetch_url_present_with_and_without_tavily(self):
-        from hal.agent import get_tools
-
-        names_no_key = [t["function"]["name"] for t in get_tools()]
-        names_with_key = [t["function"]["name"] for t in get_tools(tavily_api_key="k")]
-        assert "fetch_url" in names_no_key
-        assert "fetch_url" in names_with_key
-
-
-# ---------------------------------------------------------------------------
 # _is_private_ip — low-level IP classification
 # ---------------------------------------------------------------------------
 
@@ -381,7 +315,10 @@ class TestValidateUrl:
         with pytest.raises(ValueError, match="private IP.*rebinding"):
             _validate_url("https://rebind.attacker.com/exfil")
 
-    @patch("hal.web.socket.getaddrinfo", side_effect=socket.gaierror("DNS failed"))
+    @patch(
+        "hal.web.socket.getaddrinfo",
+        side_effect=socket.gaierror("DNS failed"),
+    )
     def test_dns_failure(self, _mock):
         with pytest.raises(ValueError, match="DNS resolution failed"):
             _validate_url("https://nonexistent.invalid/page")

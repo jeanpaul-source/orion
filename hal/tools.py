@@ -1,38 +1,40 @@
 """Tool registry for the agent loop.
 
-Each tool is defined once with:
-- OpenAI function-call schema exposed to the model
-- runtime handler implementation
-- optional availability predicate
+Layer 0 tools (always available, no external API keys required):
+  search_kb       — pgvector semantic search
+  get_metrics     — live Prometheus metrics
+  get_trend       — Prometheus range-query trend analysis
+  run_command     — shell command execution (Judge-gated)
+  read_file       — file read (Judge-gated)
+  list_dir        — directory listing (Judge-gated)
+  write_file      — file write (Judge-gated)
+
+Layer 3 tools (graduated — active):
+  web_search           — Tavily web search (enabled only when TAVILY_API_KEY is set)
+  fetch_url            — SSRF-safe URL fetch + text extraction (Judge tier 1)
+  get_action_stats     — audit log analytics
+  get_security_events  — Falco security event reader (noise-filtered)
+  get_host_connections — Osquery listening ports + established connections + ARP
+  get_traffic_summary  — ntopng interface stats + top flows
+  scan_lan             — Nmap ping-sweep LAN discovery (Judge tier 1)
+
+Locked tools (still in hal/_unlocked/ — return with their layer):
+  Layer 3: patch_file, git_status, git_diff
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import NamedTuple, TypedDict
 
+import hal.security as _security
+import hal.trust_metrics as _trust_metrics
+import hal.web as _web
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.prometheus import PrometheusClient
-from hal.security import (
-    get_host_connections,
-    get_security_events,
-    get_traffic_summary,
-    scan_lan,
-)
-from hal.trust_metrics import get_action_stats as tm_get_action_stats
-from hal.web import fetch_url as _fetch_url
-from hal.web import web_search as _web_search
-from hal.workers import (
-    git_diff,
-    git_status,
-    list_dir,
-    patch_file,
-    read_file,
-    write_file,
-)
+from hal.workers import list_dir, read_file, write_file
 
 
 class ToolContext(NamedTuple):
@@ -59,10 +61,6 @@ class ToolSpec(TypedDict):
 
 def _always_enabled(_: str) -> bool:
     return True
-
-
-def _tavily_enabled(tavily_api_key: str) -> bool:
-    return bool(tavily_api_key)
 
 
 def _handle_run_command(args: dict, ctx: ToolContext) -> str:
@@ -121,27 +119,6 @@ def _handle_search_kb(args: dict, ctx: ToolContext) -> str:
         return "\n".join(lines) if lines else "No relevant results found."
     except Exception as e:
         return f"KB search failed: {e}"
-
-
-def _handle_patch_file(args: dict, ctx: ToolContext) -> str:
-    path = args.get("path") or ""
-    old_str = args.get("old_str") or ""
-    new_str = args.get("new_str") or ""
-    reason = args.get("reason") or ""
-    return patch_file(path, old_str, new_str, ctx.executor, ctx.judge, reason=reason)
-
-
-def _handle_git_status(args: dict, ctx: ToolContext) -> str:
-    repo_path = args.get("repo_path") or ""
-    reason = args.get("reason") or ""
-    return git_status(repo_path, ctx.executor, ctx.judge, reason=reason)
-
-
-def _handle_git_diff(args: dict, ctx: ToolContext) -> str:
-    repo_path = args.get("repo_path") or ""
-    ref = args.get("ref") or "HEAD"
-    reason = args.get("reason") or ""
-    return git_diff(repo_path, ctx.executor, ctx.judge, ref=ref, reason=reason)
 
 
 def _handle_get_metrics(args: dict, ctx: ToolContext) -> str:
@@ -204,41 +181,81 @@ def _handle_get_trend(args: dict, ctx: ToolContext) -> str:
     )
 
 
-def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
-    pattern = args.get("action_pattern") or ""
-    if not pattern:
-        return "Error: action_pattern is required."
+def _handle_web_search(args: dict, ctx: ToolContext) -> str:
+    query = args.get("query") or ""
     try:
-        data = tm_get_action_stats(pattern)
-        return json.dumps(data, indent=2)
-    except Exception as e:
-        return f"get_action_stats failed: {e}"
+        results = _web.web_search(query, api_key=ctx.tavily_api_key)
+    except (ValueError, RuntimeError) as exc:
+        return f"web_search failed: {exc}"
+    if not results:
+        return "No results found."
+    lines = []
+    for r in results:
+        lines.append(f"[{r['score']:.2f}] {r['title']}")
+        lines.append(f"  {r['url']}")
+        lines.append(f"  {r['content']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _handle_fetch_url(args: dict, ctx: ToolContext) -> str:
+    url = args.get("url") or ""
+    reason = args.get("reason") or ""
+    if not ctx.judge.approve("fetch_url", url, reason=reason):
+        return "Action denied by user."
+    try:
+        return _web.fetch_url(url)
+    except (ValueError, RuntimeError) as exc:
+        return f"fetch_url failed: {exc}"
+
+
+def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
+    pattern = args.get("pattern") or ""
+    try:
+        stats = _trust_metrics.get_action_stats(pattern)
+    except Exception as exc:
+        return f"get_action_stats failed: {exc}"
+    by_tool: dict = stats.get("by_tool") or {}
+    lines = []
+    for action, s in by_tool.items():
+        lines.append(
+            f"{action}: total={s['total']}, approved={s['approved']}, "
+            f"denied={s['denied']}, last={s['last_timestamp']}"
+        )
+    return "\n".join(lines) if lines else f"No audit entries matching '{pattern}'."
 
 
 def _handle_get_security_events(args: dict, ctx: ToolContext) -> str:
-    n = int(args.get("n", 50))
+    n = int(args.get("n") or 50)
     reason = args.get("reason") or ""
-    events = get_security_events(ctx.executor, ctx.judge, n=n, reason=reason)
-    return json.dumps(events, indent=2)
+    events = _security.get_security_events(ctx.executor, ctx.judge, n=n, reason=reason)
+    if not events:
+        return "No security events found (or action denied)."
+    import json as _json
+
+    return _json.dumps(events, indent=2)
 
 
 def _handle_get_host_connections(args: dict, ctx: ToolContext) -> str:
     reason = args.get("reason") or ""
-    data = get_host_connections(ctx.executor, ctx.judge, reason=reason)
-    return json.dumps(data, indent=2) if data else "Denied."
+    result = _security.get_host_connections(ctx.executor, ctx.judge, reason=reason)
+    if not result:
+        return "No host connection data returned (or action denied)."
+    import json as _json
+
+    return _json.dumps(result, indent=2)
 
 
 def _handle_get_traffic_summary(args: dict, ctx: ToolContext) -> str:
-    top_flows = int(args.get("top_flows", 20))
     reason = args.get("reason") or ""
-    data = get_traffic_summary(
-        ctx.executor,
-        ctx.judge,
-        ntopng_url=ctx.ntopng_url,
-        top_flows=top_flows,
-        reason=reason,
+    result = _security.get_traffic_summary(
+        ctx.executor, ctx.judge, ntopng_url=ctx.ntopng_url, reason=reason
     )
-    return json.dumps(data, indent=2) if data else "Denied."
+    if not result:
+        return "No traffic data returned (or action denied)."
+    import json as _json
+
+    return _json.dumps(result, indent=2)
 
 
 def _handle_scan_lan(args: dict, ctx: ToolContext) -> str:
@@ -246,45 +263,16 @@ def _handle_scan_lan(args: dict, ctx: ToolContext) -> str:
     reason = args.get("reason") or ""
     if not subnet:
         return "Error: subnet is required."
-    hosts = scan_lan(subnet, ctx.executor, ctx.judge, reason=reason)
-    return json.dumps(hosts, indent=2)
+    hosts = _security.scan_lan(subnet, ctx.executor, ctx.judge, reason=reason)
+    if not hosts:
+        return "No hosts found (or action denied)."
+    import json as _json
+
+    return _json.dumps(hosts, indent=2)
 
 
-def _handle_web_search(args: dict, ctx: ToolContext) -> str:
-    query = args.get("query") or ""
-    reason = args.get("reason") or ""
-    if not ctx.judge.approve("web_search", query, reason=reason):
-        return "Web search denied by policy."
-    if not ctx.tavily_api_key:
-        return "web_search is disabled — TAVILY_API_KEY is not configured."
-    try:
-        results = _web_search(query, api_key=ctx.tavily_api_key)
-        lines = []
-        for r in results:
-            lines.append(f"**{r['title']}**")
-            lines.append(r["url"])
-            lines.append(r["content"][:500])
-            lines.append("")
-        return "\n".join(lines) if lines else "No results found."
-    except ValueError as e:
-        return f"Web search blocked: {e}"
-    except Exception as e:
-        return f"Web search failed: {e}"
-
-
-def _handle_fetch_url(args: dict, ctx: ToolContext) -> str:
-    url = args.get("url") or ""
-    reason = args.get("reason") or ""
-    if not ctx.judge.approve("fetch_url", url, reason=reason):
-        return "URL fetch denied by policy."
-    try:
-        return _fetch_url(url)
-    except ValueError as e:
-        return f"URL blocked (SSRF protection): {e}"
-    except RuntimeError as e:
-        return f"Fetch failed: {e}"
-    except Exception as e:
-        return f"Fetch failed: {e}"
+def _web_search_enabled(tavily_api_key: str) -> bool:
+    return bool(tavily_api_key)
 
 
 TOOL_REGISTRY: dict[str, ToolSpec] = {
@@ -390,32 +378,6 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
         "handler": _handle_get_trend,
-        "enabled": _always_enabled,
-    },
-    "get_action_stats": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "get_action_stats",
-                "description": (
-                    "Return aggregated success/denial stats from HAL's audit log. "
-                    "Use this to check how often HAL has successfully performed a specific action "
-                    "before proposing to do it again. Accepts a substring or regex; matches tool name, "
-                    "command detail, or normalized action class (e.g., 'docker restart')."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action_pattern": {
-                            "type": "string",
-                            "description": "Substring or regex to match against action type, command, or action class",
-                        }
-                    },
-                    "required": ["action_pattern"],
-                },
-            },
-        },
-        "handler": _handle_get_action_stats,
         "enabled": _always_enabled,
     },
     "run_command": {
@@ -529,218 +491,30 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         "handler": _handle_write_file,
         "enabled": _always_enabled,
     },
-    "patch_file": {
+    "web_search": {
         "schema": {
             "type": "function",
             "function": {
-                "name": "patch_file",
+                "name": "web_search",
                 "description": (
-                    "Edit a file on the lab server by replacing an exact string. "
-                    "Safer than write_file — only the changed lines are touched. "
-                    "Shows a diff before applying. Use for targeted config edits."
+                    "Search the public web via Tavily. Use this when the answer is "
+                    "not in the KB and requires current information from the internet. "
+                    "Private IPs and hostnames are stripped from the query before sending."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "path": {
+                        "query": {
                             "type": "string",
-                            "description": "Absolute path to the file",
-                        },
-                        "old_str": {
-                            "type": "string",
-                            "description": "The exact text currently in the file to replace",
-                        },
-                        "new_str": {
-                            "type": "string",
-                            "description": "The new text to substitute in",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why this edit is needed",
-                        },
+                            "description": "Natural-language search query",
+                        }
                     },
-                    "required": ["path", "old_str", "new_str"],
+                    "required": ["query"],
                 },
             },
         },
-        "handler": _handle_patch_file,
-        "enabled": _always_enabled,
-    },
-    "git_status": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "git_status",
-                "description": (
-                    "Show uncommitted file changes in a git repository on the lab server. "
-                    "Use to see what has recently changed in a project or config directory."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "repo_path": {
-                            "type": "string",
-                            "description": "Absolute path to the git repository root",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why you need git status",
-                        },
-                    },
-                    "required": ["repo_path"],
-                },
-            },
-        },
-        "handler": _handle_git_status,
-        "enabled": _always_enabled,
-    },
-    "git_diff": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "git_diff",
-                "description": (
-                    "Show the diff of uncommitted or committed changes in a git repository "
-                    "on the lab server. Defaults to comparing working tree against HEAD. "
-                    "Pass a commit ref to compare that specific point."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "repo_path": {
-                            "type": "string",
-                            "description": "Absolute path to the git repository root",
-                        },
-                        "ref": {
-                            "type": "string",
-                            "description": "Git ref to diff against (default: HEAD)",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why you need the diff",
-                        },
-                    },
-                    "required": ["repo_path"],
-                },
-            },
-        },
-        "handler": _handle_git_diff,
-        "enabled": _always_enabled,
-    },
-    "get_security_events": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "get_security_events",
-                "description": (
-                    "Return recent Falco security events from the lab server. "
-                    "Use for questions like 'anything suspicious?', 'any alerts?', "
-                    "'what did Falco catch?'. Known-noisy rules are filtered automatically. "
-                    "Returns a list of events with time, rule, priority, and process name."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "n": {
-                            "type": "integer",
-                            "description": "Number of recent events to return (default: 50)",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why you need security events",
-                        },
-                    },
-                    "required": [],
-                },
-            },
-        },
-        "handler": _handle_get_security_events,
-        "enabled": _always_enabled,
-    },
-    "get_host_connections": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "get_host_connections",
-                "description": (
-                    "Return listening ports, established TCP connections, and ARP cache "
-                    "for the lab server via Osquery. "
-                    "Use for 'what's listening on this host?', 'who is connected?', "
-                    "'show me active network connections'."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why you need host connection data",
-                        },
-                    },
-                    "required": [],
-                },
-            },
-        },
-        "handler": _handle_get_host_connections,
-        "enabled": _always_enabled,
-    },
-    "get_traffic_summary": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "get_traffic_summary",
-                "description": (
-                    "Return aggregate network traffic stats and top active flows from ntopng. "
-                    "Use for 'how much traffic?', 'what are the busiest flows?', "
-                    "'is there unusual traffic?', 'show me bandwidth usage'."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "top_flows": {
-                            "type": "integer",
-                            "description": "Number of active flows to return (default: 20)",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why you need traffic data",
-                        },
-                    },
-                    "required": [],
-                },
-            },
-        },
-        "handler": _handle_get_traffic_summary,
-        "enabled": _always_enabled,
-    },
-    "scan_lan": {
-        "schema": {
-            "type": "function",
-            "function": {
-                "name": "scan_lan",
-                "description": (
-                    "Ping-sweep a subnet to discover live hosts (no port probing). "
-                    "Use for 'what's on the network?', 'scan the LAN', "
-                    "'show me all devices on 192.168.5.0/24'. "
-                    "Requires approval — will prompt the user before running."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "subnet": {
-                            "type": "string",
-                            "description": "CIDR subnet to scan, e.g. 192.168.5.0/24",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why you need a LAN scan",
-                        },
-                    },
-                    "required": ["subnet"],
-                },
-            },
-        },
-        "handler": _handle_scan_lan,
-        "enabled": _always_enabled,
+        "handler": _handle_web_search,
+        "enabled": _web_search_enabled,
     },
     "fetch_url": {
         "schema": {
@@ -748,18 +522,17 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "function": {
                 "name": "fetch_url",
                 "description": (
-                    "Fetch a public web page and extract its article text. "
-                    "Use this after web_search to read full page content, or when the "
-                    "user provides a specific URL to read. "
-                    "SSRF-protected: internal IPs and private hostnames are blocked. "
-                    "Output is capped at 15 000 characters."
+                    "Fetch a public URL and extract its article text. "
+                    "Only http:// and https:// are allowed. Private IPs, RFC1918 "
+                    "addresses, and .local/.internal hostnames are blocked (SSRF guard). "
+                    "Requires approval."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "url": {
                             "type": "string",
-                            "description": "Public HTTP(S) URL to fetch",
+                            "description": "The URL to fetch (must be http:// or https://)",
                         },
                         "reason": {
                             "type": "string",
@@ -773,38 +546,140 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         "handler": _handle_fetch_url,
         "enabled": _always_enabled,
     },
-    "web_search": {
+    "get_action_stats": {
         "schema": {
             "type": "function",
             "function": {
-                "name": "web_search",
+                "name": "get_action_stats",
                 "description": (
-                    "Search the public web for current information using Tavily. "
-                    "Use this for questions about latest software versions, CVEs, "
-                    "release notes, or topics not covered by the homelab knowledge base. "
-                    "Try search_kb first — only use web_search when the answer requires "
-                    "up-to-date external information. "
-                    "NEVER include internal IP addresses, hostnames, or file paths in "
-                    "the search query."
+                    "Query Judge audit log statistics — counts of approved and denied "
+                    "actions matching a given pattern. Useful for trust/safety reporting."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {
+                        "pattern": {
                             "type": "string",
-                            "description": "Search query (public, generic — no internal IPs or hostnames)",
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "One sentence explaining why you need a web search",
-                        },
+                            "description": (
+                                "Substring or regex to filter actions by name. "
+                                "Use empty string to get all actions."
+                            ),
+                        }
                     },
-                    "required": ["query"],
+                    "required": ["pattern"],
                 },
             },
         },
-        "handler": _handle_web_search,
-        "enabled": _tavily_enabled,
+        "handler": _handle_get_action_stats,
+        "enabled": _always_enabled,
+    },
+    "get_security_events": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_security_events",
+                "description": (
+                    "Read the most recent Falco security events from the lab server, "
+                    "with noisy/benign rules filtered out. Use this to check for "
+                    "suspicious activity, intrusion attempts, or policy violations."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "n": {
+                            "type": "integer",
+                            "description": "Number of recent log lines to inspect (default 50).",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this data.",
+                        },
+                    },
+                    "required": ["reason"],
+                },
+            },
+        },
+        "handler": _handle_get_security_events,
+        "enabled": _always_enabled,
+    },
+    "get_host_connections": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_host_connections",
+                "description": (
+                    "Query Osquery for listening ports, established TCP connections, "
+                    "and ARP cache on the lab server. Use this to investigate network "
+                    "exposure, see which processes are listening, or map active sessions."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this data.",
+                        }
+                    },
+                    "required": ["reason"],
+                },
+            },
+        },
+        "handler": _handle_get_host_connections,
+        "enabled": _always_enabled,
+    },
+    "get_traffic_summary": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_traffic_summary",
+                "description": (
+                    "Get aggregate network interface statistics and the top active "
+                    "flows from ntopng. Use this to answer questions about bandwidth "
+                    "usage, top talkers, or anomalous traffic patterns."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this data.",
+                        }
+                    },
+                    "required": ["reason"],
+                },
+            },
+        },
+        "handler": _handle_get_traffic_summary,
+        "enabled": _always_enabled,
+    },
+    "scan_lan": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "scan_lan",
+                "description": (
+                    "Run an Nmap ping-sweep (host discovery only, no port probing) "
+                    "over a subnet. Use this to enumerate live hosts on the LAN. "
+                    "Requires approval (tier 1) because it actively probes the network."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subnet": {
+                            "type": "string",
+                            "description": "CIDR subnet to scan, e.g. '192.168.5.0/24'.",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining why you need this scan.",
+                        },
+                    },
+                    "required": ["subnet", "reason"],
+                },
+            },
+        },
+        "handler": _handle_scan_lan,
+        "enabled": _always_enabled,
     },
 }
 

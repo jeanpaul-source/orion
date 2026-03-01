@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Proactive monitoring watchdog — checks thresholds, sends ntfy alerts.
+# why locked: Layer 3/4 — system watchdog; needs test coverage before reactivation
 
 Designed to run as a systemd timer (every 5 minutes). Maintains a cooldown
 state file so it doesn't spam the same alert repeatedly.
@@ -11,13 +12,16 @@ Usage:
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
 
 import hal.config as cfg
-from hal.falco_noise import is_falco_noise
+from hal.falco_noise import (
+    is_falco_noise,
+)
 from hal.prometheus import PrometheusClient
 
 STATE_FILE = Path.home() / ".orion" / "watchdog_state.json"
@@ -332,12 +336,13 @@ def run() -> None:
     # Boolean / time-based checks (NTP, harvest lag)
     simple_alerts: list[str] = []
     simple_fired: list[str] = []
-    for key, check_fn, urgency in [
+    simple_checks: list[tuple[str, Callable[..., str | None], str]] = [
         ("ntp", _check_ntp, "urgent"),
         ("harvest_lag", _check_harvest, "high"),
         ("containers", _check_containers, "urgent"),
         ("falco", _check_falco, "urgent"),
-    ]:
+    ]
+    for key, check_fn, urgency in simple_checks:
         msg = check_fn(state=state)
         if msg:
             if not _in_cooldown(state, key):
