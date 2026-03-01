@@ -192,6 +192,32 @@ class PrometheusClient:
         }
 
 
+# ----------------------------- Named metric → PromQL map ----------------------------- #
+# Single source of truth for metric name → PromQL expression.
+# Used by the get_trend agent tool (hal/tools.py) and the proactive watchdog
+# (hal/watchdog.py).  Both import from here so there is no duplication.
+METRIC_PROMQL: dict[str, str] = {
+    "cpu": '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)',
+    "mem": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+    "disk_root": (
+        '(1 - node_filesystem_avail_bytes{mountpoint="/"}'
+        ' / node_filesystem_size_bytes{mountpoint="/"}) * 100'
+    ),
+    "disk_docker": (
+        '(1 - node_filesystem_avail_bytes{mountpoint="/docker"}'
+        ' / node_filesystem_size_bytes{mountpoint="/docker"}) * 100'
+    ),
+    "disk_data": (
+        '(1 - node_filesystem_avail_bytes{mountpoint="/data/projects"}'
+        ' / node_filesystem_size_bytes{mountpoint="/data/projects"}) * 100'
+    ),
+    "swap": "(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) * 100",
+    "load": "node_load1",
+    "gpu_vram": 'node_gpu_vram_usage_percent{gpu="0"}',
+    "gpu_temp": 'node_gpu_temperature_celsius{gpu="0"}',
+}
+
+
 # ----------------------------- Optional instruments ----------------------------- #
 _lock = threading.Lock()
 _counters: dict[

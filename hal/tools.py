@@ -33,6 +33,7 @@ import hal.web as _web
 from hal.executor import SSHExecutor
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
+from hal.prometheus import METRIC_PROMQL as _METRIC_PROMQL
 from hal.prometheus import PrometheusClient
 from hal.workers import list_dir, read_file, write_file
 
@@ -128,29 +129,6 @@ def _handle_get_metrics(args: dict, ctx: ToolContext) -> str:
         return "\n".join(f"{k}: {v}" for k, v in h.items() if v is not None)
     except Exception as e:
         return f"Metrics unavailable: {e}"
-
-
-# PromQL expressions for each named metric — mirrors health() exactly.
-_METRIC_PROMQL: dict[str, str] = {
-    "cpu": '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)',
-    "mem": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
-    "disk_root": (
-        '(1 - node_filesystem_avail_bytes{mountpoint="/"}'
-        ' / node_filesystem_size_bytes{mountpoint="/"}) * 100'
-    ),
-    "disk_docker": (
-        '(1 - node_filesystem_avail_bytes{mountpoint="/docker"}'
-        ' / node_filesystem_size_bytes{mountpoint="/docker"}) * 100'
-    ),
-    "disk_data": (
-        '(1 - node_filesystem_avail_bytes{mountpoint="/data/projects"}'
-        ' / node_filesystem_size_bytes{mountpoint="/data/projects"}) * 100'
-    ),
-    "swap": "(1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) * 100",
-    "load": "node_load1",
-    "gpu_vram": 'node_gpu_vram_usage_percent{gpu="0"}',
-    "gpu_temp": 'node_gpu_temperature_celsius{gpu="0"}',
-}
 
 
 def _handle_get_trend(args: dict, ctx: ToolContext) -> str:
