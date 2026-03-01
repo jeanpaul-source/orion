@@ -11,10 +11,9 @@ You  (terminal REPL, HTTP server, Telegram bot)
  └─ hal/main.py  [session manager, Rich console, readline history]
       └─ IntentClassifier  [embedding similarity, threshold 0.65, one embed call per query]
             │
-            ├── conversational  → _handle_conversational()  — LLM reply, no tools, no KB
-            ├── health          → _handle_health()          — Prometheus query, no tool loop
-            ├── fact            → _handle_fact()            — pgvector KB search, no tool loop
-            └── agentic         → run_agent()               — full tool loop, up to 8 LLM iterations
+            ├── conversational                → _handle_conversational()  — single LLM call, no tools, no KB
+            └── health | fact | agentic       → run_agent()               — full tool loop, up to 8 LLM iterations
+                                        │  (KB + Prometheus pre-seeded before iteration 0)
                                         │
                      ┌──────────────────┼──────────────────────┐
                      ▼                  ▼                      ▼
@@ -57,19 +56,11 @@ User types query
       → response rendered to terminal
       → turn saved to MemoryStore
 
-  health path:
-      → PrometheusClient queries CPU, memory, disk, load, uptime
-      → VLLMClient.chat(metrics_snapshot + query)
-      → response rendered
-
-  fact path:
-      → KnowledgeBase.search(query, threshold=0.5, top_k=3)
-      → VLLMClient.chat(kb_chunks + query)
-      → response rendered
-
-  agentic path:
-      → KnowledgeBase.search(query, threshold=0.75) → inject if strong match
-      → PlannerAgent reasons about the query (optional, tool-less)
+  run_agent path (all non-conversational intents):
+      → KnowledgeBase.search(query, threshold=0.75) → inject matching chunks as context
+      → PrometheusClient queries live metrics snapshot → inject as context
+        (both pre-seeds happen before iteration 0; simple queries resolve from context
+         without issuing any tool calls)
       → loop up to MAX_ITERATIONS=8:
             VLLMClient.chat_with_tools(history + tools_schema)
             if tool_calls:
@@ -102,11 +93,12 @@ One embed call is faster and cheaper than an LLM inference call. The classificat
 deterministic and auditable — you can always tell why a query was routed a particular way
 by checking its cosine similarity against the example sentences.
 
-**Why default to `agentic` on low confidence?**
+**Why default to `run_agent` on low confidence?**
 
-The agentic path is the most capable — it has access to all tools and can handle any query
-correctly, even if slowly. Routing an ambiguous query to `agentic` is safe. Routing it to
-`health` or `fact` when it needed tools would silently give a wrong answer.
+`run_agent` is the most capable path — it has access to all tools and can handle any query
+correctly, even if slowly. Routing an ambiguous query there is safe. All non-conversational
+intents (health, fact, agentic) map to the same handler, so the only routing decision that
+matters is whether the query is conversational or not.
 
 **How to tune it:** Edit `EXAMPLES` in `hal/intent.py`. Add a sentence that looks like the
 misrouted query to the correct category. No retraining, no redeploy — just restart.
@@ -168,12 +160,13 @@ Tool calls require parsing the full structured response. Streaming the model out
 also parsing tool call JSON from it is complex and fragile. Batch responses are simpler and
 correct. The UX trade-off is acceptable for a terminal REPL.
 
-**KB seeding threshold (0.75 for agentic, 0.5 for fact):**
+**KB seeding threshold (0.75):**
 
-The agentic path uses a higher threshold (0.75) to avoid injecting marginally-relevant KB
-docs into the first message of a tool-using loop. At 0.75, only strong matches seed the
-context. The fact path (0.5) is more permissive because its job is explicitly to surface
-documented answers — low-confidence results are still shown, but labelled.
+All queries entering `run_agent()` use a 0.75 cosine-similarity threshold for KB pre-seeding.
+Only strong matches are injected as context before iteration 0. A lower threshold pulled in
+marginally-relevant docs and added noise to the first iteration; 0.75 keeps the pre-seed
+high-signal. If no chunk clears the threshold, the loop starts without KB context and the
+model can issue a `search_kb` tool call if it determines one is needed.
 
 ---
 
