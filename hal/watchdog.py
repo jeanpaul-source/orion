@@ -22,7 +22,7 @@ import hal.config as cfg
 from hal.falco_noise import (
     is_falco_noise,
 )
-from hal.prometheus import PrometheusClient
+from hal.prometheus import METRIC_PROMQL, PrometheusClient
 
 STATE_FILE = Path.home() / ".orion" / "watchdog_state.json"
 LOG_FILE = Path.home() / ".orion" / "watchdog.log"
@@ -174,6 +174,17 @@ CRITICAL_CONTAINERS: set[str] = {
     "pushgateway",
 }
 
+# Metrics to watch for rate-of-change: (METRIC_PROMQL key, Config attr, human label)
+# CPU and load are excluded — too spiky for rate-of-change alerting.
+TREND_METRICS: list[tuple[str, str, str]] = [
+    ("disk_root", "watchdog_disk_rate_pct_per_hour", "Disk / usage"),
+    ("disk_docker", "watchdog_disk_rate_pct_per_hour", "Disk /docker usage"),
+    ("disk_data", "watchdog_disk_rate_pct_per_hour", "Disk /data/projects usage"),
+    ("mem", "watchdog_mem_rate_pct_per_hour", "Memory usage"),
+    ("swap", "watchdog_swap_rate_pct_per_hour", "Swap usage"),
+    ("gpu_vram", "watchdog_gpu_vram_rate_pct_per_hour", "GPU VRAM usage"),
+]
+
 
 def _check_containers(**_kw: object) -> str | None:
     """Returns an alert message if any critical container is exited/dead, else None."""
@@ -203,6 +214,38 @@ def _check_containers(**_kw: object) -> str | None:
     except Exception:
         pass
     return None
+
+
+def _check_trends(
+    prom: PrometheusClient,
+    config: object,
+    state: dict | None = None,
+    **_kw: object,
+) -> str | None:
+    """Returns an alert message if any watched metric is rising faster than its
+    configured rate threshold (proactive — fires before the hard threshold is hit)."""
+    firing: list[str] = []
+    for promql_key, cfg_attr, human_label in TREND_METRICS:
+        promql = METRIC_PROMQL.get(promql_key, "")
+        if not promql:
+            continue
+        threshold: float = getattr(config, cfg_attr, 5.0)
+        try:
+            summary = prom.trend(promql, "1h")
+        except Exception:
+            continue
+        if summary is None:
+            continue
+        if summary["direction"] == "rising" and summary["delta_per_hour"] >= threshold:
+            firing.append(
+                f"{human_label} trending +{summary['delta_per_hour']:.1f}%/hr"
+                f" (threshold: {threshold:.0f}%/hr)"
+            )
+    if not firing:
+        return None
+    count = len(firing)
+    header = f"{count} metric{'s' if count != 1 else ''} trending toward threshold"
+    return header + ":\n" + "\n".join(firing)
 
 
 def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
@@ -341,9 +384,10 @@ def run() -> None:
         ("harvest_lag", _check_harvest, "high"),
         ("containers", _check_containers, "urgent"),
         ("falco", _check_falco, "urgent"),
+        ("trend", _check_trends, "high"),
     ]
     for key, check_fn, urgency in simple_checks:
-        msg = check_fn(state=state)
+        msg = check_fn(state=state, prom=prom, config=config)
         if msg:
             if not _in_cooldown(state, key):
                 simple_alerts.append(msg)
