@@ -37,6 +37,11 @@ class Config:
     judge_extra_sensitive_paths: (
         str  # colon-separated absolute path prefixes to treat as sensitive; default ""
     )
+    # Watchdog proactive trend thresholds — rate-of-change that triggers an early alert
+    watchdog_disk_rate_pct_per_hour: float  # default 5.0
+    watchdog_mem_rate_pct_per_hour: float  # default 5.0
+    watchdog_swap_rate_pct_per_hour: float  # default 10.0
+    watchdog_gpu_vram_rate_pct_per_hour: float  # default 5.0
 
 
 def _required_env(name: str) -> str:
@@ -75,4 +80,16 @@ def load() -> Config:
         lab_hostname=os.getenv("LAB_HOSTNAME", ""),
         lab_hardware_summary=os.getenv("LAB_HARDWARE_SUMMARY", ""),
         judge_extra_sensitive_paths=os.getenv("JUDGE_EXTRA_SENSITIVE_PATHS", ""),
+        watchdog_disk_rate_pct_per_hour=float(
+            os.getenv("WATCHDOG_DISK_RATE_PCT_PER_HOUR", "5.0")
+        ),
+        watchdog_mem_rate_pct_per_hour=float(
+            os.getenv("WATCHDOG_MEM_RATE_PCT_PER_HOUR", "5.0")
+        ),
+        watchdog_swap_rate_pct_per_hour=float(
+            os.getenv("WATCHDOG_SWAP_RATE_PCT_PER_HOUR", "10.0")
+        ),
+        watchdog_gpu_vram_rate_pct_per_hour=float(
+            os.getenv("WATCHDOG_GPU_VRAM_RATE_PCT_PER_HOUR", "5.0")
+        ),
     )
