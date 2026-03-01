@@ -78,6 +78,7 @@ def _patch_common(
         lambda **_kw: checks.get("containers"),
     )
     monkeypatch.setattr(watchdog, "_check_falco", lambda **_kw: checks.get("falco"))
+    monkeypatch.setattr(watchdog, "_check_trends", lambda **_kw: checks.get("trend"))
 
     return {"sent_metric": sent_metric, "sent_simple": sent_simple, "saved": saved}
 
@@ -195,5 +196,173 @@ def test_boolean_check_fires_suppresses_then_clears(
     assert len(clear["sent_simple"]) == 1
     resolved = clear["sent_simple"][0]
     assert resolved["messages"] == [f"{key} resolved"]
+    assert resolved["urgency"] == "low"
+    assert resolved["title"] == "Orion RESOLVED — the-lab"
+
+
+# ---------------------------------------------------------------------------
+# _check_trends unit tests
+# ---------------------------------------------------------------------------
+
+
+class _FakeTrendClient:
+    """Minimal PrometheusClient stand-in that fakes trend() responses."""
+
+    def __init__(
+        self,
+        trend_result: dict | None = None,
+        raises: bool = False,
+    ) -> None:
+        self._trend_result = trend_result
+        self._raises = raises
+
+    def health(self) -> dict:
+        return {}
+
+    def trend(self, promql: str, window: str = "1h") -> dict | None:
+        if self._raises:
+            raise RuntimeError("prom unreachable")
+        return self._trend_result
+
+
+def _fake_config(**overrides: float) -> object:
+    defaults = {
+        "watchdog_disk_rate_pct_per_hour": 5.0,
+        "watchdog_mem_rate_pct_per_hour": 5.0,
+        "watchdog_swap_rate_pct_per_hour": 10.0,
+        "watchdog_gpu_vram_rate_pct_per_hour": 5.0,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def _stable_summary(delta_per_hour: float = 0.1) -> dict:
+    return {
+        "first": 50.0,
+        "last": 50.1,
+        "min": 50.0,
+        "max": 50.1,
+        "delta": 0.1,
+        "delta_per_hour": delta_per_hour,
+        "direction": "stable",
+    }
+
+
+def _rising_summary(delta_per_hour: float = 7.5) -> dict:
+    return {
+        "first": 50.0,
+        "last": 57.5,
+        "min": 50.0,
+        "max": 57.5,
+        "delta": 7.5,
+        "delta_per_hour": delta_per_hour,
+        "direction": "rising",
+    }
+
+
+def test_check_trends_stable_returns_none() -> None:
+    prom = _FakeTrendClient(trend_result=_stable_summary())
+    result = watchdog._check_trends(prom=prom, config=_fake_config())
+    assert result is None
+
+
+def test_check_trends_rising_above_threshold_fires() -> None:
+    # delta_per_hour=7.5 > default threshold 5.0 → should fire
+    prom = _FakeTrendClient(trend_result=_rising_summary(delta_per_hour=7.5))
+    result = watchdog._check_trends(prom=prom, config=_fake_config())
+    assert result is not None
+    assert "trending toward threshold" in result
+    assert "+7.5%/hr" in result
+
+
+def test_check_trends_rising_below_threshold_no_alert() -> None:
+    # delta_per_hour=2.0 < default threshold 5.0 → no alert
+    prom = _FakeTrendClient(
+        trend_result={
+            **_rising_summary(delta_per_hour=2.0),
+            "direction": "rising",
+        }
+    )
+    result = watchdog._check_trends(prom=prom, config=_fake_config())
+    assert result is None
+
+
+def test_check_trends_falling_no_alert() -> None:
+    prom = _FakeTrendClient(
+        trend_result={
+            "first": 60.0,
+            "last": 52.0,
+            "min": 52.0,
+            "max": 60.0,
+            "delta": -8.0,
+            "delta_per_hour": -8.0,
+            "direction": "falling",
+        }
+    )
+    result = watchdog._check_trends(prom=prom, config=_fake_config())
+    assert result is None
+
+
+def test_check_trends_trend_returns_none_skips_metric() -> None:
+    # trend() returning None means no data — should not crash or fire
+    prom = _FakeTrendClient(trend_result=None)
+    result = watchdog._check_trends(prom=prom, config=_fake_config())
+    assert result is None
+
+
+def test_check_trends_trend_raises_skips_metric() -> None:
+    # trend() raising should be swallowed — no crash, no alert
+    prom = _FakeTrendClient(raises=True)
+    result = watchdog._check_trends(prom=prom, config=_fake_config())
+    assert result is None
+
+
+def test_check_trends_fires_through_run_with_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end: run() fires trend alert, cooldown suppresses, resolves on clear."""
+    trend_msg = "1 metric trending toward threshold:\nDisk /docker usage trending +7.5%/hr (threshold: 5%/hr)"
+
+    # First run — no cooldown — should fire
+    first = _patch_common(
+        monkeypatch,
+        metrics={},
+        state={},
+        checks={"trend": trend_msg},
+    )
+    watchdog.run()
+
+    assert first["sent_metric"] == []
+    assert len(first["sent_simple"]) == 1
+    assert first["sent_simple"][0]["messages"] == [trend_msg]
+    assert first["sent_simple"][0]["urgency"] == "high"
+    assert "trend" in first["saved"]
+    datetime.fromisoformat(first["saved"]["trend"])
+
+    # Second run — in cooldown — should be suppressed
+    suppress = _patch_common(
+        monkeypatch,
+        metrics={},
+        state={"trend": datetime.now().isoformat(timespec="seconds")},
+        checks={"trend": trend_msg},
+    )
+    watchdog.run()
+
+    assert suppress["sent_simple"] == []
+    assert "trend" in suppress["saved"]
+
+    # Third run — trend cleared — should send resolved and remove state key
+    clear = _patch_common(
+        monkeypatch,
+        metrics={},
+        state={"trend": datetime.now().isoformat(timespec="seconds")},
+        checks={"trend": None},
+    )
+    watchdog.run()
+
+    assert "trend" not in clear["saved"]
+    assert len(clear["sent_simple"]) == 1
+    resolved = clear["sent_simple"][0]
+    assert resolved["messages"] == ["trend resolved"]
     assert resolved["urgency"] == "low"
     assert resolved["title"] == "Orion RESOLVED — the-lab"
