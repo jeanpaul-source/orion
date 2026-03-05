@@ -59,6 +59,7 @@ DOCUMENTED_HAL_MODULES = {
     "main.py",
     "memory.py",
     "notify.py",
+    "playbooks.py",
     "postmortem.py",
     "prometheus.py",
     "sanitize.py",
