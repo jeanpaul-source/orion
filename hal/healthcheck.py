@@ -129,12 +129,12 @@ def check_pgvector(
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
-                cur.execute("SELECT COUNT(*) FROM kb_chunks")
+                cur.execute("SELECT COUNT(*) FROM documents")
                 count = cur.fetchone()[0]
             return ComponentHealth(
                 "pgvector",
                 "ok",
-                f"{count:,} chunks",
+                f"{count:,} documents",
                 _elapsed_ms(start),
             )
         finally:
