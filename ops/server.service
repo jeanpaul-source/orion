@@ -1,6 +1,6 @@
 [Unit]
 Description=Orion HAL HTTP server
-After=network-online.target
+After=network-online.target vllm.service
 Wants=network-online.target
 
 [Service]

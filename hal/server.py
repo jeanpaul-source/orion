@@ -51,6 +51,16 @@ from hal.memory import MemoryStore
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import setup_tracing
 
+import logging as _logging
+
+_log = _logging.getLogger("hal.server")
+
+# ---------------------------------------------------------------------------
+# Retry constants — how long to wait for backends after a cold boot
+# ---------------------------------------------------------------------------
+_RETRY_DELAY = 15  # seconds between attempts
+_MAX_RETRIES = 40  # 40 × 15s = 600s = 10 minutes
+
 # ---------------------------------------------------------------------------
 # Server-mode Judge: auto-deny tier 1+ (no TTY available over HTTP)
 # ---------------------------------------------------------------------------
@@ -99,11 +109,82 @@ class ChatResponse(BaseModel):
 _state: dict[str, Any] = {}
 
 
+def _populate_state(
+    config: cfg.Config, llm: VLLMClient, embed: Any, tunnels: list
+) -> None:
+    """Fill *_state* with fully-initialised HAL clients.
+
+    Idempotent — safe to call again on retry success.
+    """
+    _state.update(
+        {
+            "config": config,
+            "llm": llm,
+            "embed": embed,
+            "tunnels": tunnels,
+            "kb": KnowledgeBase(config.pgvector_dsn, embed),
+            "prom": PrometheusClient(config.prometheus_url),
+            "executor": SSHExecutor(config.lab_host, config.lab_user),
+            "judge": ServerJudge(
+                llm=llm,
+                extra_sensitive_paths=tuple(
+                    p
+                    for p in config.judge_extra_sensitive_paths.split(":")
+                    if p.strip()
+                ),
+            ),
+            # MemoryStore (SQLite) is NOT stored here — SQLite connections
+            # cannot be shared across threads.  A fresh MemoryStore is
+            # opened per-request inside asyncio.to_thread().
+            "classifier": IntentClassifier(embed),
+        }
+    )
+    _state.pop("_startup_error", None)
+    _state.pop("_retry_task", None)
+
+
+async def _retry_init(config: cfg.Config) -> None:
+    """Background task: retry backend connection until services come up.
+
+    Called automatically when the initial ``setup_clients()`` fails at boot.
+    Retries every ``_RETRY_DELAY`` seconds, up to ``_MAX_RETRIES`` times
+    (~10 minutes total).  On success, populates ``_state`` and clears the
+    degraded flag so ``/health`` returns ``ok`` and ``/chat`` starts serving.
+    """
+    for attempt in range(1, _MAX_RETRIES + 1):
+        await asyncio.sleep(_RETRY_DELAY)
+        _log.info(
+            "Backend retry %d/%d — attempting to connect...",
+            attempt,
+            _MAX_RETRIES,
+        )
+        try:
+            llm, embed, tunnels = await asyncio.to_thread(setup_clients, config)
+        except SystemExit:
+            _log.info(
+                "Retry %d/%d — backends not ready yet",
+                attempt,
+                _MAX_RETRIES,
+            )
+            continue
+
+        _populate_state(config, llm, embed, tunnels)
+        _log.info(
+            "Backends connected on attempt %d — server fully operational",
+            attempt,
+        )
+        return
+
+    _log.error(
+        "Gave up connecting to backends after %d retries (%ds). "
+        "Manual restart required.",
+        _MAX_RETRIES,
+        _MAX_RETRIES * _RETRY_DELAY,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: RUF029
-    import logging as _logging
-
-    _log = _logging.getLogger("hal.server")
     config = cfg.load()
     setup_logging()
     setup_tracing()
@@ -111,41 +192,27 @@ async def lifespan(app: FastAPI):  # noqa: RUF029
 
     try:
         llm, embed, tunnels = setup_clients(config)
-        _state.update(
-            {
-                "config": config,
-                "llm": llm,
-                "embed": embed,
-                "tunnels": tunnels,
-                "kb": KnowledgeBase(config.pgvector_dsn, embed),
-                "prom": PrometheusClient(config.prometheus_url),
-                "executor": SSHExecutor(config.lab_host, config.lab_user),
-                "judge": ServerJudge(
-                    llm=llm,
-                    extra_sensitive_paths=tuple(
-                        p
-                        for p in config.judge_extra_sensitive_paths.split(":")
-                        if p.strip()
-                    ),
-                ),
-                # MemoryStore (SQLite) is NOT stored here — SQLite connections
-                # cannot be shared across threads.  A fresh MemoryStore is
-                # opened per-request inside asyncio.to_thread().
-                "classifier": IntentClassifier(embed),
-            }
-        )
+        _populate_state(config, llm, embed, tunnels)
         _log.info("HAL services connected — server ready")
     except SystemExit as exc:
         # setup_clients calls sys.exit(1) when vLLM/Ollama aren't reachable.
-        # Catch it so uvicorn can still start in degraded mode.
-        # /chat will return 503 until services come up.
+        # Start in degraded mode and retry in background until they come up.
         _state["_startup_error"] = (
-            f"Services unavailable (exit {exc.code}). "
-            "Start vLLM and Ollama then restart the server."
+            f"Services unavailable (exit {exc.code}). Retrying in background..."
         )
-        _log.warning("HAL started in degraded mode: %s", _state["_startup_error"])
+        _log.warning(
+            "HAL started in degraded mode — retrying every %ds (up to %ds)",
+            _RETRY_DELAY,
+            _RETRY_DELAY * _MAX_RETRIES,
+        )
+        _state["_retry_task"] = asyncio.create_task(_retry_init(config))
 
     yield  # ---------- server is running ----------
+
+    # Cancel any in-flight retry task
+    retry_task = _state.pop("_retry_task", None)
+    if retry_task and not retry_task.done():
+        retry_task.cancel()
 
     for tunnel in _state.get("tunnels", []):
         tunnel.stop()

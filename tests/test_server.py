@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -407,3 +409,131 @@ def test_chat_strips_fenced_tool_call_blocks_from_agentic_response(monkeypatch) 
     assert "```json" not in response_text
     assert "run_command" not in response_text
     assert "Clean prose." in response_text
+
+
+# ---------------------------------------------------------------------------
+# Boot-order retry mechanism tests
+# ---------------------------------------------------------------------------
+
+
+def test_populate_state_sets_clients_and_clears_error() -> None:
+    """_populate_state fills _state with clients and removes degraded markers."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "fail"
+    server._state["_retry_task"] = "dummy"
+    try:
+        config = _ns(
+            pgvector_dsn="postgresql://localhost/test",
+            prometheus_url="http://localhost:9091",
+            lab_host="127.0.0.1",
+            lab_user="jp",
+            judge_extra_sensitive_paths="",
+        )
+        llm = MagicMock()
+        embed = MagicMock()
+        with (
+            patch.object(server, "KnowledgeBase"),
+            patch.object(server, "PrometheusClient"),
+            patch.object(server, "SSHExecutor"),
+            patch.object(server, "IntentClassifier"),
+        ):
+            server._populate_state(config, llm, embed, [])
+
+        assert "_startup_error" not in server._state
+        assert "_retry_task" not in server._state
+        assert server._state["llm"] is llm
+        assert server._state["embed"] is embed
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_retry_init_succeeds_after_failures() -> None:
+    """_retry_init retries and populates state when backends eventually come up."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "fail"
+
+    call_count = 0
+
+    def fake_setup(cfg):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            raise SystemExit(1)
+        return MagicMock(), MagicMock(), []
+
+    try:
+        with (
+            patch.object(server, "setup_clients", side_effect=fake_setup),
+            patch.object(server, "_populate_state") as mock_pop,
+            patch.object(server, "_RETRY_DELAY", 0),
+            patch.object(server, "_MAX_RETRIES", 5),
+        ):
+            asyncio.run(server._retry_init(_ns()))
+
+        assert call_count == 3
+        assert mock_pop.called
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_retry_init_gives_up_after_max_retries() -> None:
+    """_retry_init stops after _MAX_RETRIES without populating state."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "fail"
+
+    try:
+        with (
+            patch.object(server, "setup_clients", side_effect=SystemExit(1)),
+            patch.object(server, "_populate_state") as mock_pop,
+            patch.object(server, "_RETRY_DELAY", 0),
+            patch.object(server, "_MAX_RETRIES", 3),
+        ):
+            asyncio.run(server._retry_init(_ns()))
+
+        assert not mock_pop.called
+        assert "_startup_error" in server._state
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_health_degraded_shows_retry_message() -> None:
+    """Health endpoint shows 'Retrying in background' when retry is active."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = (
+        "Services unavailable (exit 1). Retrying in background..."
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/health")
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "degraded"
+    assert "Retrying" in body["detail"]
+
+
+def test_server_service_unit_has_vllm_after_dependency() -> None:
+    """The systemd unit file orders server.service after vllm.service."""
+    from pathlib import Path
+
+    unit = Path(__file__).parent.parent / "ops" / "server.service"
+    content = unit.read_text()
+    assert "After=" in content
+    assert "vllm.service" in content
+
+
+def test_retry_constants_sensible() -> None:
+    """Retry constants allow at least 5 minutes of retry time."""
+    total = server._RETRY_DELAY * server._MAX_RETRIES
+    assert total >= 300, f"Total retry window {total}s < 300s"
+    assert server._RETRY_DELAY >= 10, "Retry delay too aggressive"
