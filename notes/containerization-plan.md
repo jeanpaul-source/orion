@@ -1061,3 +1061,20 @@ be added as an optimization.
 > **Start-up time:** Server takes ~30s to connect to external services (vLLM,
 > pgvector, Ollama) before responding to health checks. The 120s
 > `start_period` in the health check configuration is sufficient.
+
+> **Revision (2026-03-05, Block E cutover session):**
+>
+> **E2+E3 — Harvest & watchdog stay on host:** The plan called for
+> `docker exec orion python -m harvest` and `docker exec orion python -m
+> hal.watchdog`. This doesn't work — harvest uses `subprocess.run("docker
+> ps")`, reads `/opt/homelab-infrastructure/` via `Path.read_text()`, calls
+> `systemctl cat`, etc. All of these need direct host access. Inside the
+> container, harvest only collected 13 chunks from 6 documents (vs 17,250
+> from 1,272 on the host). Watchdog similarly reads `/var/log/falco` and
+> uses host `Path.home()`. Both services **stay on the host venv** unchanged.
+> This is correct: they're host-monitoring tools, not part of HAL's chat/agent.
+>
+> **E4 — hal alias updated:** `docker exec -it orion python -m hal` ✓
+>
+> **E5 — orion-deploy alias added:** `cd ~/orion && git pull && docker
+> compose build && docker compose up -d` ✓
