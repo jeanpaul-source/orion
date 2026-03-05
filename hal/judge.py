@@ -626,6 +626,12 @@ _TRUST_MIN_SAMPLES = 10
 # while still rejecting commands that fail 1-in-5 times.
 _TRUST_MIN_SUCCESS_RATE = 0.90
 
+# Success rate below which an earned trust override is explicitly revoked.
+# why: a command that was once reliable but now fails >30% of the time should
+# lose its auto-approval and alert the operator.  The gap between 0.70 and 0.90
+# is intentional — it prevents rapid flip-flopping between promoted and demoted.
+_TRUST_DEMOTION_RATE = 0.70
+
 
 def _trust_key(action_type: str, detail: str) -> str:
     """Compute a stable grouping key for trust tracking.
@@ -644,21 +650,27 @@ def _trust_key(action_type: str, detail: str) -> str:
     return action_type
 
 
-def _load_trust_overrides(audit_log: Path) -> dict[str, int]:
+def _load_trust_overrides(
+    audit_log: Path,
+    demotion_rate: float = _TRUST_DEMOTION_RATE,
+) -> tuple[dict[str, int], frozenset[str]]:
     """Read audit log outcome entries and return evolved tier overrides.
 
-    Returns {trust_key: 0} for any action that has >= _TRUST_MIN_SAMPLES
-    outcome entries with success rate >= _TRUST_MIN_SUCCESS_RATE and a
-    static tier of exactly 1. Tier 2+ are never reduced.
+    Returns a tuple of:
+    - overrides: ``{trust_key: 0}`` for promoted actions (≥10 samples, ≥90% success)
+    - demotions: frozenset of trust keys whose success rate dropped below
+      ``demotion_rate`` with ≥10 samples.  Demoted keys are never promoted,
+      even if their cumulative rate later recovers — the demotion entry
+      persists in the audit log as a signal to the operator.
 
-    # why: only tier-1 actions (reversible modifications) are candidates —
-    # tier 2 (config changes) and tier 3 (destructive) require structural
-    # policy approval, not just a track record.
+    Only tier-1 actions (reversible modifications) are candidates for promotion.
+    Tier 2+ are never reduced.
     """
     if not audit_log.exists():
-        return {}
+        return {}, frozenset()
 
     counts: dict[str, list[bool]] = {}
+    demoted_keys: set[str] = set()
     try:
         with open(audit_log) as f:
             for line in f:
@@ -669,30 +681,54 @@ def _load_trust_overrides(audit_log: Path) -> dict[str, int]:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                # Track previously logged demotions so we don't re-log them
+                if entry.get("status") == "trust_demotion":
+                    key = _trust_key(entry.get("action", ""), entry.get("detail", ""))
+                    demoted_keys.add(key)
+                    continue
                 if entry.get("status") != "outcome":
-                    # why: only outcome entries carry execution results;
-                    # approval entries tell us policy, not what happened.
                     continue
                 key = _trust_key(entry.get("action", ""), entry.get("detail", ""))
                 success = entry.get("outcome") == "success"
                 counts.setdefault(key, []).append(success)
     except OSError:
-        return {}
+        return {}, frozenset()
 
     overrides: dict[str, int] = {}
+    new_demotions: set[str] = set()
     for key, results in counts.items():
         if len(results) < _TRUST_MIN_SAMPLES:
             continue
         rate = sum(results) / len(results)
-        if rate < _TRUST_MIN_SUCCESS_RATE:
+
+        # Demotion check: rate dropped below threshold
+        if rate < demotion_rate:
+            new_demotions.add(key)
             continue
-        # Only promote to tier 0 — the approve() caller already gates application
-        # to tier == 1, so there is no risk of reducing tier 2/3 here.
-        # why: dropping the tier_for() check avoids a false negative where
-        # tier_for("run_command", "") returns 0 (empty detail → no command to classify)
-        # which would incorrectly exclude all run_command trust keys.
-        overrides[key] = 0
-    return overrides
+
+        # Promotion check: rate is high enough AND key is not demoted
+        if rate >= _TRUST_MIN_SUCCESS_RATE and key not in demoted_keys:
+            overrides[key] = 0
+
+    # Merge newly-detected demotions with previously-logged ones
+    all_demotions = demoted_keys | new_demotions
+
+    # Log newly-demoted keys (only keys not already logged as demoted)
+    for key in new_demotions - demoted_keys:
+        _entry = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "status": "trust_demotion",
+            "action": key.split(":", 1)[0] if ":" in key else key,
+            "detail": key.split(":", 1)[1] if ":" in key else "",
+            "reason": f"success rate dropped below {demotion_rate:.0%}",
+        }
+        try:
+            with open(audit_log, "a") as f:
+                f.write(json.dumps(_entry, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    return overrides, frozenset(all_demotions)
 
 
 class Judge:
@@ -713,7 +749,9 @@ class Judge:
         # Cache computed overrides and the log size at load time.
         # why: recomputing on every approve() call would re-read the entire
         # audit log on each action — cache it and only reload when the log grows.
-        self._trust_overrides: dict[str, int] = _load_trust_overrides(self.audit_log)
+        overrides, demotions = _load_trust_overrides(self.audit_log)
+        self._trust_overrides: dict[str, int] = overrides
+        self._trust_demotions: frozenset[str] = demotions
         self._audit_log_size: int = (
             self.audit_log.stat().st_size if self.audit_log.exists() else 0
         )
@@ -780,7 +818,9 @@ class Judge:
             return
         current_size = self.audit_log.stat().st_size
         if current_size != self._audit_log_size:
-            self._trust_overrides = _load_trust_overrides(self.audit_log)
+            overrides, demotions = _load_trust_overrides(self.audit_log)
+            self._trust_overrides = overrides
+            self._trust_demotions = demotions
             self._audit_log_size = current_size
 
     def approve(
@@ -803,7 +843,8 @@ class Judge:
         if tier == 1:
             self._refresh_trust_overrides()
             key = _trust_key(action_type, detail)
-            if key in self._trust_overrides:
+            # Demoted keys are never promoted — operator must investigate
+            if key not in self._trust_demotions and key in self._trust_overrides:
                 tier = self._trust_overrides[key]
 
         if tier == 0:

@@ -387,9 +387,10 @@ def test_load_trust_overrides_promotes_after_threshold(tmp_path):
     ]
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
-    overrides = _load_trust_overrides(log)
+    overrides, demotions = _load_trust_overrides(log)
     assert "run_command:systemctl" in overrides
     assert overrides["run_command:systemctl"] == 0
+    assert len(demotions) == 0
 
 
 def test_load_trust_overrides_requires_min_samples(tmp_path):
@@ -410,7 +411,7 @@ def test_load_trust_overrides_requires_min_samples(tmp_path):
     ]
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
-    overrides = _load_trust_overrides(log)
+    overrides, demotions = _load_trust_overrides(log)
     assert "run_command:systemctl" not in overrides
 
 
@@ -439,7 +440,7 @@ def test_load_trust_overrides_requires_success_rate(tmp_path):
     ] * 2
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
-    overrides = _load_trust_overrides(log)
+    overrides, demotions = _load_trust_overrides(log)
     assert "run_command:systemctl" not in overrides
 
 
@@ -467,7 +468,7 @@ def test_load_trust_overrides_ignores_approval_entries(tmp_path):
     ] * (_TRUST_MIN_SAMPLES - 1)
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
-    overrides = _load_trust_overrides(log)
+    overrides, demotions = _load_trust_overrides(log)
     # why: approval entries must not inflate the outcome count.
     assert "run_command:systemctl" not in overrides
 
@@ -501,3 +502,212 @@ def test_approve_applies_trust_override_for_tier1(tmp_path):
     outcome_entries = [json.loads(line) for line in log.read_text().splitlines()]
     approval_entry = outcome_entries[-1]  # last entry is the approval log
     assert approval_entry["tier"] == 0
+
+
+# Trust demotion (C5)
+# ---------------------------------------------------------------------------
+
+
+def test_load_trust_overrides_demotes_below_demotion_rate(tmp_path):
+    """A key with ≥10 samples and success rate < 70% appears in demotions."""
+    import json
+
+    from hal.judge import _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    # 6 successes + 4 failures = 60% — below the 70% demotion threshold.
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 6 + [
+        {
+            "status": "outcome",
+            "outcome": "error",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 4
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    overrides, demotions = _load_trust_overrides(log)
+    assert "run_command:systemctl" not in overrides
+    assert "run_command:systemctl" in demotions
+
+
+def test_load_trust_overrides_demotion_writes_audit_entry(tmp_path):
+    """Demotion writes a 'trust_demotion' entry to the audit log (once)."""
+    import json
+
+    from hal.judge import _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 6 + [
+        {
+            "status": "outcome",
+            "outcome": "error",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 4
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    _load_trust_overrides(log)
+
+    # The audit log should now contain a trust_demotion entry.
+    lines = log.read_text().strip().splitlines()
+    demotion_entries = [json.loads(ln) for ln in lines if "trust_demotion" in ln]
+    assert len(demotion_entries) == 1
+    assert demotion_entries[0]["status"] == "trust_demotion"
+    assert demotion_entries[0]["action"] == "run_command"
+
+    # Calling again should not add a duplicate demotion entry.
+    _load_trust_overrides(log)
+    lines2 = log.read_text().strip().splitlines()
+    demotion_entries2 = [json.loads(ln) for ln in lines2 if "trust_demotion" in ln]
+    assert len(demotion_entries2) == 1
+
+
+def test_load_trust_overrides_no_demotion_between_70_and_90(tmp_path):
+    """Rate between 70-89% is neither promoted nor demoted — stays at static tier."""
+    import json
+
+    from hal.judge import _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    # 8 successes + 2 failures = 80% — above demotion (70%), below promotion (90%).
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 8 + [
+        {
+            "status": "outcome",
+            "outcome": "error",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 2
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    overrides, demotions = _load_trust_overrides(log)
+    assert "run_command:systemctl" not in overrides
+    assert "run_command:systemctl" not in demotions
+
+
+def test_demoted_key_blocks_future_promotion(tmp_path):
+    """A key that was demoted should not be promoted even if cumulative rate recovers."""
+    import json
+
+    from hal.judge import _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    # Phase 1: 6 successes + 4 failures = 60% → triggers demotion
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 6 + [
+        {
+            "status": "outcome",
+            "outcome": "error",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 4
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    # First load triggers demotion
+    overrides1, demotions1 = _load_trust_overrides(log)
+    assert "run_command:systemctl" in demotions1
+
+    # Phase 2: Add 20 more successes → cumulative = 26/30 = 86.7% (still below 90%)
+    # but let's add enough to push to 92%+: need 36 success total → 30 more
+    more_entries = [
+        json.dumps(
+            {
+                "status": "outcome",
+                "outcome": "success",
+                "action": "run_command",
+                "detail": "systemctl restart grafana",
+            }
+        )
+        for _ in range(30)
+    ]
+    with open(log, "a") as f:
+        f.write("\n".join(more_entries) + "\n")
+
+    # Second load: cumulative = 36/40 = 90% but demotion entry blocks promotion
+    overrides2, demotions2 = _load_trust_overrides(log)
+    assert "run_command:systemctl" not in overrides2
+    assert "run_command:systemctl" in demotions2
+
+
+def test_approve_respects_demotion_flag(tmp_path, monkeypatch):
+    """approve() should not apply trust promotion for demoted keys."""
+    import json
+
+    from hal.judge import Judge, _load_trust_overrides
+
+    log = tmp_path / "audit.log"
+    # Phase 1: 6 successes + 4 failures = 60% → triggers demotion
+    entries = [
+        {
+            "status": "outcome",
+            "outcome": "success",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 6 + [
+        {
+            "status": "outcome",
+            "outcome": "error",
+            "action": "run_command",
+            "detail": "systemctl restart grafana",
+        }
+    ] * 4
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+    # Trigger demotion — writes trust_demotion entry to log
+    _load_trust_overrides(log)
+
+    # Phase 2: Add 30 more successes → cumulative = 36/40 = 90%
+    more_entries = [
+        json.dumps(
+            {
+                "status": "outcome",
+                "outcome": "success",
+                "action": "run_command",
+                "detail": "systemctl restart grafana",
+            }
+        )
+        for _ in range(30)
+    ]
+    with open(log, "a") as f:
+        f.write("\n".join(more_entries) + "\n")
+
+    # Deny when prompted — if trust demotion works, we get prompted (tier 1 stays)
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    # Now create judge — it should see the demotion entry and refuse promotion
+    judge = Judge(audit_log=log)
+    # This is tier 1 (systemctl restart) — should NOT be promoted due to demotion
+    result = judge.approve("run_command", "systemctl restart grafana")
+    # Tier 1 requires prompt → denied because we answered "n"
+    assert result is False
