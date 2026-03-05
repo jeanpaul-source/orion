@@ -788,3 +788,145 @@ def test_chat_omits_startup_context_on_clean_start() -> None:
     finally:
         server._state.clear()
         server._state.update(old)
+
+
+# ---------------------------------------------------------------------------
+# Phase B3 — Post-boot health check tests
+# ---------------------------------------------------------------------------
+
+
+def test_retry_init_runs_health_checks_on_recovery() -> None:
+    """After recovery, _retry_init runs health checks and stores results in _state."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "fail"
+
+    try:
+        with (
+            patch.object(
+                server,
+                "setup_clients",
+                return_value=(MagicMock(), MagicMock(), []),
+            ),
+            patch.object(server, "_populate_state"),
+            patch.object(server, "_RETRY_DELAY", 0),
+            patch.object(server, "_MAX_RETRIES", 2),
+            patch(
+                "hal.healthcheck.run_all_checks",
+                return_value=[],
+            ) as mock_run,
+            patch("hal.healthcheck.summary_line", return_value="8/8 ok"),
+            patch("hal.healthcheck.format_health_table", return_value="| ok |"),
+        ):
+            asyncio.run(server._retry_init(_ns()))
+
+        assert mock_run.called
+        assert server._state.get("_post_boot_health") == "| ok |"
+        ctx = server._state.get("_startup_context", "")
+        assert "8/8 ok" in ctx
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_retry_init_health_summary_in_startup_context() -> None:
+    """Startup context string includes the health summary line."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "fail"
+
+    try:
+        with (
+            patch.object(
+                server,
+                "setup_clients",
+                return_value=(MagicMock(), MagicMock(), []),
+            ),
+            patch.object(server, "_populate_state"),
+            patch.object(server, "_RETRY_DELAY", 0),
+            patch.object(server, "_MAX_RETRIES", 2),
+            patch(
+                "hal.healthcheck.run_all_checks",
+                return_value=[],
+            ),
+            patch("hal.healthcheck.summary_line", return_value="6/8 ok, 2 degraded"),
+            patch("hal.healthcheck.format_health_table", return_value="table"),
+        ):
+            asyncio.run(server._retry_init(_ns()))
+
+        ctx = server._state.get("_startup_context", "")
+        assert "Post-boot health:" in ctx
+        assert "6/8 ok, 2 degraded" in ctx
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_retry_init_health_summary_in_ntfy() -> None:
+    """Recovery ntfy notification includes the health summary line."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "fail"
+
+    sent: list[dict] = []
+
+    def fake_ntfy(url, lines, **kw):
+        sent.append({"url": url, "lines": list(lines), **kw})
+        return True
+
+    try:
+        with (
+            patch.object(
+                server,
+                "setup_clients",
+                return_value=(MagicMock(), MagicMock(), []),
+            ),
+            patch.object(server, "_populate_state"),
+            patch.object(server, "_RETRY_DELAY", 0),
+            patch.object(server, "_MAX_RETRIES", 2),
+            patch.object(server, "send_ntfy_simple", side_effect=fake_ntfy),
+            patch(
+                "hal.healthcheck.run_all_checks",
+                return_value=[],
+            ),
+            patch("hal.healthcheck.summary_line", return_value="8/8 ok"),
+            patch("hal.healthcheck.format_health_table", return_value="table"),
+        ):
+            asyncio.run(server._retry_init(_ns(ntfy_url="http://ntfy")))
+
+        assert len(sent) == 1
+        assert any("8/8 ok" in line for line in sent[0]["lines"])
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_retry_init_health_check_failure_does_not_block_recovery() -> None:
+    """If post-boot health check raises, recovery still completes."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "fail"
+
+    try:
+        with (
+            patch.object(
+                server,
+                "setup_clients",
+                return_value=(MagicMock(), MagicMock(), []),
+            ),
+            patch.object(server, "_populate_state"),
+            patch.object(server, "_RETRY_DELAY", 0),
+            patch.object(server, "_MAX_RETRIES", 2),
+            patch(
+                "hal.healthcheck.run_all_checks",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            asyncio.run(server._retry_init(_ns()))
+
+        # Recovery still sets startup context (with fallback message)
+        ctx = server._state.get("_startup_context", "")
+        assert "Health check could not run" in ctx
+    finally:
+        server._state.clear()
+        server._state.update(old)

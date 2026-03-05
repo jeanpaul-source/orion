@@ -196,20 +196,41 @@ async def _retry_init(config: cfg.Config) -> None:
         recovery_ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         _state["_last_recovery"] = recovery_ts
         _state["_recovery_attempts"] = attempt
+
+        # Run post-boot health checks to give the operator a full picture
+        health_summary = ""
+        try:
+            from hal.healthcheck import (
+                run_all_checks,
+                summary_line,
+                format_health_table,
+            )
+
+            health_results = run_all_checks(config)
+            health_summary = summary_line(health_results)
+            _state["_post_boot_health"] = format_health_table(health_results)
+        except Exception as exc:
+            _log.warning("Post-boot health check failed: %s", exc)
+            health_summary = "Health check could not run."
+
         _state["_startup_context"] = (
             f"Note: this server recovered from a degraded start at "
             f"{recovery_ts} UTC after {attempt} retry attempt{'s' if attempt != 1 else ''} "
-            f"(backends were unavailable for ~{elapsed} seconds)."
+            f"(backends were unavailable for ~{elapsed} seconds). "
+            f"Post-boot health: {health_summary}"
         )
         _log_recovery_event(attempt, elapsed)
         # Notify operator via ntfy
         ntfy_url = getattr(config, "ntfy_url", "") or ""
         if ntfy_url:
+            ntfy_lines = [
+                f"Server recovered from degraded start after {elapsed}s ({attempt} retries).",
+            ]
+            if health_summary:
+                ntfy_lines.append(health_summary)
             send_ntfy_simple(
                 ntfy_url,
-                [
-                    f"Server recovered from degraded start after {elapsed}s ({attempt} retries)."
-                ],
+                ntfy_lines,
                 urgency="default",
                 title="Orion Recovery — the-lab",
                 tags="white_check_mark,server",
