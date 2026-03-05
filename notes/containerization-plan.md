@@ -1039,3 +1039,25 @@ be added as an optimization.
 > Command: `sudo ln -s /home/jp/.orion /home/hal-svc/.orion`
 >
 > **B1 (addendum):** Added `.dockerignore` to keep build context small.
+
+> **Revision (2026-03-05, Block D testing session):**
+>
+> **SELinux (Fedora 43):** Container crash-looped because SELinux (Enforcing)
+> blocks `container_t` processes from accessing host-labeled volume mounts.
+> Using `:z` relabelling on system dirs (`/etc`, `/var/log/falco`) would break
+> host services by replacing their SELinux labels. Fix: added
+> `security_opt: - label:disable` to compose. All other isolation layers
+> (namespaces, cgroups, RO mounts, Judge, hal-svc) remain intact.
+>
+> **Supervisord log/pid:** supervisord defaults to writing its log and pid
+> file in the working directory (`/app`), which is a read-only mount. Fix:
+> set `logfile=/dev/stdout`, `logfile_maxbytes=0`, `pidfile=/tmp/supervisord.pid`
+> in supervisord.conf.
+>
+> **Telegram conflict:** Old `telegram.service` systemd unit was still running,
+> causing 409 Conflict errors. Stopped it manually; Block E will disable all
+> old systemd units permanently.
+>
+> **Start-up time:** Server takes ~30s to connect to external services (vLLM,
+> pgvector, Ollama) before responding to health checks. The 120s
+> `start_period` in the health check configuration is sufficient.
