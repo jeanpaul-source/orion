@@ -50,6 +50,7 @@ DOCUMENTED_HAL_MODULES = {
     "config.py",
     "executor.py",
     "falco_noise.py",
+    "healthcheck.py",
     "intent.py",
     "judge.py",
     "knowledge.py",
