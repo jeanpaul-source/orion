@@ -192,6 +192,9 @@ async def _retry_init(config: cfg.Config) -> None:
 
         _populate_state(config, llm, embed, tunnels)
         elapsed = attempt * _RETRY_DELAY
+        recovery_ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _state["_last_recovery"] = recovery_ts
+        _state["_recovery_attempts"] = attempt
         _log_recovery_event(attempt, elapsed)
         _log.info(
             "Backends connected on attempt %d — server fully operational",
@@ -252,11 +255,19 @@ app = FastAPI(
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    """Liveness check — returns 200 once the server is ready."""
+async def health_check() -> dict[str, str | int]:
+    """Liveness check — returns 200 once the server is ready.
+
+    After a degraded→recovered transition, includes ``last_recovery``
+    (ISO timestamp) and ``recovery_attempts`` count.
+    """
     if "_startup_error" in _state:
         return {"status": "degraded", "detail": _state["_startup_error"]}
-    return {"status": "ok"}
+    result: dict[str, str | int] = {"status": "ok"}
+    if "_last_recovery" in _state:
+        result["last_recovery"] = _state["_last_recovery"]
+        result["recovery_attempts"] = _state["_recovery_attempts"]
+    return result
 
 
 @app.post("/chat", response_model=ChatResponse)

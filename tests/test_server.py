@@ -557,3 +557,47 @@ def test_log_recovery_event_writes_audit_entry(tmp_path) -> None:
     assert "attempt 3" in entry["reason"]
     assert "45s" in entry["reason"]
     assert "ts" in entry
+
+
+def test_health_includes_recovery_metadata_after_degraded_start() -> None:
+    """After recovery from degraded start, /health includes last_recovery and recovery_attempts."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": object(),
+            "_last_recovery": "2026-03-04T20:15:00+00:00",
+            "_recovery_attempts": 3,
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/health")
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["last_recovery"] == "2026-03-04T20:15:00+00:00"
+    assert body["recovery_attempts"] == 3
+
+
+def test_health_omits_recovery_metadata_on_clean_start() -> None:
+    """On clean start (no recovery), /health returns only status: ok."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update({"config": object()})
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/health")
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {"status": "ok"}
+    assert "last_recovery" not in body
+    assert "recovery_attempts" not in body
