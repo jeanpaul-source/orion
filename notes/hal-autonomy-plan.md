@@ -412,7 +412,7 @@ it, verifies recovery, and sends a summary."
 
 ### Items
 
-- [ ] **D1 — End-to-end integration test**
+- [x] **D1 — End-to-end integration test** (`dafc2d9`)
 
   Write a full-circuit integration test that simulates:
   1. Server starts in degraded mode (backends unavailable)
@@ -429,7 +429,7 @@ it, verifies recovery, and sends a summary."
 
   Files to create: `tests/test_autonomy_integration.py`.
 
-- [ ] **D2 — Update ROADMAP.md end-state section**
+- [x] **D2 — Update ROADMAP.md end-state section** (`dee652e`)
 
   Mark capability #1 (autonomous remediation) as delivered. Update the
   description to reflect the actual implementation: health check registry,
@@ -439,7 +439,7 @@ it, verifies recovery, and sends a summary."
 
   Files to change: `ROADMAP.md`.
 
-- [ ] **D3 — Update system prompt**
+- [x] **D3 — Update system prompt** (`05a7916`)
 
   Add a section to the system prompt (in `hal/bootstrap.py`) that
   describes HAL's self-healing capabilities so the LLM knows what it
@@ -457,7 +457,7 @@ it, verifies recovery, and sends a summary."
 
   Files to change: `hal/bootstrap.py`.
 
-- [ ] **D4 — Eval queries for autonomy**
+- [x] **D4 — Eval queries for autonomy** (`1a126c6`)
 
   Add eval queries to `eval/queries.jsonl` covering the new capabilities:
   - "is everything working?" → should use `check_system_health`
