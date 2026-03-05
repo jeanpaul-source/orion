@@ -278,7 +278,7 @@ detection mechanism that triggers recovery).
 
 ### Items
 
-- [ ] **C1 — Define playbook data model**
+- [x] **C1 — Define playbook data model**
 
   Create `hal/playbooks.py` with a `RecoveryPlaybook` dataclass:
 
@@ -320,7 +320,7 @@ detection mechanism that triggers recovery).
   Tests: validate playbook structure, verify all referenced components
   exist in the health check registry from B1.
 
-- [ ] **C2 — Playbook executor with circuit breaker**
+- [x] **C2 — Playbook executor with circuit breaker**
 
   Add `execute_playbook()` to `hal/playbooks.py`:
   1. Check circuit breaker (max N attempts per hour per playbook, tracked
@@ -339,7 +339,7 @@ detection mechanism that triggers recovery).
   Tests: mock executor, verify step sequencing, circuit breaker enforcement,
   outcome recording.
 
-- [ ] **C3 — Wire playbooks into watchdog**
+- [x] **C3 — Wire playbooks into watchdog**
 
   After `_check_component_health()` (from B4) detects a degraded/down
   component, look up matching playbooks and execute them. This is the
@@ -364,7 +364,7 @@ detection mechanism that triggers recovery).
   Tests: mock health checks returning "down" for a component, verify
   playbook execution path, verify cooldown respected, verify notification.
 
-- [ ] **C4 — `recover_component` tool for interactive use**
+- [x] **C4 — `recover_component` tool for interactive use**
 
   Register a tool that lets the operator (or HAL via the agent loop)
   trigger a specific playbook interactively:
@@ -384,7 +384,7 @@ detection mechanism that triggers recovery).
 
   Tests: mock playbook execution, verify tool output.
 
-- [ ] **C5 — Trust demotion (ROADMAP end-state #5 completion)**
+- [x] **C5 — Trust demotion (ROADMAP end-state #5 completion)**
 
   Currently `_load_trust_overrides()` only promotes (tier 1 → 0). Add
   demotion: if a trust key's success rate drops below 70% (configurable)
