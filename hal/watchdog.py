@@ -284,6 +284,32 @@ def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
     return f"{header}:\n" + "\n".join(lines)
 
 
+def _check_component_health(config: object | None = None, **_kw: object) -> str | None:
+    """Deep health check across all HAL backend components.
+
+    Returns an alert message listing degraded/down components, or None if
+    everything is healthy.  Catches all exceptions so it never crashes the
+    watchdog run.
+    """
+    if config is None:
+        return None
+    try:
+        from hal.healthcheck import run_all_checks
+
+        results = run_all_checks(config)  # type: ignore[arg-type]
+        unhealthy = [r for r in results if r.status != "ok"]
+        if not unhealthy:
+            return None
+        lines: list[str] = []
+        for r in unhealthy:
+            lines.append(f"{r.name}: {r.status} — {r.detail}")
+        count = len(unhealthy)
+        header = f"{count} component{'s' if count != 1 else ''} unhealthy"
+        return f"{header}:\n" + "\n".join(lines)
+    except Exception:
+        return None
+
+
 def run() -> None:
     config = cfg.load()
 
@@ -357,6 +383,7 @@ def run() -> None:
         ("ntp", _check_ntp, "urgent"),
         ("harvest_lag", _check_harvest, "high"),
         ("containers", _check_containers, "urgent"),
+        ("component_health", _check_component_health, "high"),
         ("falco", _check_falco, "urgent"),
         ("trend", _check_trends, "high"),
     ]

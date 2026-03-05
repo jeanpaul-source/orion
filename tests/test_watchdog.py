@@ -79,6 +79,11 @@ def _patch_common(
     )
     monkeypatch.setattr(watchdog, "_check_falco", lambda **_kw: checks.get("falco"))
     monkeypatch.setattr(watchdog, "_check_trends", lambda **_kw: checks.get("trend"))
+    monkeypatch.setattr(
+        watchdog,
+        "_check_component_health",
+        lambda **_kw: checks.get("component_health"),
+    )
 
     return {"sent_metric": sent_metric, "sent_simple": sent_simple, "saved": saved}
 
@@ -366,3 +371,92 @@ def test_check_trends_fires_through_run_with_cooldown(
     assert resolved["messages"] == ["trend resolved"]
     assert resolved["urgency"] == "low"
     assert resolved["title"] == "Orion RESOLVED — the-lab"
+
+
+# ---------------------------------------------------------------------------
+# Phase B4 — Component health check integration
+# ---------------------------------------------------------------------------
+
+
+def test_check_component_health_returns_none_when_all_ok(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_check_component_health returns None when all components are ok."""
+    from hal.healthcheck import ComponentHealth
+
+    fake_results = [
+        ComponentHealth(name="vllm", status="ok", detail="healthy", latency_ms=10),
+        ComponentHealth(name="ollama", status="ok", detail="healthy", latency_ms=5),
+    ]
+    monkeypatch.setattr("hal.healthcheck.run_all_checks", lambda config: fake_results)
+
+    result = watchdog._check_component_health(
+        config=SimpleNamespace(), state={}, prom=None
+    )
+    assert result is None
+
+
+def test_check_component_health_returns_alert_when_degraded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_check_component_health returns alert message for degraded components."""
+    from hal.healthcheck import ComponentHealth
+
+    fake_results = [
+        ComponentHealth(name="vllm", status="ok", detail="healthy", latency_ms=10),
+        ComponentHealth(
+            name="ollama", status="degraded", detail="model missing", latency_ms=5
+        ),
+        ComponentHealth(
+            name="pgvector", status="down", detail="connection refused", latency_ms=0
+        ),
+    ]
+    monkeypatch.setattr("hal.healthcheck.run_all_checks", lambda config: fake_results)
+
+    result = watchdog._check_component_health(
+        config=SimpleNamespace(), state={}, prom=None
+    )
+    assert result is not None
+    assert "2 components unhealthy" in result
+    assert "ollama: degraded" in result
+    assert "pgvector: down" in result
+
+
+def test_check_component_health_returns_none_when_config_is_none() -> None:
+    """_check_component_health returns None when config is None (no-op)."""
+    result = watchdog._check_component_health(config=None, state={}, prom=None)
+    assert result is None
+
+
+def test_check_component_health_swallows_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_check_component_health catches all exceptions and returns None."""
+    monkeypatch.setattr(
+        "hal.healthcheck.run_all_checks",
+        lambda config: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    result = watchdog._check_component_health(
+        config=SimpleNamespace(), state={}, prom=None
+    )
+    assert result is None
+
+
+def test_component_health_fires_through_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end: component_health alert fires through run() when unhealthy."""
+    alert_msg = "1 component unhealthy:\nvllm: down — connection refused"
+
+    observed = _patch_common(
+        monkeypatch,
+        metrics={},
+        state={},
+        checks={"component_health": alert_msg},
+    )
+    watchdog.run()
+
+    assert len(observed["sent_simple"]) == 1
+    assert observed["sent_simple"][0]["messages"] == [alert_msg]
+    assert observed["sent_simple"][0]["urgency"] == "high"
+    assert "component_health" in observed["saved"]
