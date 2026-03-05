@@ -14,16 +14,21 @@ from pgvector.psycopg2 import register_vector
 from hal.llm import OllamaClient
 
 # Ground-truth docs (LAB_ENVIRONMENT.md, hand-written facts) are more
-# authoritative than harvested reference material.  A +0.10 boost is enough
-# to prefer them over a reference doc with a slightly better raw cosine score
+# authoritative than harvested reference material.  +0.15 is enough to
+# reliably prefer them over reference docs with slightly better raw cosine
 # without drowning out a reference doc that is genuinely more relevant.
-_GROUND_TRUTH_BOOST = 0.10
+_GROUND_TRUTH_BOOST = 0.15
+
+# Live-state docs (docker containers, hardware, services, ports) are harvested
+# directly from the lab and are more authoritative than scraped reference docs,
+# but less authoritative than hand-written ground truth.
+_LIVE_STATE_BOOST = 0.05
 
 # Fetch this many extra candidates from the DB before applying the boost.
 # Without over-fetch, a ground-truth doc sitting at position top_k+1 by raw
 # cosine would never be fetched and therefore never receive the boost — exactly
-# the case where the boost matters most.  3× is cheap (one ANN index scan).
-_BOOST_FETCH_MULTIPLIER = 3
+# the case where the boost matters most.  4× is cheap (one ANN index scan).
+_BOOST_FETCH_MULTIPLIER = 4
 
 
 class KnowledgeBase:
@@ -95,12 +100,14 @@ class KnowledgeBase:
             for r in rows
         ]
 
-        # Post-fetch boost: ground-truth docs get a score bump, then re-sort,
-        # then slice back to the caller's requested top_k.
+        # Post-fetch boost: ground-truth and live-state docs get a score
+        # bump, then re-sort, then slice back to the caller's requested top_k.
         if boost_ground_truth:
             for r in results:
                 if r["doc_tier"] == "ground-truth":
                     r["score"] = min(1.0, r["score"] + _GROUND_TRUTH_BOOST)
+                elif r["doc_tier"] == "live-state":
+                    r["score"] = min(1.0, r["score"] + _LIVE_STATE_BOOST)
             results.sort(key=lambda x: x["score"], reverse=True)
 
         return results[:top_k]

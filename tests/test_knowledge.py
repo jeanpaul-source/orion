@@ -11,7 +11,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hal.knowledge import _GROUND_TRUTH_BOOST, KnowledgeBase
+from hal.knowledge import (
+    _BOOST_FETCH_MULTIPLIER,
+    _GROUND_TRUTH_BOOST,
+    _LIVE_STATE_BOOST,
+    KnowledgeBase,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -169,6 +174,99 @@ def test_search_boost_disabled_preserves_order(mock_connect, mock_reg):
 
     assert results[0]["file"] == "ref.md"
     assert results[1]["score"] == pytest.approx(0.76)
+
+
+# ---------------------------------------------------------------------------
+# Proof 2b — live-state boost
+# ---------------------------------------------------------------------------
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_search_live_state_score_boosted(mock_connect, mock_reg):
+    """live-state doc gets +_LIVE_STATE_BOOST added to its score."""
+    rows = [("text", "f.md", "lab-state", 0.80, "live-state")]
+    conn, _ = _make_conn(rows)
+    mock_connect.return_value = conn
+    kb = KnowledgeBase(_DSN, _make_llm())
+
+    result = kb.search("q")[0]
+
+    assert result["score"] == pytest.approx(0.80 + _LIVE_STATE_BOOST)
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_search_live_state_score_capped_at_one(mock_connect, mock_reg):
+    """Boosted live-state score must not exceed 1.0."""
+    rows = [("text", "f.md", "lab-state", 0.98, "live-state")]
+    conn, _ = _make_conn(rows)
+    mock_connect.return_value = conn
+    kb = KnowledgeBase(_DSN, _make_llm())
+
+    result = kb.search("q")[0]
+
+    assert result["score"] <= 1.0
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_search_live_state_reorders_above_reference(mock_connect, mock_reg):
+    """A live-state doc at 0.81 should beat a reference doc at 0.82 after boost."""
+    rows = [
+        ("ref", "ref.md", "github", 0.82, "reference"),
+        ("live", "live.md", "lab-state", 0.81, "live-state"),  # becomes 0.86
+    ]
+    conn, _ = _make_conn(rows)
+    mock_connect.return_value = conn
+    kb = KnowledgeBase(_DSN, _make_llm())
+
+    results = kb.search("q")
+
+    assert results[0]["file"] == "live.md"
+
+
+@patch("hal.knowledge.register_vector")
+@patch("hal.knowledge.psycopg2.connect")
+def test_search_ground_truth_beats_live_state_at_same_raw_score(mock_connect, mock_reg):
+    """Ground-truth boost > live-state boost at equal raw scores."""
+    rows = [
+        ("live", "live.md", "lab-state", 0.80, "live-state"),
+        ("gt", "gt.md", "lab", 0.80, "ground-truth"),
+    ]
+    conn, _ = _make_conn(rows)
+    mock_connect.return_value = conn
+    kb = KnowledgeBase(_DSN, _make_llm())
+
+    results = kb.search("q")
+
+    assert results[0]["file"] == "gt.md"
+    assert results[0]["score"] > results[1]["score"]
+
+
+# ---------------------------------------------------------------------------
+# Proof 2c — boost constants are sensible
+# ---------------------------------------------------------------------------
+
+
+def test_ground_truth_boost_value():
+    """Ground-truth boost should be 0.15."""
+    assert _GROUND_TRUTH_BOOST == 0.15
+
+
+def test_live_state_boost_value():
+    """Live-state boost should be 0.05."""
+    assert _LIVE_STATE_BOOST == 0.05
+
+
+def test_ground_truth_boost_exceeds_live_state():
+    """Ground-truth boost must always exceed live-state boost."""
+    assert _GROUND_TRUTH_BOOST > _LIVE_STATE_BOOST
+
+
+def test_fetch_multiplier_value():
+    """Fetch multiplier should be 4."""
+    assert _BOOST_FETCH_MULTIPLIER == 4
 
 
 # ---------------------------------------------------------------------------

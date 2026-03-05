@@ -493,7 +493,11 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                 "name": "web_search",
                 "description": (
                     "Search the public web via Tavily. Use this when the answer is "
-                    "not in the KB and requires current information from the internet. "
+                    "not in the KB and requires current information from the internet — "
+                    "for example: CVE or security vulnerability queries, latest release "
+                    "or version numbers, changelogs, recent news, anything dated in the "
+                    "current or future year, or questions about software not in the homelab. "
+                    "Always prefer this over guessing when the KB has no relevant results. "
                     "Private IPs and hostnames are stripped from the query before sending."
                 ),
                 "parameters": {

@@ -222,3 +222,16 @@ def test_run_command_description_lists_safe_commands():
         assert keyword in desc, f"run_command description missing '{keyword}'"
     # Must warn about denial in HTTP mode
     assert "DENIED" in desc or "denied" in desc
+
+
+# ---------------------------------------------------------------------------
+# Tool description quality tests (F5)
+# ---------------------------------------------------------------------------
+
+
+def test_web_search_description_lists_trigger_examples():
+    """web_search description must include CVE, version, and release keywords
+    so the LLM knows when to prefer web search over KB search."""
+    desc = TOOL_REGISTRY["web_search"]["schema"]["function"]["description"]
+    for keyword in ["CVE", "latest release", "changelog", "version"]:
+        assert keyword in desc, f"web_search description missing '{keyword}'"
