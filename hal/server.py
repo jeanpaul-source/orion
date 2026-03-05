@@ -51,6 +51,7 @@ from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
 from hal.logging_utils import setup_logging
 from hal.memory import MemoryStore
+from hal.notify import send_ntfy_simple
 from hal.prometheus import PrometheusClient, start_metrics_heartbeat
 from hal.tracing import setup_tracing
 
@@ -196,6 +197,18 @@ async def _retry_init(config: cfg.Config) -> None:
         _state["_last_recovery"] = recovery_ts
         _state["_recovery_attempts"] = attempt
         _log_recovery_event(attempt, elapsed)
+        # Notify operator via ntfy
+        ntfy_url = getattr(config, "ntfy_url", "") or ""
+        if ntfy_url:
+            send_ntfy_simple(
+                ntfy_url,
+                [
+                    f"Server recovered from degraded start after {elapsed}s ({attempt} retries)."
+                ],
+                urgency="default",
+                title="Orion Recovery — the-lab",
+                tags="white_check_mark,server",
+            )
         _log.info(
             "Backends connected on attempt %d — server fully operational",
             attempt,

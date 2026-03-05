@@ -117,6 +117,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/falco_noise.py` | Falco noise filter rules (`NOISE_RULES` + `is_falco_noise()`); no `hal.*` deps |
 | `hal/web.py` | `web_search()` via Tavily; `fetch_url()` with SSRF + DNS-rebinding defence; `sanitize_query()` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
+| `hal/notify.py` | Shared ntfy push notification helper (`send_ntfy_simple`) |
 | `hal/workers.py` | File operation tools (read, write, patch, git_*) |
 | `hal/executor.py` | SSH command runner |
 | `hal/prometheus.py` | PromQL client + Pushgateway metrics |

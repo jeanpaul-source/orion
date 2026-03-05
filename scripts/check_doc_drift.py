@@ -57,6 +57,7 @@ DOCUMENTED_HAL_MODULES = {
     "logging_utils.py",
     "main.py",
     "memory.py",
+    "notify.py",
     "postmortem.py",
     "prometheus.py",
     "sanitize.py",

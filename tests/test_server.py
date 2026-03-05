@@ -601,3 +601,68 @@ def test_health_omits_recovery_metadata_on_clean_start() -> None:
     assert body == {"status": "ok"}
     assert "last_recovery" not in body
     assert "recovery_attempts" not in body
+
+
+def test_retry_init_sends_ntfy_on_recovery() -> None:
+    """_retry_init sends an ntfy notification when recovery succeeds."""
+    import asyncio
+    from types import SimpleNamespace as NS
+
+    fake_config = NS(
+        pgvector_dsn="postgresql://x",
+        prometheus_url="http://x:9090",
+        lab_host="localhost",
+        lab_user="jp",
+        judge_extra_sensitive_paths="",
+        ntfy_url="https://ntfy.example.com/test",
+    )
+
+    fake_llm = MagicMock()
+    fake_embed = MagicMock()
+
+    with (
+        patch.object(server, "_RETRY_DELAY", 0),
+        patch.object(server, "_MAX_RETRIES", 2),
+        patch("hal.server.setup_clients", return_value=(fake_llm, fake_embed, [])),
+        patch("hal.server._populate_state"),
+        patch("hal.server._log_recovery_event"),
+        patch("hal.server.send_ntfy_simple") as mock_ntfy,
+    ):
+        asyncio.run(server._retry_init(fake_config))
+
+    mock_ntfy.assert_called_once()
+    call_args = mock_ntfy.call_args
+    assert call_args[0][0] == "https://ntfy.example.com/test"
+    assert "recover" in call_args[0][1][0].lower()
+    assert call_args[1]["title"] == "Orion Recovery — the-lab"
+    assert "white_check_mark" in call_args[1]["tags"]
+
+
+def test_retry_init_skips_ntfy_when_url_empty() -> None:
+    """_retry_init does not send ntfy when ntfy_url is empty."""
+    import asyncio
+    from types import SimpleNamespace as NS
+
+    fake_config = NS(
+        pgvector_dsn="postgresql://x",
+        prometheus_url="http://x:9090",
+        lab_host="localhost",
+        lab_user="jp",
+        judge_extra_sensitive_paths="",
+        ntfy_url="",
+    )
+
+    fake_llm = MagicMock()
+    fake_embed = MagicMock()
+
+    with (
+        patch.object(server, "_RETRY_DELAY", 0),
+        patch.object(server, "_MAX_RETRIES", 2),
+        patch("hal.server.setup_clients", return_value=(fake_llm, fake_embed, [])),
+        patch("hal.server._populate_state"),
+        patch("hal.server._log_recovery_event"),
+        patch("hal.server.send_ntfy_simple") as mock_ntfy,
+    ):
+        asyncio.run(server._retry_init(fake_config))
+
+    mock_ntfy.assert_not_called()

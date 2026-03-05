@@ -22,6 +22,7 @@ import hal.config as cfg
 from hal.falco_noise import (
     is_falco_noise,
 )
+from hal.notify import send_ntfy_simple as _send_ntfy_simple
 from hal.prometheus import METRIC_PROMQL, PrometheusClient
 
 STATE_FILE = Path.home() / ".orion" / "watchdog_state.json"
@@ -137,33 +138,6 @@ def _check_harvest(**_kw: object) -> str | None:
     except Exception:
         pass
     return None
-
-
-def _send_ntfy_simple(
-    ntfy_url: str,
-    messages: list[str],
-    urgency: str = "high",
-    title: str = "Orion Alert — the-lab",
-    tags: str = "warning,server",
-) -> bool:
-    """Send a free-form ntfy notification for non-metric alerts. Returns True on success."""
-    if not ntfy_url:
-        return False
-    body = "\n".join(messages)
-    try:
-        r = requests.post(
-            ntfy_url,
-            data=body.encode(),
-            headers={
-                "Title": title,
-                "Priority": urgency,
-                "Tags": tags,
-            },
-            timeout=10,
-        )
-        return r.status_code < 300
-    except requests.exceptions.RequestException:
-        return False
 
 
 CRITICAL_CONTAINERS: set[str] = {
