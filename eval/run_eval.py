@@ -125,6 +125,7 @@ def _run_query(
     mem: MemoryStore,
     session_id: str,
     system: str,
+    tavily_api_key: str = "",
 ) -> tuple[str, str, float, list[str]]:
     """Returns (response_text, intent, confidence, tools_called)."""
     # Each query gets a clean history — no cross-contamination between queries
@@ -145,6 +146,7 @@ def _run_query(
         session_id,
         system,
         quiet,
+        tavily_api_key=tavily_api_key,
     )
 
     return response, intent, confidence, list(judge.tools_called)
@@ -236,6 +238,7 @@ def main(argv: list[str] | None = None) -> None:
                     mem,
                     session_id,
                     SYSTEM,
+                    tavily_api_key=config.tavily_api_key,
                 )
                 row = {
                     "query": query,
