@@ -276,22 +276,26 @@ that should be externalized so HAL can redeploy on a second machine without sour
 
 ## End state — what makes this genuinely impressive
 
-The current system can detect and answer. It cannot yet act autonomously within a trust
-envelope and report what it did. That's the line between "assistant" and "agent."
+The system can detect, answer, and act autonomously within a trust envelope —
+diagnosing failures, executing recovery playbooks, and reporting what it did.
 
 **Five capabilities that cross the line:**
 
-### 1. Autonomous remediation with trust accounting
+### 1. Autonomous remediation with trust accounting ✓ delivered Mar 5, 2026
 
-HAL observes a container crash-loop, diagnoses it (reads logs), restarts it (tier 1
-auto-approved because it's a known-safe action for this service based on N clean prior runs),
-verifies it recovered, and sends a summary.
+HAL observes a component failure, diagnoses it via structured health checks, restarts it
+(tier 1 auto-approved when trust-promoted based on N clean prior runs), verifies recovery,
+and sends a summary — all without operator prompting.
 
-**Trust accounting layer ✓ delivered Mar 1, 2026.** `record_outcome()` in `judge.py` writes
-success/error entries to `audit.log`; `_load_trust_overrides()` auto-promotes proven-safe tier-1
-actions to tier 0; `trust_metrics.py` surfaces outcome stats via `get_action_stats()`. Remaining
-piece: a background loop that *proactively detects* crash-loops and triggers remediation without
-operator prompting. The watchdog alerts via ntfy but does not act autonomously.
+Full stack: `hal/healthcheck.py` (8-component health check registry returning
+`ComponentHealth` with status/detail/latency) → `hal/playbooks.py` (7 declarative
+recovery playbooks with circuit breaker, max 2–3 attempts/hour) → `hal/watchdog.py`
+(`_check_component_health()` runs every 5 min, auto-executes tier ≤1 playbooks) →
+`hal/tools.py` (`check_system_health` + `recover_component` tools for interactive use).
+Trust accounting: `record_outcome()` writes success/error to audit log;
+`_load_trust_overrides()` auto-promotes proven-safe actions (≥90% success, ≥10 samples)
+to tier 0; demotion revokes overrides when success rate drops below 70%.
+`trust_metrics.py` surfaces outcome stats via `get_action_stats()`.
 
 ### 2. Temporal awareness ✓ delivered Mar 1, 2026
 
@@ -320,12 +324,15 @@ Falco events, and session history, and writes a brief post-mortem.
 trends, and Falco events into a context block, then invokes the agent loop with a
 postmortem-scoped system prompt. See `hal/postmortem.py` and the `/postmortem` REPL command.
 
-### 5. Trust evolution ✓ analytics layer delivered Mar 1, 2026
+### 5. Trust evolution ✓ fully delivered Mar 5, 2026
 
 Outcome tracking wired in (see end-state #1). `trust_metrics.py` `get_action_stats()`
 now includes per-key success/error counts, success rate, and a flag showing whether the
-≥90% / ≥10-sample trust threshold is met. Tier demotion on repeated failure is not yet
-implemented — the current model only promotes (tier 1 → tier 0), never demotes.
+≥90% / ≥10-sample trust threshold is met. Tier demotion implemented:
+`_load_trust_overrides()` both promotes (≥90% success, ≥10 samples → tier 0) and
+demotes (<70% success, ≥10 samples → override revoked, restores original tier).
+This closes the feedback loop: a recovery playbook that keeps failing loses its
+auto-approval privilege.
 
 ---
 
