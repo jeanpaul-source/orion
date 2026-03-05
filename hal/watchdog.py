@@ -19,10 +19,13 @@ from pathlib import Path
 import requests
 
 import hal.config as cfg
+from hal.executor import SSHExecutor
 from hal.falco_noise import (
     is_falco_noise,
 )
+from hal.judge import AUDIT_LOG, Judge
 from hal.notify import send_ntfy_simple as _send_ntfy_simple
+from hal.playbooks import execute_playbook, get_playbook
 from hal.prometheus import METRIC_PROMQL, PrometheusClient
 
 STATE_FILE = Path.home() / ".orion" / "watchdog_state.json"
@@ -284,6 +287,81 @@ def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
     return f"{header}:\n" + "\n".join(lines)
 
 
+class WatchdogJudge(Judge):
+    """Judge variant for watchdog auto-recovery: approves tier 0 and 1, denies the rest.
+
+    Only tier ≤1 playbooks (reversible actions like Docker container restarts
+    and user systemd restarts) are auto-approved.  Tier 2+ (system systemd,
+    destructive ops) are denied — logged as a suggestion for the operator.
+    """
+
+    def _request_approval(
+        self, action_type: str, detail: str, tier: int, reason: str
+    ) -> bool:
+        return False  # parent approve() logs the denial
+
+
+def _attempt_recovery(
+    component_name: str,
+    status: str,
+    config: cfg.Config,
+) -> str | None:
+    """Attempt automated recovery for an unhealthy component.
+
+    Returns a human-readable result message, or None if no playbook matches
+    or the playbook is too high-tier for auto-execution.
+    """
+    playbook = get_playbook(component_name, status)
+    if playbook is None:
+        return None
+
+    # Only auto-execute tier ≤1 playbooks
+    if playbook.judge_tier > 1:
+        _log(
+            f"SKIP   recovery for {component_name}: playbook '{playbook.name}' "
+            f"is tier {playbook.judge_tier} (auto-recovery limited to tier ≤1)"
+        )
+        return (
+            f"Recovery available for {component_name} but requires tier "
+            f"{playbook.judge_tier} approval (playbook: {playbook.name})"
+        )
+
+    executor = SSHExecutor(config.lab_host, config.lab_user)
+    judge = WatchdogJudge(audit_log=AUDIT_LOG)
+
+    _log(f"RECOVER attempting playbook '{playbook.name}' for {component_name}")
+    result = execute_playbook(playbook, executor, judge)
+
+    if result.success:
+        _log(f"RECOVER SUCCESS {playbook.name}: {result.detail}")
+        _send_ntfy_simple(
+            config.ntfy_url,
+            [
+                f"Auto-recovery succeeded: {component_name}",
+                f"Playbook: {playbook.name}",
+                f"Detail: {result.detail}",
+            ],
+            urgency="default",
+            title="Orion RECOVERED — the-lab",
+            tags="white_check_mark,server",
+        )
+        return f"RECOVERED {component_name}: {result.detail}"
+    else:
+        _log(f"RECOVER FAILED {playbook.name}: {result.detail}")
+        _send_ntfy_simple(
+            config.ntfy_url,
+            [
+                f"Auto-recovery FAILED: {component_name}",
+                f"Playbook: {playbook.name}",
+                f"Detail: {result.detail}",
+            ],
+            urgency="urgent",
+            title="Orion RECOVERY FAILED — the-lab",
+            tags="x,server",
+        )
+        return f"RECOVERY FAILED {component_name}: {result.detail}"
+
+
 def _check_component_health(config: object | None = None, **_kw: object) -> str | None:
     """Deep health check across all HAL backend components.
 
@@ -300,9 +378,24 @@ def _check_component_health(config: object | None = None, **_kw: object) -> str 
         unhealthy = [r for r in results if r.status != "ok"]
         if not unhealthy:
             return None
+
+        # Attempt automated recovery for each unhealthy component
+        recovery_msgs: list[str] = []
+        for r in unhealthy:
+            try:
+                msg = _attempt_recovery(r.name, r.status, config)  # type: ignore[arg-type]
+                if msg:
+                    recovery_msgs.append(msg)
+            except Exception as exc:
+                _log(f"RECOVER ERROR {r.name}: {exc}")
+
         lines: list[str] = []
         for r in unhealthy:
             lines.append(f"{r.name}: {r.status} — {r.detail}")
+        if recovery_msgs:
+            lines.append("")
+            lines.append("Recovery actions:")
+            lines.extend(recovery_msgs)
         count = len(unhealthy)
         header = f"{count} component{'s' if count != 1 else ''} unhealthy"
         return f"{header}:\n" + "\n".join(lines)

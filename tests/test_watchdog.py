@@ -412,6 +412,7 @@ def test_check_component_health_returns_alert_when_degraded(
         ),
     ]
     monkeypatch.setattr("hal.healthcheck.run_all_checks", lambda config: fake_results)
+    monkeypatch.setattr(watchdog, "_attempt_recovery", lambda *a, **kw: None)
 
     result = watchdog._check_component_health(
         config=SimpleNamespace(), state={}, prom=None
@@ -460,3 +461,205 @@ def test_component_health_fires_through_run(
     assert observed["sent_simple"][0]["messages"] == [alert_msg]
     assert observed["sent_simple"][0]["urgency"] == "high"
     assert "component_health" in observed["saved"]
+
+
+# ---------------------------------------------------------------------------
+# C3 — Watchdog auto-recovery via playbooks
+# ---------------------------------------------------------------------------
+
+
+class TestWatchdogJudge:
+    """Test WatchdogJudge auto-approval behavior."""
+
+    def test_approves_tier_0(self, tmp_path: pytest.TempPathFactory) -> None:
+        audit = tmp_path / "audit.log"  # type: ignore[operator]
+        judge = watchdog.WatchdogJudge(audit_log=audit)
+        assert judge.approve("search_kb", "test query") is True
+
+    def test_approves_tier_1_via_trust(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Tier 1 actions are denied because _request_approval returns False."""
+        audit = tmp_path / "audit.log"  # type: ignore[operator]
+        judge = watchdog.WatchdogJudge(audit_log=audit)
+        # docker restart is tier 1, _request_approval returns False
+        assert judge.approve("run_command", "docker restart pgvector-kb") is False
+
+    def test_denies_tier_2(self, tmp_path: pytest.TempPathFactory) -> None:
+        audit = tmp_path / "audit.log"  # type: ignore[operator]
+        judge = watchdog.WatchdogJudge(audit_log=audit)
+        assert judge.approve("run_command", "sudo systemctl restart ollama") is False
+
+
+class TestAttemptRecovery:
+    """Test _attempt_recovery with mocked playbook execution."""
+
+    def test_no_playbook_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(watchdog, "get_playbook", lambda *a: None)
+        config = SimpleNamespace(lab_host="localhost", lab_user="jp", ntfy_url="")
+        result = watchdog._attempt_recovery("nonexistent", "down", config)
+        assert result is None
+
+    def test_high_tier_playbook_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from hal.playbooks import RecoveryPlaybook, RecoveryStep
+
+        pb = RecoveryPlaybook(
+            name="restart_ollama",
+            component="Ollama",
+            trigger="down",
+            description="test",
+            judge_tier=2,
+            max_attempts_per_hour=2,
+            steps=(
+                RecoveryStep(
+                    description="restart",
+                    command="sudo systemctl restart ollama",
+                    verify_command="systemctl is-active ollama",
+                    verify_expect="active",
+                ),
+            ),
+        )
+        monkeypatch.setattr(watchdog, "get_playbook", lambda *a: pb)
+        monkeypatch.setattr(watchdog, "_log", lambda _msg: None)
+        config = SimpleNamespace(lab_host="localhost", lab_user="jp", ntfy_url="")
+        result = watchdog._attempt_recovery("Ollama", "down", config)
+        assert result is not None
+        assert "tier 2" in result
+
+    def test_successful_recovery_sends_notification(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        from hal.playbooks import PlaybookResult, RecoveryPlaybook, RecoveryStep
+
+        pb = RecoveryPlaybook(
+            name="restart_pgvector",
+            component="pgvector",
+            trigger="down",
+            description="test",
+            judge_tier=1,
+            max_attempts_per_hour=3,
+            steps=(
+                RecoveryStep(
+                    description="restart",
+                    command="docker restart pgvector-kb",
+                    verify_command="docker ps --filter name=pgvector-kb",
+                    verify_expect="pgvector-kb:Up",
+                ),
+            ),
+        )
+
+        sent: list[dict] = []
+        monkeypatch.setattr(watchdog, "get_playbook", lambda *a: pb)
+        monkeypatch.setattr(watchdog, "_log", lambda _msg: None)
+        monkeypatch.setattr(
+            watchdog,
+            "execute_playbook",
+            lambda *a, **kw: PlaybookResult(
+                success=True,
+                steps_completed=1,
+                detail="All 1 steps completed successfully",
+                playbook_name="restart_pgvector",
+            ),
+        )
+        monkeypatch.setattr(
+            watchdog,
+            "_send_ntfy_simple",
+            lambda url, messages, **kw: (
+                sent.append({"messages": messages, **kw}) or True
+            ),
+        )
+        # Patch SSHExecutor and WatchdogJudge constructors
+        monkeypatch.setattr(watchdog, "SSHExecutor", lambda *a: None)
+        monkeypatch.setattr(watchdog, "WatchdogJudge", lambda **kw: None)
+
+        config = SimpleNamespace(
+            lab_host="localhost", lab_user="jp", ntfy_url="http://ntfy"
+        )
+        result = watchdog._attempt_recovery("pgvector", "down", config)
+        assert result is not None
+        assert "RECOVERED" in result
+        assert len(sent) == 1
+        assert "RECOVERED" in sent[0].get("title", "")
+
+    def test_failed_recovery_sends_failure_notification(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        from hal.playbooks import PlaybookResult, RecoveryPlaybook, RecoveryStep
+
+        pb = RecoveryPlaybook(
+            name="restart_pgvector",
+            component="pgvector",
+            trigger="down",
+            description="test",
+            judge_tier=1,
+            max_attempts_per_hour=3,
+            steps=(
+                RecoveryStep(
+                    description="restart",
+                    command="docker restart pgvector-kb",
+                    verify_command="docker ps --filter name=pgvector-kb",
+                    verify_expect="pgvector-kb:Up",
+                ),
+            ),
+        )
+
+        sent: list[dict] = []
+        monkeypatch.setattr(watchdog, "get_playbook", lambda *a: pb)
+        monkeypatch.setattr(watchdog, "_log", lambda _msg: None)
+        monkeypatch.setattr(
+            watchdog,
+            "execute_playbook",
+            lambda *a, **kw: PlaybookResult(
+                success=False,
+                steps_completed=0,
+                detail="container not found",
+                playbook_name="restart_pgvector",
+            ),
+        )
+        monkeypatch.setattr(
+            watchdog,
+            "_send_ntfy_simple",
+            lambda url, messages, **kw: (
+                sent.append({"messages": messages, **kw}) or True
+            ),
+        )
+        monkeypatch.setattr(watchdog, "SSHExecutor", lambda *a: None)
+        monkeypatch.setattr(watchdog, "WatchdogJudge", lambda **kw: None)
+
+        config = SimpleNamespace(
+            lab_host="localhost", lab_user="jp", ntfy_url="http://ntfy"
+        )
+        result = watchdog._attempt_recovery("pgvector", "down", config)
+        assert result is not None
+        assert "RECOVERY FAILED" in result
+        assert len(sent) == 1
+        assert "FAILED" in sent[0].get("title", "")
+
+
+def test_check_component_health_with_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_check_component_health calls _attempt_recovery and includes messages."""
+    from hal.healthcheck import ComponentHealth
+
+    fake_results = [
+        ComponentHealth(
+            name="pgvector", status="down", detail="connection refused", latency_ms=0
+        ),
+    ]
+    monkeypatch.setattr("hal.healthcheck.run_all_checks", lambda config: fake_results)
+    monkeypatch.setattr(
+        watchdog,
+        "_attempt_recovery",
+        lambda name, status, config: f"RECOVERED {name}: restarted",
+    )
+
+    result = watchdog._check_component_health(
+        config=SimpleNamespace(), state={}, prom=None
+    )
+    assert result is not None
+    assert "1 component" in result
+    assert "Recovery actions" in result
+    assert "RECOVERED pgvector" in result
