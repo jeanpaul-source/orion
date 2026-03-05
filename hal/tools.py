@@ -269,6 +269,53 @@ def _handle_check_system_health(args: dict, ctx: ToolContext) -> str:
     return f"{summary_line(results)}\n\n{table}"
 
 
+def _handle_recover_component(args: dict, ctx: ToolContext) -> str:
+    component = args.get("component") or ""
+
+    from hal.playbooks import COMPONENT_NAMES, execute_playbook, get_playbook
+
+    if not component:
+        return f"Error: component is required. Valid components: {', '.join(sorted(COMPONENT_NAMES))}"
+
+    playbook = get_playbook(component, "down")
+    if playbook is None:
+        return (
+            f"No recovery playbook found for component '{component}'. "
+            f"Valid components: {', '.join(sorted(COMPONENT_NAMES))}"
+        )
+
+    # Execute the playbook — each step goes through the Judge individually
+    result = execute_playbook(playbook, ctx.executor, ctx.judge)
+
+    if result.success:
+        # Run a follow-up health check to confirm
+        if ctx.config is not None:
+            from hal.healthcheck import run_all_checks
+
+            checks = run_all_checks(ctx.config)  # type: ignore[arg-type]
+            comp_check = next((c for c in checks if c.name == component), None)
+            if comp_check:
+                return (
+                    f"Recovery successful for {component}.\n"
+                    f"Playbook: {playbook.name}\n"
+                    f"Steps completed: {result.steps_completed}\n"
+                    f"Post-recovery status: {comp_check.status} — {comp_check.detail}"
+                )
+        return (
+            f"Recovery successful for {component}.\n"
+            f"Playbook: {playbook.name}\n"
+            f"Steps completed: {result.steps_completed}\n"
+            f"Detail: {result.detail}"
+        )
+    else:
+        return (
+            f"Recovery FAILED for {component}.\n"
+            f"Playbook: {playbook.name}\n"
+            f"Steps completed: {result.steps_completed}/{len(playbook.steps)}\n"
+            f"Detail: {result.detail}"
+        )
+
+
 def _web_search_enabled(tavily_api_key: str) -> bool:
     return bool(tavily_api_key)
 
@@ -712,6 +759,38 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
         "handler": _handle_check_system_health,
+        "enabled": _always_enabled,
+    },
+    "recover_component": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "recover_component",
+                "description": (
+                    "Trigger a recovery playbook for a failed component. Each component "
+                    "has a pre-defined recovery sequence (e.g. restart the Docker container "
+                    "or systemd service, then verify it came back). Use this after "
+                    "check_system_health shows a component is down or degraded. "
+                    "Valid components: pgvector, Prometheus, Grafana, Pushgateway, "
+                    "ntopng, Ollama, vLLM. Each step is individually approved by the Judge."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "component": {
+                            "type": "string",
+                            "description": "The component to recover (must match a health check name).",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Why this recovery is needed.",
+                        },
+                    },
+                    "required": ["component"],
+                },
+            },
+        },
+        "handler": _handle_recover_component,
         "enabled": _always_enabled,
     },
 }

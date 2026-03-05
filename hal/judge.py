@@ -281,6 +281,8 @@ _ACTION_TIERS: dict[str, int] = {
     "web_search": 0,
     # Web access — outbound HTTP request to arbitrary URL (needs approval)
     "fetch_url": 1,
+    # Recovery — individual steps go through Judge separately
+    "recover_component": 1,
 }
 
 # ---------------------------------------------------------------------------

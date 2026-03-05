@@ -13,7 +13,7 @@ _CTX = ToolContext(
 
 
 def test_get_tools_returns_layer0_tool_set():
-    """Active tool set without Tavily key: 14 tools (web_search is key-gated)."""
+    """Active tool set without Tavily key: 15 tools (web_search is key-gated)."""
     names = [tool["function"]["name"] for tool in get_tools()]
     assert set(names) == {
         "search_kb",
@@ -32,8 +32,10 @@ def test_get_tools_returns_layer0_tool_set():
         "scan_lan",
         # Phase B — structured health checks
         "check_system_health",
+        # Phase C — recovery playbooks
+        "recover_component",
     }
-    # With a Tavily key, web_search is also included (15 tools total)
+    # With a Tavily key, web_search is also included (16 tools total)
     names_with_key = [
         tool["function"]["name"] for tool in get_tools(tavily_api_key="k")
     ]
@@ -237,3 +239,77 @@ def test_web_search_description_lists_trigger_examples():
     desc = TOOL_REGISTRY["web_search"]["schema"]["function"]["description"]
     for keyword in ["CVE", "latest release", "changelog", "version"]:
         assert keyword in desc, f"web_search description missing '{keyword}'"
+
+
+# ---------------------------------------------------------------------------
+# Phase C — recover_component tool tests
+# ---------------------------------------------------------------------------
+
+
+def test_recover_component_missing_component():
+    """recover_component with no component returns error with valid list."""
+    out = dispatch_tool("recover_component", {}, _CTX)
+    assert "Error" in out
+    assert "component is required" in out
+
+
+def test_recover_component_unknown_component():
+    """recover_component with unknown component returns helpful error."""
+    out = dispatch_tool("recover_component", {"component": "nonexistent"}, _CTX)
+    assert "No recovery playbook found" in out
+    assert "nonexistent" in out
+
+
+def test_recover_component_successful(monkeypatch):
+    """recover_component returns success message on playbook success."""
+    from hal.playbooks import PlaybookResult
+
+    monkeypatch.setattr(
+        "hal.playbooks.execute_playbook",
+        lambda pb, ex, j: PlaybookResult(
+            success=True,
+            steps_completed=1,
+            detail="All 1 steps completed successfully",
+            playbook_name="restart_pgvector",
+        ),
+    )
+    ctx = ToolContext(
+        executor=MagicMock(),
+        judge=MagicMock(),
+        kb=MagicMock(),
+        prom=MagicMock(),
+        config=None,  # no post-recovery health check
+    )
+    out = dispatch_tool(
+        "recover_component", {"component": "pgvector", "reason": "it is down"}, ctx
+    )
+    assert "successful" in out.lower()
+    assert "pgvector" in out
+
+
+def test_recover_component_failed(monkeypatch):
+    """recover_component returns failure detail on playbook failure."""
+    from hal.playbooks import PlaybookResult
+
+    monkeypatch.setattr(
+        "hal.playbooks.execute_playbook",
+        lambda pb, ex, j: PlaybookResult(
+            success=False,
+            steps_completed=0,
+            detail="Step 1 denied by Judge: Restart container",
+            playbook_name="restart_pgvector",
+        ),
+    )
+    out = dispatch_tool("recover_component", {"component": "pgvector"}, _CTX)
+    assert "FAILED" in out
+    assert "denied by Judge" in out
+
+
+def test_recover_component_schema_in_registry():
+    """recover_component schema exists and has required parameters."""
+    spec = TOOL_REGISTRY["recover_component"]
+    params = spec["schema"]["function"]["parameters"]["properties"]
+    assert "component" in params
+    assert "reason" in params
+    required = spec["schema"]["function"]["parameters"]["required"]
+    assert "component" in required
