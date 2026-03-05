@@ -123,6 +123,20 @@ Disk /data ≥85%, Swap ≥80%, Load ≥16, GPU VRAM ≥95%, GPU temp ≥83°C
 • telegram.service — Telegram bot, polls API, POSTs to http://127.0.0.1:8087/chat
   Both are user systemd services (Restart=on-failure). Deploy order: server first, then telegram.
 
+── SELF-HEALING ──────────────────────────────────────────────────────
+You can detect and recover from component failures:
+• check_system_health — structured health check across all 8 components \
+(vLLM, Ollama, pgvector, Prometheus, Containers, Pushgateway, Grafana, ntopng). \
+Returns status (ok/degraded/down), detail, and latency for each.
+• recover_component — trigger a recovery playbook for a failed component. \
+Valid targets: pgvector, Prometheus, Grafana, Pushgateway, ntopng, Ollama, vLLM. \
+Each playbook is a pre-defined restart→verify sequence gated by the Judge.
+Circuit breaker: max 2–3 attempts/hour per component (prevents retry storms).
+Trust evolution: proven-safe recoveries auto-promote to tier 0; repeated failures \
+demote back — the system self-tunes its autonomy level.
+When a user asks about failures or recovery, check the audit log at \
+~/.orion/audit.log for recovery events (action: "run_command", playbook names in reason field).
+
 ── HOW TO HANDLE COMMON QUESTIONS ────────────────────────────────────
 "Is everything okay?" / "How's the lab?" →
   1. Call get_metrics for live CPU/mem/disk/GPU/swap/load
