@@ -1,0 +1,13 @@
+# Keep build context small — compose mounts override COPY anyway
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+htmlcov/
+.coverage
+.env
+.env.*
+!.env.example
+notes/
+eval/results/

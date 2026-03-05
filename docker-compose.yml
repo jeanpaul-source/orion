@@ -1,0 +1,57 @@
+# ~/orion/docker-compose.yml
+services:
+  hal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orion
+    restart: unless-stopped
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "127.0.0.1:8087:8087"
+
+    volumes:
+      # HAL's state — the ONLY read-write mount
+      - /home/jp/.orion:/home/hal/.orion:rw
+
+      # Codebase — read-only (LLM cannot modify its own code)
+      - /home/jp/orion:/app:ro
+
+      # Config (secrets) — read-only single file
+      - /home/jp/orion/.env:/app/.env:ro
+
+      # Infrastructure configs — read-only
+      - /opt/homelab-infrastructure:/mnt/infra:ro
+
+      # Reference documents — read-only
+      - /data/orion:/mnt/data:ro
+
+      # Falco logs — read-only
+      - /var/log/falco:/mnt/falco:ro
+
+      # Host system configs — read-only
+      - /etc:/mnt/host-etc:ro
+
+      # SSH key for service account — read-only
+      - /home/jp/.ssh/hal-svc:/home/hal/.ssh/id_ed25519:ro
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "4"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8087/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+    environment:
+      - HOME=/home/hal
+      - LAB_HOST=host.docker.internal
+      - LAB_USER=hal-svc
