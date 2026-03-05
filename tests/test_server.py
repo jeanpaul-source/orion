@@ -666,3 +666,125 @@ def test_retry_init_skips_ntfy_when_url_empty() -> None:
         asyncio.run(server._retry_init(fake_config))
 
     mock_ntfy.assert_not_called()
+
+
+def test_retry_init_sets_startup_context() -> None:
+    """_retry_init populates _startup_context in _state on recovery."""
+    import asyncio
+    from types import SimpleNamespace as NS
+
+    fake_config = NS(
+        pgvector_dsn="postgresql://x",
+        prometheus_url="http://x:9090",
+        lab_host="localhost",
+        lab_user="jp",
+        judge_extra_sensitive_paths="",
+        ntfy_url="",
+    )
+
+    fake_llm = MagicMock()
+    fake_embed = MagicMock()
+
+    old_state = dict(server._state)
+    server._state.clear()
+
+    with (
+        patch.object(server, "_RETRY_DELAY", 0),
+        patch.object(server, "_MAX_RETRIES", 2),
+        patch("hal.server.setup_clients", return_value=(fake_llm, fake_embed, [])),
+        patch("hal.server._populate_state"),
+        patch("hal.server._log_recovery_event"),
+        patch("hal.server.send_ntfy_simple"),
+    ):
+        asyncio.run(server._retry_init(fake_config))
+
+    try:
+        ctx = server._state.get("_startup_context", "")
+        assert "recovered from a degraded start" in ctx
+        assert "1 retry attempt" in ctx  # first attempt succeeds
+    finally:
+        server._state.clear()
+        server._state.update(old_state)
+
+
+def test_chat_injects_startup_context_into_system_prompt() -> None:
+    """When _startup_context is set, /chat appends it to the system prompt."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = ("conversational", 0.9)
+
+    fake_llm = MagicMock()
+    fake_llm.chat_with_tools.return_value = {"content": "Hello!"}
+
+    server._state.update(
+        {
+            "config": MagicMock(ntopng_url="", tavily_api_key=""),
+            "llm": fake_llm,
+            "kb": MagicMock(),
+            "prom": MagicMock(),
+            "executor": MagicMock(),
+            "judge": MagicMock(),
+            "classifier": fake_classifier,
+            "_startup_context": "Note: recovered from degraded start at 20:15 UTC.",
+        }
+    )
+
+    try:
+        client = TestClient(server.app)
+        with patch("hal.server.get_system_prompt", return_value="Base prompt"):
+            resp = client.post("/chat", json={"message": "hello"})
+
+        assert resp.status_code == 200
+        # Verify the system prompt passed to chat_with_tools includes the startup context
+        call_kwargs = fake_llm.chat_with_tools.call_args
+        system_arg = call_kwargs[1].get("system") or call_kwargs.kwargs.get(
+            "system", ""
+        )
+        assert "STARTUP EVENT" in system_arg
+        assert "recovered from degraded start" in system_arg
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_chat_omits_startup_context_on_clean_start() -> None:
+    """On clean start, /chat uses base system prompt without startup context."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = ("conversational", 0.9)
+
+    fake_llm = MagicMock()
+    fake_llm.chat_with_tools.return_value = {"content": "Hello!"}
+
+    server._state.update(
+        {
+            "config": MagicMock(ntopng_url="", tavily_api_key=""),
+            "llm": fake_llm,
+            "kb": MagicMock(),
+            "prom": MagicMock(),
+            "executor": MagicMock(),
+            "judge": MagicMock(),
+            "classifier": fake_classifier,
+            # No _startup_context — clean start
+        }
+    )
+
+    try:
+        client = TestClient(server.app)
+        with patch("hal.server.get_system_prompt", return_value="Base prompt"):
+            resp = client.post("/chat", json={"message": "hello"})
+
+        assert resp.status_code == 200
+        call_kwargs = fake_llm.chat_with_tools.call_args
+        system_arg = call_kwargs[1].get("system") or call_kwargs.kwargs.get(
+            "system", ""
+        )
+        assert "STARTUP EVENT" not in system_arg
+        assert system_arg == "Base prompt"
+    finally:
+        server._state.clear()
+        server._state.update(old)

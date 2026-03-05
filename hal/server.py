@@ -196,6 +196,11 @@ async def _retry_init(config: cfg.Config) -> None:
         recovery_ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         _state["_last_recovery"] = recovery_ts
         _state["_recovery_attempts"] = attempt
+        _state["_startup_context"] = (
+            f"Note: this server recovered from a degraded start at "
+            f"{recovery_ts} UTC after {attempt} retry attempt{'s' if attempt != 1 else ''} "
+            f"(backends were unavailable for ~{elapsed} seconds)."
+        )
         _log_recovery_event(attempt, elapsed)
         # Notify operator via ntfy
         ntfy_url = getattr(config, "ntfy_url", "") or ""
@@ -322,6 +327,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 session_id = mem.last_session_id() or mem.new_session()
             history = mem.load_turns(session_id)
 
+            system_prompt = get_system_prompt(config)
+            startup_ctx = _state.get("_startup_context")
+            if startup_ctx:
+                system_prompt += f"\n\n── STARTUP EVENT ──\n{startup_ctx}"
+
             response = dispatch_intent(
                 req.message,
                 history,
@@ -332,7 +342,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 judge,
                 mem,
                 session_id,
-                get_system_prompt(config),
+                system_prompt,
                 console,
                 ntopng_url=config.ntopng_url,
                 tavily_api_key=config.tavily_api_key,
