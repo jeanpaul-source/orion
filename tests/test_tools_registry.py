@@ -128,3 +128,97 @@ def test_get_trend_no_data():
         ctx,
     )
     assert "No data" in out
+
+
+# ---------------------------------------------------------------------------
+# Denial message quality tests (F2)
+# ---------------------------------------------------------------------------
+
+
+def _deny_judge():
+    """Return a Judge-like mock that always denies."""
+    judge = MagicMock()
+    judge.approve.return_value = False
+    return judge
+
+
+def test_run_command_denial_includes_tier_and_alternatives():
+    """Denied run_command must report the tier and suggest read-only alternatives."""
+    ctx = ToolContext(
+        executor=MagicMock(),
+        judge=_deny_judge(),
+        kb=MagicMock(),
+        prom=MagicMock(),
+    )
+    out = TOOL_REGISTRY["run_command"]["handler"](
+        {"command": "systemctl restart prometheus", "reason": "health check"},
+        ctx,
+    )
+    assert "denied" in out.lower()
+    assert "tier" in out.lower()
+    # Must suggest at least some safe alternatives
+    assert "systemctl status" in out or "docker ps" in out or "ps" in out
+    # Must NOT contain the old opaque message
+    assert "Action denied by user" not in out
+
+
+def test_run_command_denial_tier_matches_command():
+    """The tier in the denial message should reflect the actual command classification."""
+    ctx = ToolContext(
+        executor=MagicMock(),
+        judge=_deny_judge(),
+        kb=MagicMock(),
+        prom=MagicMock(),
+    )
+    # systemctl restart → tier 1
+    out = TOOL_REGISTRY["run_command"]["handler"](
+        {"command": "systemctl restart prometheus"},
+        ctx,
+    )
+    assert "tier 1" in out
+
+    # rm -rf → tier 3
+    out = TOOL_REGISTRY["run_command"]["handler"](
+        {"command": "rm -rf /"},
+        ctx,
+    )
+    assert "tier 3" in out
+
+
+def test_fetch_url_denial_suggests_web_search():
+    """Denied fetch_url must suggest web_search as an alternative."""
+    ctx = ToolContext(
+        executor=MagicMock(),
+        judge=_deny_judge(),
+        kb=MagicMock(),
+        prom=MagicMock(),
+    )
+    out = TOOL_REGISTRY["fetch_url"]["handler"](
+        {"url": "https://example.com", "reason": "test"},
+        ctx,
+    )
+    assert "denied" in out.lower()
+    assert "web_search" in out
+    assert "Action denied by user" not in out
+
+
+# ---------------------------------------------------------------------------
+# Tool description quality tests (F3)
+# ---------------------------------------------------------------------------
+
+
+def test_run_command_description_lists_safe_commands():
+    """run_command tool description must list auto-approved commands so the LLM
+    knows what to use instead of guessing commands that will be denied."""
+    desc = TOOL_REGISTRY["run_command"]["schema"]["function"]["description"]
+    # Must mention key safe commands
+    for keyword in [
+        "systemctl status",
+        "docker ps",
+        "journalctl",
+        "nvidia-smi",
+        "tier 0",
+    ]:
+        assert keyword in desc, f"run_command description missing '{keyword}'"
+    # Must warn about denial in HTTP mode
+    assert "DENIED" in desc or "denied" in desc

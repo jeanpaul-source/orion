@@ -142,6 +142,7 @@ _SAFE_FIRST_TOKENS: frozenset[str] = frozenset(
         "uptime",
         # filesystem / disk
         "df",
+        "du",
         "ls",
         "cat",
         "head",
@@ -149,6 +150,12 @@ _SAFE_FIRST_TOKENS: frozenset[str] = frozenset(
         "stat",
         "lsblk",
         "find",
+        "file",
+        "which",
+        "realpath",
+        "readlink",
+        "basename",
+        "dirname",
         # text processing (read-only)
         "grep",
         "egrep",
@@ -157,6 +164,13 @@ _SAFE_FIRST_TOKENS: frozenset[str] = frozenset(
         "sort",
         "uniq",
         "echo",
+        "awk",
+        "sed",
+        "cut",
+        "tr",
+        "diff",
+        "md5sum",
+        "sha256sum",
         # system info
         "uname",
         "hostname",
@@ -170,26 +184,83 @@ _SAFE_FIRST_TOKENS: frozenset[str] = frozenset(
         "lsof",
         "printenv",
         "env",
+        "nproc",
+        "getconf",
+        "timedatectl",
+        "hostnamectl",
+        "locale",
+        # hardware / GPU
+        "nvidia-smi",
+        "sensors",
+        "lsmod",
+        # package queries (read-only — list/show only)
+        "dpkg-query",
+        "rpm",
         # network observation
         "netstat",
         "ss",
         "ip",
         "ping",
+        "dig",
+        "nslookup",
+        "host",
+        "traceroute",
+        "tracepath",
+        "nmcli",
+        "resolvectl",
         # logging
         "journalctl",
+        # misc read-only
+        "last",
+        "w",
+        "who",
+        "dmesg",
     }
 )
 
 # Two-token safe prefixes: (first, second) → tier 0
 _SAFE_COMPOUND: frozenset[tuple[str, str]] = frozenset(
     {
+        # systemctl read-only subcommands
         ("systemctl", "status"),
+        ("systemctl", "show"),
+        ("systemctl", "is-active"),
+        ("systemctl", "is-enabled"),
+        ("systemctl", "is-failed"),
+        ("systemctl", "list-units"),
+        ("systemctl", "list-timers"),
+        ("systemctl", "list-sockets"),
+        ("systemctl", "list-dependencies"),
+        ("systemctl", "cat"),
+        # docker read-only subcommands
         ("docker", "ps"),
         ("docker", "stats"),
         ("docker", "logs"),
         ("docker", "inspect"),
         ("docker", "images"),
         ("docker", "network"),
+        ("docker", "top"),
+        ("docker", "port"),
+        ("docker", "info"),
+        ("docker", "version"),
+        ("docker", "df"),
+        # docker compose read-only
+        ("docker", "compose"),  # compose ps/logs/top — write ops handled by _CMD_RULES
+        # ip read-only subcommands
+        ("ip", "addr"),
+        ("ip", "address"),
+        ("ip", "route"),
+        ("ip", "link"),
+        ("ip", "neigh"),
+        ("ip", "rule"),
+        # dnf / apt read-only queries
+        ("dnf", "list"),
+        ("dnf", "info"),
+        ("dnf", "search"),
+        ("dnf", "repoquery"),
+        ("apt", "list"),
+        ("apt", "show"),
+        ("apt", "search"),
     }
 )
 

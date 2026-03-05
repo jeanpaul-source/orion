@@ -31,7 +31,7 @@ import hal.security as _security
 import hal.trust_metrics as _trust_metrics
 import hal.web as _web
 from hal.executor import SSHExecutor
-from hal.judge import Judge
+from hal.judge import Judge, tier_for
 from hal.knowledge import KnowledgeBase
 from hal.prometheus import METRIC_PROMQL as _METRIC_PROMQL
 from hal.prometheus import PrometheusClient
@@ -68,7 +68,13 @@ def _handle_run_command(args: dict, ctx: ToolContext) -> str:
     command = args.get("command") or ""
     reason = args.get("reason") or ""
     if not ctx.judge.approve("run_command", command, reason=reason):
-        return "Action denied by user."
+        tier = tier_for("run_command", command)
+        return (
+            f"Command denied (tier {tier} — requires interactive approval). "
+            "Try a read-only alternative instead: ps, cat, head, tail, grep, "
+            "systemctl status, systemctl is-active, systemctl list-units, "
+            "docker ps, docker logs, journalctl, ls, df, free, nvidia-smi."
+        )
     result = ctx.executor.run(command)
     parts = []
     if result["stdout"].strip():
@@ -180,7 +186,10 @@ def _handle_fetch_url(args: dict, ctx: ToolContext) -> str:
     url = args.get("url") or ""
     reason = args.get("reason") or ""
     if not ctx.judge.approve("fetch_url", url, reason=reason):
-        return "Action denied by user."
+        return (
+            "URL fetch denied (tier 1 — requires interactive approval). "
+            "Use web_search instead if you need information from the web."
+        )
     try:
         return _web.fetch_url(url)
     except (ValueError, RuntimeError) as exc:
@@ -366,7 +375,15 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                 "description": (
                     "Run a shell command on the lab server. "
                     "Use ONLY for live state: checking processes, service status, logs, "
-                    "disk usage, network. Do NOT use for questions answerable from the KB."
+                    "disk usage, network. Do NOT use for questions answerable from the KB. "
+                    "Auto-approved (tier 0) commands: ps, cat, head, tail, grep, ls, df, du, "
+                    "free, uptime, nvidia-smi, sensors, journalctl, dmesg, w, who, last, "
+                    "systemctl status/show/is-active/is-enabled/list-units/list-timers/cat, "
+                    "docker ps/logs/inspect/stats/images/top/info/compose ps/compose logs, "
+                    "ip addr/route/link/neigh, dnf list/info/search, ss, netstat, dig, "
+                    "find, stat, lsblk, lscpu, lsof. "
+                    "Commands not on this list require interactive approval and WILL BE "
+                    "DENIED in HTTP/Telegram mode. Always prefer these safe commands."
                 ),
                 "parameters": {
                     "type": "object",
