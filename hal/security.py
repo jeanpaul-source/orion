@@ -12,6 +12,7 @@ Worker signature mirrors hal/workers.py:
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import xml.etree.ElementTree as ET
 
@@ -24,6 +25,8 @@ from hal.judge import Judge
 # ---------------------------------------------------------------------------
 # 1. Falco security events
 # ---------------------------------------------------------------------------
+
+FALCO_LOG = os.environ.get("FALCO_LOG_PATH", "/var/log/falco/events.json")
 
 
 def get_security_events(
@@ -38,11 +41,11 @@ def get_security_events(
     Returns an empty list on any failure.
     """
     if not judge.approve(
-        "get_security_events", f"tail -n {n} /var/log/falco/events.json", reason=reason
+        "get_security_events", f"tail -n {n} {FALCO_LOG}", reason=reason
     ):
         return []
 
-    result = executor.run(f"tail -n {shlex.quote(str(n))} /var/log/falco/events.json")
+    result = executor.run(f"tail -n {shlex.quote(str(n))} {FALCO_LOG}")
     if result["returncode"] != 0:
         stderr = result.get("stderr", "").strip()
         return [{"error": f"Falco log read failed: {stderr}"}]

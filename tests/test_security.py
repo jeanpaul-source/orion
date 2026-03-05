@@ -251,3 +251,40 @@ def test_get_security_events_output_field_defaults_on_missing_keys():
     assert len(events) == 1
     assert events[0]["proc_name"] == ""
     assert events[0]["fd_name"] == ""
+
+
+# ---------------------------------------------------------------------------
+# FALCO_LOG path override via environment variable
+# ---------------------------------------------------------------------------
+
+
+def test_falco_log_path_env_var_override(monkeypatch):
+    """FALCO_LOG_PATH env var overrides the default Falco log path."""
+    custom_path = "/mnt/falco/events.json"
+    monkeypatch.setenv("FALCO_LOG_PATH", custom_path)
+
+    # Re-import to pick up the env var (module-level constant)
+    import importlib
+
+    import hal.security as sec
+
+    importlib.reload(sec)
+    try:
+        assert sec.FALCO_LOG == custom_path
+
+        # Verify the path is used in the executor call
+        exc = _executor(stdout=json.dumps(_FALCO_EVENT))
+        sec.get_security_events(executor=exc, judge=_judge())
+        cmd = exc.run.call_args[0][0]
+        assert custom_path in cmd
+    finally:
+        # Restore default so other tests aren't affected
+        monkeypatch.delenv("FALCO_LOG_PATH", raising=False)
+        importlib.reload(sec)
+
+
+def test_falco_log_path_default():
+    """Without FALCO_LOG_PATH env var, the default path is used."""
+    from hal.security import FALCO_LOG
+
+    assert FALCO_LOG == "/var/log/falco/events.json"
