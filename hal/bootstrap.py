@@ -300,6 +300,7 @@ def dispatch_intent(
     classifier: IntentClassifier | None = None,
     ntopng_url: str = "",
     tavily_api_key: str = "",
+    config: object | None = None,
 ) -> str:
     """Route a query to one of two paths based on intent classification.
 
@@ -336,4 +337,5 @@ def dispatch_intent(
         console,
         ntopng_url=ntopng_url,
         tavily_api_key=tavily_api_key,
+        config=config,
     )

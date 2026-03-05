@@ -354,6 +354,7 @@ def main() -> None:
                 classifier=classifier,
                 ntopng_url=config.ntopng_url,
                 tavily_api_key=config.tavily_api_key,
+                config=config,
             )
         finally:
             for tunnel in tunnels:
@@ -443,6 +444,7 @@ def main() -> None:
                         classifier=classifier,
                         ntopng_url=config.ntopng_url,
                         tavily_api_key=config.tavily_api_key,
+                        config=config,
                     )
 
     finally:

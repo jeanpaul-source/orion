@@ -52,6 +52,7 @@ class ToolContext(NamedTuple):
     prom: "PrometheusClient"
     ntopng_url: str = "http://localhost:3000"
     tavily_api_key: str = ""
+    config: object | None = None  # hal.config.Config — optional, enables health checks
 
 
 class ToolSpec(TypedDict):
@@ -256,6 +257,16 @@ def _handle_scan_lan(args: dict, ctx: ToolContext) -> str:
     import json as _json
 
     return _json.dumps(hosts, indent=2)
+
+
+def _handle_check_system_health(args: dict, ctx: ToolContext) -> str:
+    if ctx.config is None:
+        return "Health checks unavailable (no config in this context)."
+    from hal.healthcheck import format_health_table, run_all_checks, summary_line
+
+    results = run_all_checks(ctx.config)  # type: ignore[arg-type]
+    table = format_health_table(results)
+    return f"{summary_line(results)}\n\n{table}"
 
 
 def _web_search_enabled(tavily_api_key: str) -> bool:
@@ -678,6 +689,29 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             },
         },
         "handler": _handle_scan_lan,
+        "enabled": _always_enabled,
+    },
+    "check_system_health": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "check_system_health",
+                "description": (
+                    "Run a structured health check across all HAL backend components: "
+                    "vLLM, Ollama, pgvector, Prometheus, Docker containers, Pushgateway, "
+                    "Grafana, and ntopng. Returns a table with status (ok/degraded/down), "
+                    "detail, and latency for each component. Use this when asked if "
+                    "everything is working, for a system health check, or to diagnose "
+                    "which services are up or down."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        },
+        "handler": _handle_check_system_health,
         "enabled": _always_enabled,
     },
 }

@@ -43,6 +43,7 @@ def run_agent(
     console: Console,
     ntopng_url: str = "http://localhost:3000",
     tavily_api_key: str = "",
+    config: object | None = None,
 ) -> str:
     """Agentic loop: LLM calls tools autonomously until it produces a final answer.
 
@@ -212,6 +213,7 @@ def run_agent(
                                 prom=prom,
                                 ntopng_url=ntopng_url,
                                 tavily_api_key=tavily_api_key,
+                                config=config,
                             ),
                         )
                         TOOL_CALLS_TOTAL.inc(tool=name, outcome="ok")

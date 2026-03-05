@@ -346,6 +346,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 console,
                 ntopng_url=config.ntopng_url,
                 tavily_api_key=config.tavily_api_key,
+                config=config,
             )
             return response, session_id, intent
         finally:

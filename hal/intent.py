@@ -118,6 +118,13 @@ EXAMPLES: dict[str, list[str]] = {
         "help me debug this problem",
         "is anything consuming too much disk space?",
         "diagnose why this service is failing",
+        # System health check queries
+        "is everything working?",
+        "system health check",
+        "are all services up?",
+        "check all components",
+        "which services are down?",
+        "run a deep health check",
         # Security queries
         "anything suspicious on the server?",
         "any falco alerts?",
