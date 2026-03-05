@@ -28,6 +28,7 @@ if _workspace_root not in sys.path:
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from io import StringIO
 from typing import Any
 
@@ -36,6 +37,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from rich.console import Console
 
+import json as _json
+
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
@@ -43,7 +46,7 @@ from hal.sanitize import strip_tool_call_artifacts
 from hal.intent import (
     IntentClassifier,
 )  # why: intent.py graduated to Layer 1 — moved from hal/_unlocked/
-from hal.judge import Judge
+from hal.judge import AUDIT_LOG, Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
 from hal.logging_utils import setup_logging
@@ -143,6 +146,25 @@ def _populate_state(
     _state.pop("_retry_task", None)
 
 
+def _log_recovery_event(attempt: int, elapsed_seconds: int) -> None:
+    """Write a structured recovery event to the audit log (JSON-lines).
+
+    Uses the same format as ``Judge._log()`` so that trust metrics, log
+    parsers, and future autonomy features consume it uniformly.
+    """
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "tier": 0,
+        "status": "auto",
+        "action": "system",
+        "detail": "recovered_from_degraded_start",
+        "reason": f"backends connected on attempt {attempt} after {elapsed_seconds}s",
+    }
+    AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(AUDIT_LOG, "a") as f:
+        f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 async def _retry_init(config: cfg.Config) -> None:
     """Background task: retry backend connection until services come up.
 
@@ -169,6 +191,8 @@ async def _retry_init(config: cfg.Config) -> None:
             continue
 
         _populate_state(config, llm, embed, tunnels)
+        elapsed = attempt * _RETRY_DELAY
+        _log_recovery_event(attempt, elapsed)
         _log.info(
             "Backends connected on attempt %d — server fully operational",
             attempt,

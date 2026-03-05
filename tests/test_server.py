@@ -537,3 +537,23 @@ def test_retry_constants_sensible() -> None:
     total = server._RETRY_DELAY * server._MAX_RETRIES
     assert total >= 300, f"Total retry window {total}s < 300s"
     assert server._RETRY_DELAY >= 10, "Retry delay too aggressive"
+
+
+def test_log_recovery_event_writes_audit_entry(tmp_path) -> None:
+    """_log_recovery_event writes a structured JSON-lines entry to the audit log."""
+    import json
+
+    fake_log = tmp_path / "audit.log"
+    with patch.object(server, "AUDIT_LOG", fake_log):
+        server._log_recovery_event(attempt=3, elapsed_seconds=45)
+
+    lines = fake_log.read_text().strip().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["action"] == "system"
+    assert entry["detail"] == "recovered_from_degraded_start"
+    assert entry["status"] == "auto"
+    assert entry["tier"] == 0
+    assert "attempt 3" in entry["reason"]
+    assert "45s" in entry["reason"]
+    assert "ts" in entry
