@@ -79,7 +79,7 @@ class ScriptedExecutor:
         self._responses = responses or {}
         self.commands_run: list[str] = []  # track what was executed
 
-    def run(self, command: str) -> dict:
+    def run(self, command: str, timeout: int = 30) -> dict:
         self.commands_run.append(command)
         # Exact match first
         if command in self._responses:
