@@ -95,6 +95,23 @@ class _EvalJudge(Judge):
         )
         return approved
 
+    def record_outcome(
+        self,
+        action_type: str,
+        detail: str,
+        outcome: str,
+    ) -> None:
+        """Track tool usage for evaluator scoring.
+
+        Tools like web_search and search_kb bypass approve() entirely,
+        so they only appear via record_outcome().  Deduplicate with
+        approve() by checking whether the tool was already recorded
+        for this query.
+        """
+        if action_type not in self.tools_called:
+            self.tools_called.append(action_type)
+        super().record_outcome(action_type, detail, outcome)
+
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
