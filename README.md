@@ -35,24 +35,29 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 
 ---
 
-## Current state (Feb 2026)
+## Current state (Mar 2026)
 
-558 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
+773 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
 `hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=100%`, `web_tool_accuracy=100%`.
+
+HAL runs inside a Docker container on the-lab with three defense layers: Judge
+(software gate) → hal-svc SSH service account (OS permissions) → container
+boundary (namespace/cgroup isolation, read-only codebase mount).
 
 | Component | Status |
 |---|---|
-| Terminal REPL | Working |
+| Docker container deployment | Working |
+| Terminal REPL (via `docker exec`) | Working |
 | Intent routing (4 categories) | Working |
 | Agentic tool loop + Judge | Working |
-| pgvector KB (~19,900 chunks, 18 categories) | Working, harvested nightly |
+| pgvector KB (~17,250 chunks, 18 categories) | Working, harvested nightly |
 | Session memory (SQLite, 30-day pruning) | Working |
 | Security tools (Falco, Osquery, ntopng, Nmap) | Working |
 | Observability (structured logs, OTel, Pushgateway, Grafana) | Working |
-| HTTP server (`/chat`, `/health`) | Working |
-| Telegram bot (polling, single-user auth) | Working |
+| HTTP server (`/chat`, `/health`) | Working (inside container) |
+| Telegram bot (polling, single-user auth) | Working (inside container) |
 | Autonomous remediation | Not yet built |
-| Telegram / Web UI / Voice interfaces | Telegram working; Web UI, Voice not yet built |
+| Web UI / Voice interfaces | Not yet built |
 | Trust evolution (earned/revoked tiers) | Not yet built |
 
 ---
@@ -62,11 +67,16 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 ```bash
 git clone https://github.com/jeanpaul-source/orion
 cd orion
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 cp .env.example .env
 # Fill in PGVECTOR_DSN password (from /run/homelab-secrets/pgvector-kb.env on server)
-python -m hal
+docker compose build
+docker compose up -d
+```
+
+For the interactive REPL:
+
+```bash
+docker exec -it orion python -m hal
 ```
 
 For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATIONS.md).
@@ -128,5 +138,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
 | `eval/` | Evaluation harness — 24 queries, scorer, baselines |
-| `tests/` | 558 offline tests + 35 intent classifier tests (require Ollama) |
-| `ops/` | Systemd unit files for vllm, watchdog, harvest, telegram |
+| `tests/` | 773 offline tests + 35 intent classifier tests (require Ollama) |
+| `ops/` | Systemd unit files (vllm, watchdog, harvest) + supervisord.conf |
+| `Dockerfile` | Container image definition — python:3.12-slim, non-root user |
+| `docker-compose.yml` | Production deployment — ports, volumes, limits, health check |

@@ -115,7 +115,14 @@ Read these before working on the relevant area. They are the source of truth —
 
 ## Current State
 
-Active branch: `reliability/layer-0`. Layers 0–4 complete — all modules active; nothing remains in `hal/_unlocked/` except the empty `__init__.py`.
+Active branch: `main`. Layers 0–4 complete — all modules active; nothing remains in `hal/_unlocked/` except the empty `__init__.py`.
+
+**Deployment:** HAL runs inside a Docker container (`orion`) on the-lab via
+Docker Compose. The HTTP server and Telegram bot run under supervisord inside
+the container. Three defense layers: Judge (software) → hal-svc SSH service
+account (OS permissions) → container boundary (isolation). Harvest and watchdog
+run on the host venv (they need direct host access). Old `server.service` and
+`telegram.service` are disabled but kept as rollback path.
 
 **Layers 0–4 (all active):**
 
@@ -134,6 +141,6 @@ Active branch: `reliability/layer-0`. Layers 0–4 complete — all modules acti
 - **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 589 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 773 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

@@ -6,15 +6,15 @@ Deploy, configure, and run Orion/HAL on the homelab server.
 
 ## Prerequisites
 
-**On the machine running HAL (server or laptop with `USE_SSH_TUNNEL=true`):**
-
-- Python 3.11+
-- SSH key-based access to `LAB_HOST` (no password prompt on connect)
-
 **On the server (`the-lab`, `192.168.5.10`):**
+
+- Docker + Docker Compose v2
+- Python 3.12+ venv (for harvest and watchdog — host-only tools)
+- SSH key-based access to `LAB_HOST` (no password prompt on connect)
 
 | Service | How it runs | Port | Notes |
 | --- | --- | --- | --- |
+| **HAL** | Docker Compose (`orion` container) | 127.0.0.1:8087 | HTTP server + Telegram bot via supervisord |
 | vLLM | user systemd `vllm.service` | 8000 | Chat LLM — must be fully loaded before starting HAL |
 | Ollama | system systemd | 11434 | Embeddings only, CPU-bound — `OLLAMA_NUM_GPU=0` is load-bearing |
 | pgvector | Docker | 5432 | PostgreSQL + pgvector extension |
@@ -33,8 +33,6 @@ Deploy, configure, and run Orion/HAL on the homelab server.
 ```bash
 git clone https://github.com/jeanpaul-source/orion
 cd orion
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 cp .env.example .env
 ```
 
@@ -44,10 +42,23 @@ Fill in `PGVECTOR_DSN` password from the server:
 cat /run/homelab-secrets/pgvector-kb.env
 ```
 
-Then run the initial harvest to populate the knowledge base:
+Build and start the container:
 
 ```bash
-python -m harvest
+docker compose build
+docker compose up -d
+```
+
+The server takes ~30 seconds to connect to external services (vLLM, pgvector,
+Ollama). Watch logs with `docker logs -f orion`.
+
+For harvest and watchdog (host-only tools that need direct system access), set
+up the host venv:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m harvest     # initial KB population
 ```
 
 ---
@@ -82,25 +93,35 @@ uses the server IP and `USE_SSH_TUNNEL=true`.
 
 ## Running HAL
 
+HAL runs inside the `orion` Docker container. The REPL, HTTP server, and
+Telegram bot all run inside the container.
+
 ```bash
-# Continue last session
-python -m hal
+# Interactive REPL (attaches to running container)
+hal     # alias: docker exec -it orion python -m hal
 
-# Start fresh (new session, history cleared from context but DB kept)
-python -m hal --new
+# Start fresh session
+docker exec -it orion python -m hal --new
 
-# Server alias
-hal     # expands to: cd ~/orion && .venv/bin/python -m hal
+# Container management
+docker compose up -d      # start
+docker compose down       # stop
+docker logs -f orion      # follow logs
+docker compose restart    # restart
 ```
 
-HAL's readline history is at `~/.orion/history`. Session DB at `~/.orion/memory.db`.
+HAL's state lives at `~/.orion/` on the host, mounted as `/home/hal/.orion`
+inside the container. Session DB at `~/.orion/memory.db`, readline history
+at `~/.orion/history`, audit log at `~/.orion/audit.log`.
 
 ---
 
 ## Systemd units
 
-All units are **user systemd** (not system). Required because the code lives in a home
-directory and SELinux blocks system services from executing it.
+HAL itself runs in Docker Compose (not systemd). The old `server.service` and
+`telegram.service` are **disabled** — kept as rollback path only.
+
+The following units are still active as **user systemd** on the host:
 
 ### Deploy a unit
 
@@ -187,46 +208,39 @@ rsync -av --delete \
 After syncing, run `python -m harvest` on the server (or wait for the nightly timer).
 The `--delete` flag + orphan cleanup ensures removed files don't leave stale KB rows.
 
-### HAL HTTP server (`ops/server.service`)
+### HAL container (Docker Compose)
 
-FastAPI server that handles all `/chat` and `/health` requests. Required by the
-Telegram bot — deploy and start this before `telegram.service`.
+The HTTP server and Telegram bot run inside the `orion` container via
+supervisord (`ops/supervisord.conf`). Both auto-restart on failure.
 
 ```bash
-cp ops/server.service ~/.config/systemd/user/
-systemctl --user daemon-reload
+# Deploy / update
+orion-deploy    # alias: cd ~/orion && git pull && docker compose build && docker compose up -d
+
+# Logs
+docker logs -f orion
+
+# Health check
+curl http://127.0.0.1:8087/health
+
+# Restart
+docker compose restart
+```
+
+The container binds to `127.0.0.1:8087` only (not exposed externally). It uses
+`restart: unless-stopped` so it survives reboots as long as Docker starts.
+
+### Rollback to bare-metal
+
+If the container has issues, rollback takes 2 minutes:
+
+```bash
+docker compose down
 systemctl --user enable --now server.service
-```
-
-Wait for `HAL services connected — server ready` in the journal before starting the bot:
-
-```bash
-journalctl --user -u server -f
-```
-
-### Telegram bot (`ops/telegram.service`)
-
-Long-running polling bot. Connects to the Telegram API and forwards messages to the
-HTTP server at `localhost:8087`. Requires `TELEGRAM_BOT_TOKEN` and
-`TELEGRAM_ALLOWED_USER_ID` in `.env`. **Deploy `server.service` first.**
-
-```bash
-# Deploy (server.service must already be running)
-cp ops/telegram.service ~/.config/systemd/user/
-systemctl --user daemon-reload
 systemctl --user enable --now telegram.service
-
-# Manage
-systemctl --user status telegram.service
-systemctl --user restart telegram.service
-journalctl --user -u telegram -f
 ```
 
-The bot is independently restartable — it does not affect the REPL or HTTP server.
-If the HTTP server is down, the bot replies with "HAL server is offline."
-
-`Type=simple` with `Restart=on-failure` and `RestartSec=15` — auto-recovers from
-crashes without restart-looping.
+The old unit files are disabled but not deleted.
 
 ### Enable linger (required for user systemd to survive logout)
 
