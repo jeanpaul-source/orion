@@ -7,6 +7,14 @@ services:
     container_name: orion
     restart: unless-stopped
 
+    # Fedora 43: SELinux is Enforcing.  Relabelling system dirs (/etc,
+    # /var/log/falco) with :z would break host services.  Disabling the
+    # SELinux label on the container process is the standard fix — all
+    # other isolation layers remain (namespaces, cgroups, read-only
+    # mounts, Judge, hal-svc).
+    security_opt:
+      - label:disable
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
