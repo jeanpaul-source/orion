@@ -31,6 +31,7 @@ Supporting components:
 
 HTTP layer (hal/server.py):
   FastAPI server — /chat (POST) + /health (GET); ServerJudge auto-denies tier 1+
+  Auth: bearer token (HAL_WEB_TOKEN) required on /chat; /health and static files are open
   Used by: Web UI, Telegram bot, external integrations
   Serves static web UI at GET / (hal/static/ — vanilla JS, marked.js, highlight.js)
 

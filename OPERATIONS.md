@@ -14,7 +14,7 @@ Deploy, configure, and run Orion/HAL on the homelab server.
 
 | Service | How it runs | Port | Notes |
 | --- | --- | --- | --- |
-| **HAL** | Docker Compose (`orion` container) | 127.0.0.1:8087 | HTTP server + Web UI + Telegram bot via supervisord. Open `http://localhost:8087` in a browser for the Web UI. |
+| **HAL** | Docker Compose (`orion` container) | 0.0.0.0:8087 | HTTP server + Web UI + Telegram bot via supervisord. Open `http://<server-ip>:8087` in a browser for the Web UI. Requires `HAL_WEB_TOKEN` for `/chat`. |
 | vLLM | user systemd `vllm.service` | 8000 | Chat LLM — must be fully loaded before starting HAL |
 | Ollama | system systemd | 11434 | Embeddings only, CPU-bound — `OLLAMA_NUM_GPU=0` is load-bearing |
 | pgvector | Docker | 5432 | PostgreSQL + pgvector extension |
@@ -89,6 +89,7 @@ uses the server IP and `USE_SSH_TUNNEL=true`.
 | `OTLP_ENDPOINT` | `http://localhost:4318` | OTel OTLP HTTP — no-op if unreachable |
 | `TELEGRAM_BOT_TOKEN` | *(empty)* | From @BotFather — leave empty to disable bot |
 | `TELEGRAM_ALLOWED_USER_ID` | `0` | Numeric Telegram user ID — get from @userinfobot |
+| `HAL_WEB_TOKEN` | *(empty)* | Bearer token for `/chat` — generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. **Required** when port is LAN-exposed. |
 
 ---
 
@@ -228,8 +229,11 @@ curl http://127.0.0.1:8087/health
 docker compose restart
 ```
 
-The container binds to `127.0.0.1:8087` only (not exposed externally). It uses
-`restart: unless-stopped` so it survives reboots as long as Docker starts.
+The container binds to `0.0.0.0:8087` (LAN-accessible). The `/chat` endpoint
+requires a bearer token (`HAL_WEB_TOKEN` in `.env`). `GET /`, `/static/*`, and
+`/health` are unauthenticated so the Web UI can load and monitoring tools can
+probe health. It uses `restart: unless-stopped` so it survives reboots as long
+as Docker starts.
 
 ### Rollback to bare-metal
 
