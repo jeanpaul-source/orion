@@ -7,6 +7,7 @@
   const HEALTH_POLL_MS = 60_000;
   const SESSION_KEY = "hal_sessions";
   const ACTIVE_KEY = "hal_active_session";
+  const MAX_SESSIONS = 50;  // prune oldest beyond this limit
 
   // ── DOM refs ────────────────────────────────────────────────────
   const $messages    = document.getElementById("messages");
@@ -41,7 +42,24 @@
   }
 
   function saveSessions() {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+    } catch (e) {
+      // Quota exceeded — drop oldest sessions until it fits
+      while (sessions.length > 1) {
+        sessions.pop();
+        try {
+          localStorage.setItem(SESSION_KEY, JSON.stringify(sessions));
+          return;
+        } catch (_) { /* keep trimming */ }
+      }
+    }
+  }
+
+  function pruneSessions() {
+    if (sessions.length > MAX_SESSIONS) {
+      sessions = sessions.slice(0, MAX_SESSIONS);
+    }
   }
 
   function getActive() {
@@ -56,6 +74,7 @@
     var id = makeSessionId();
     var sess = { id: id, created: Date.now(), messages: [] };
     sessions.unshift(sess);
+    pruneSessions();
     activeId = id;
     localStorage.setItem(ACTIVE_KEY, id);
     saveSessions();
