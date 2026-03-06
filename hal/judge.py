@@ -448,8 +448,14 @@ _REPO_ROOT: str = str(Path(__file__).resolve().parent.parent)
 
 
 def _canonicalize_path(path: str) -> str:
-    """Expand ~ and resolve symlinks / .. / double-slashes to a canonical path."""
-    return os.path.realpath(os.path.expanduser(path))
+    """Expand ~ and resolve symlinks / .. / double-slashes to a canonical path.
+
+    Strips embedded null bytes first — ``os.path.realpath`` raises
+    ``ValueError`` on them, and null bytes are never valid in filesystem
+    paths on any mainstream OS.
+    """
+    sanitized = path.replace("\x00", "")
+    return os.path.realpath(os.path.expanduser(sanitized))
 
 
 def _is_repo_path(path: str) -> bool:

@@ -9,3 +9,4 @@ pre-commit>=3.7
 pytest-cov>=5.0
 pip-audit>=2.7
 pip-tools>=7.0
+hypothesis>=6.100
