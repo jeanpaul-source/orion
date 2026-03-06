@@ -67,7 +67,7 @@ _log = _logging.getLogger("hal.server")
 # Retry constants — how long to wait for backends after a cold boot
 # ---------------------------------------------------------------------------
 _RETRY_DELAY = 15  # seconds between attempts
-_MAX_RETRIES = 40  # 40 × 15s = 600s = 10 minutes
+_MAX_RETRIES = 40  # 40 x 15s = 600s = 10 minutes
 
 # ---------------------------------------------------------------------------
 # Server-mode Judge: auto-deny tier 1+ (no TTY available over HTTP)

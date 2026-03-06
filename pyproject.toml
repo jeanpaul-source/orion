@@ -35,14 +35,12 @@ ignore = ["S101"]
 # server.py manipulates sys.path before importing hal.* (required when run
 # directly as a script).  E402 = module-level import not at top of file;
 # I001 = isort treats the sys.path block as separating two import groups.
-"hal/server.py" = ["E402", "I001", "RUF003"]
+"hal/server.py" = ["E402", "I001"]
 # harvest/ and eval/ are CLI tools — print() is their correct output mechanism.
 # scripts/ likewise uses print for user-facing output.
 "harvest/**" = ["T20"]
 "eval/**" = ["T20"]
 "scripts/**" = ["T20"]
-# bootstrap.py contains intentional en-dashes in the system prompt prose.
-"hal/bootstrap.py" = ["RUF001"]
 # Test files: pytest fixtures and parametrize have their own conventions;
 # subprocess calls in tests are mocked, not real security concerns;
 # S101 = assert is how pytest works (also globally suppressed above, kept
