@@ -613,6 +613,105 @@ body {
   background: var(--text-muted);
 }
 
+/* ── Message action buttons (edit, regenerate) ─────────────────────── */
+.message {
+  position: relative;
+}
+
+.msg-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.message:hover .msg-action-btn {
+  opacity: 1;
+}
+
+.msg-action-btn:hover {
+  color: var(--accent);
+}
+
+/* Edit button — positioned top-right of user messages */
+.msg-edit-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+/* Regenerate button — only visible on the last HAL message */
+.msg-regen-btn {
+  display: none;
+  font-size: 15px;
+  margin-top: 4px;
+}
+
+.message-hal.last .msg-regen-btn {
+  display: inline-block;
+  opacity: 0;
+}
+
+.message-hal.last:hover .msg-regen-btn {
+  opacity: 1;
+}
+
+/* ── Inline message edit ───────────────────────────────────────────── */
+.msg-edit-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+
+.msg-edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.msg-edit-save,
+.msg-edit-cancel {
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: background 0.15s, color 0.15s;
+}
+
+.msg-edit-save {
+  background: var(--accent);
+  color: var(--bg-page);
+  border-color: var(--accent);
+}
+
+.msg-edit-save:hover {
+  opacity: 0.9;
+}
+
+.msg-edit-cancel {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.msg-edit-cancel:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
 /* ── Step cards (Show the Work) ────────────────────────────────────── */
 .steps-container {
   margin-left: 4px;

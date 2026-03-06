@@ -242,9 +242,14 @@
     if (sess.messages.length === 0) {
       showWelcome();
     } else {
-      sess.messages.forEach(function (msg) {
-        appendMessage(msg.role, msg.content, msg.intent, false, msg.steps);
+      sess.messages.forEach(function (msg, i) {
+        appendMessage(msg.role, msg.content, msg.intent, false, msg.steps, i);
       });
+      // Mark last HAL message for regenerate button visibility
+      var halMsgs = $messages.querySelectorAll(".message-hal");
+      if (halMsgs.length > 0) {
+        halMsgs[halMsgs.length - 1].classList.add("last");
+      }
     }
     scrollToBottom();
   }
@@ -279,9 +284,12 @@
     $messages.appendChild(card);
   }
 
-  function appendMessage(role, content, intent, animate, steps) {
+  function appendMessage(role, content, intent, animate, steps, msgIndex) {
     var wrapper = document.createElement("div");
     wrapper.className = "message message-" + role;
+    if (typeof msgIndex === "number") {
+      wrapper.setAttribute("data-msg-index", msgIndex);
+    }
 
     // ── Step cards (tool calls, KB/metrics seeds) ─────────────────
     if (role === "hal" && steps && steps.length > 0) {
@@ -373,6 +381,19 @@
 
     wrapper.appendChild(body);
 
+    // Edit button for user messages
+    if (role === "user") {
+      var editBtn = document.createElement("button");
+      editBtn.className = "msg-action-btn msg-edit-btn";
+      editBtn.title = "Edit & resend";
+      editBtn.textContent = "\u270E";
+      editBtn.addEventListener("click", function () {
+        var idx = parseInt(wrapper.getAttribute("data-msg-index"), 10);
+        if (!isNaN(idx)) startEditMessage(idx);
+      });
+      wrapper.appendChild(editBtn);
+    }
+
     // Badge row: intent + step count
     if (role === "hal") {
       var badgeRow = document.createElement("div");
@@ -396,6 +417,16 @@
       if (badgeRow.children.length > 0) {
         wrapper.appendChild(badgeRow);
       }
+
+      // Regenerate button (visible only on the last HAL message via CSS .last class)
+      var regenBtn = document.createElement("button");
+      regenBtn.className = "msg-action-btn msg-regen-btn";
+      regenBtn.title = "Regenerate response";
+      regenBtn.textContent = "\u21BB";
+      regenBtn.addEventListener("click", function () {
+        regenerateLastResponse();
+      });
+      wrapper.appendChild(regenBtn);
     }
 
     $messages.appendChild(wrapper);
@@ -424,6 +455,108 @@
     });
   }
 
+  // ── Message actions (regenerate, edit) ──────────────────────────
+  function _updateLastHalMarker() {
+    // Move the .last class to the newest HAL message so only its
+    // regenerate button is visible.
+    var all = $messages.querySelectorAll(".message-hal");
+    all.forEach(function (el) { el.classList.remove("last"); });
+    if (all.length > 0) all[all.length - 1].classList.add("last");
+  }
+
+  function regenerateLastResponse() {
+    if (sending) return;
+    var sess = getActive();
+    if (!sess || sess.messages.length < 2) return;
+
+    // Find the last HAL message — it should be the last element
+    var lastMsg = sess.messages[sess.messages.length - 1];
+    if (lastMsg.role !== "hal") return;
+
+    // Pop the HAL response
+    sess.messages.pop();
+    // The last message should now be the user message that triggered it
+    var userMsg = sess.messages[sess.messages.length - 1];
+    if (!userMsg || userMsg.role !== "user") return;
+
+    // Pop the user message too — sendMessage will re-add it
+    var userText = userMsg.content;
+    sess.messages.pop();
+    saveSessions();
+    renderMessages();
+
+    // Re-send the same user query
+    sendMessage(userText);
+  }
+
+  function startEditMessage(msgIndex) {
+    if (sending) return;
+    var sess = getActive();
+    if (!sess || msgIndex >= sess.messages.length) return;
+
+    var msg = sess.messages[msgIndex];
+    if (msg.role !== "user") return;
+
+    // Find the DOM wrapper for this message
+    var wrapper = $messages.querySelector('[data-msg-index="' + msgIndex + '"]');
+    if (!wrapper) return;
+
+    // Replace the message body with an editable textarea
+    var body = wrapper.querySelector(".message-content");
+    if (!body) return;
+
+    var textarea = document.createElement("textarea");
+    textarea.className = "msg-edit-textarea";
+    textarea.value = msg.content;
+    textarea.rows = Math.min(msg.content.split("\n").length + 1, 6);
+
+    var btnRow = document.createElement("div");
+    btnRow.className = "msg-edit-actions";
+
+    var saveBtn = document.createElement("button");
+    saveBtn.className = "msg-edit-save";
+    saveBtn.textContent = "Send";
+    btnRow.appendChild(saveBtn);
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "msg-edit-cancel";
+    cancelBtn.textContent = "Cancel";
+    btnRow.appendChild(cancelBtn);
+
+    body.innerHTML = "";
+    body.appendChild(textarea);
+    body.appendChild(btnRow);
+    textarea.focus();
+
+    // Hide the edit button while editing
+    var editBtn = wrapper.querySelector(".msg-edit-btn");
+    if (editBtn) editBtn.style.display = "none";
+
+    function commit() {
+      var newText = textarea.value.trim();
+      if (!newText) { cancel(); return; }
+
+      // Truncate history: remove this message and everything after it
+      sess.messages = sess.messages.slice(0, msgIndex);
+      saveSessions();
+      renderMessages();
+
+      // Send the edited text as a new message
+      sendMessage(newText);
+    }
+
+    function cancel() {
+      renderMessages();
+    }
+
+    saveBtn.addEventListener("click", commit);
+    cancelBtn.addEventListener("click", cancel);
+    textarea.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+      if (e.key === "Escape") { e.preventDefault(); cancel(); }
+    });
+  }
+
   // ── API calls ───────────────────────────────────────────────────
   async function sendMessage(text) {
     if (sending || !text.trim()) return;
@@ -435,7 +568,7 @@
     // Add user message
     sess.messages.push({ role: "user", content: text });
     saveSessions();
-    appendMessage("user", text, null, true);
+    appendMessage("user", text, null, true, null, sess.messages.length - 1);
     showThinking();
 
     try {
@@ -467,7 +600,7 @@
         } catch (_) {
           errText = res.statusText;
         }
-        appendMessage("hal", "**Error:** " + errText, null, true, null);
+        appendMessage("hal", "**Error:** " + errText, null, true, null, sess.messages.length);
         sess.messages.push({ role: "hal", content: "**Error:** " + errText, intent: null, steps: [] });
       } else {
         var data = await res.json();
@@ -477,18 +610,19 @@
           activeId = sess.id;
           localStorage.setItem(ACTIVE_KEY, sess.id);
         }
-        appendMessage("hal", data.response, data.intent, true, data.steps);
+        appendMessage("hal", data.response, data.intent, true, data.steps, sess.messages.length);
         sess.messages.push({ role: "hal", content: data.response, intent: data.intent, steps: data.steps || [] });
       }
     } catch (err) {
       hideThinking();
       var msg = "**Connection error:** " + err.message;
-      appendMessage("hal", msg, null, true, null);
+      appendMessage("hal", msg, null, true, null, sess.messages.length);
       sess.messages.push({ role: "hal", content: msg, intent: null, steps: [] });
     }
 
     saveSessions();
     renderSessions();
+    _updateLastHalMarker();
     sending = false;
     $sendBtn.disabled = false;
     $input.focus();
