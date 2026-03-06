@@ -1,4 +1,4 @@
-.PHONY: lint lint-md format format-check test test-full coverage typecheck check install-hooks dev-setup doc-drift
+.PHONY: lint lint-md format format-check test test-full coverage typecheck audit check install-hooks dev-setup doc-drift
 
 lint:
 	.venv/bin/ruff check hal/ tests/ harvest/ eval/
@@ -26,6 +26,9 @@ typecheck:
 
 doc-drift:
 	.venv/bin/python scripts/check_doc_drift.py
+
+audit:
+	.venv/bin/pip-audit
 
 check: lint lint-md format-check typecheck test doc-drift
 
