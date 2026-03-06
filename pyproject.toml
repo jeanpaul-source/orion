@@ -44,8 +44,11 @@ ignore = ["S101"]
 # bootstrap.py contains intentional en-dashes in the system prompt prose.
 "hal/bootstrap.py" = ["RUF001"]
 # Test files: pytest fixtures and parametrize have their own conventions;
-# subprocess calls in tests are mocked, not real security concerns.
-"tests/**" = ["S603", "S607"]
+# subprocess calls in tests are mocked, not real security concerns;
+# S101 = assert is how pytest works (also globally suppressed above, kept
+# here as defense-in-depth); S108 = mock /tmp paths; S106 = test
+# tokens/passwords; S104 = test assertions about bind addresses.
+"tests/**" = ["S101", "S104", "S106", "S108", "S603", "S607"]
 
 [tool.mypy]
 python_version = "3.12"
