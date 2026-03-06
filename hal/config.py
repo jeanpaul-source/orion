@@ -33,6 +33,10 @@ class Config:
     lab_hardware_summary: (
         str  # one-line hardware description for system prompt; empty = omit from prompt
     )
+    # Web UI authentication — bearer token for /chat endpoint
+    hal_web_token: (
+        str  # required for LAN access; empty string disables auth (localhost-only use)
+    )
     # Judge extensions — additive only; cannot weaken base security rules
     judge_extra_sensitive_paths: (
         str  # colon-separated absolute path prefixes to treat as sensitive; default ""
@@ -79,6 +83,7 @@ def load() -> Config:
         ),
         lab_hostname=os.getenv("LAB_HOSTNAME", ""),
         lab_hardware_summary=os.getenv("LAB_HARDWARE_SUMMARY", ""),
+        hal_web_token=os.getenv("HAL_WEB_TOKEN", ""),
         judge_extra_sensitive_paths=os.getenv("JUDGE_EXTRA_SENSITIVE_PATHS", ""),
         watchdog_disk_rate_pct_per_hour=float(
             os.getenv("WATCHDOG_DISK_RATE_PCT_PER_HOUR", "5.0")
