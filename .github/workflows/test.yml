@@ -49,9 +49,10 @@ jobs:
 
       - name: Tests + Coverage
         run: |
+          THRESHOLD=$(cat .coverage-threshold)
           pytest tests/ --ignore=tests/test_intent.py \
             --cov=hal --cov-report=term-missing --cov-report=xml \
-            --cov-fail-under=60 \
+            --cov-fail-under=$THRESHOLD \
             --junitxml=junit-results.xml \
             -q --no-header
 

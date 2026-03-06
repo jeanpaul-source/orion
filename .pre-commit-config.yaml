@@ -30,9 +30,10 @@ repos:
 
       - id: pytest
         name: pytest (offline suite)
-        entry: .venv/bin/pytest tests/ --ignore=tests/test_intent.py
-          --cov=hal --cov-report=term-missing --cov-fail-under=60
-          -q --no-header --tb=short
+        entry: bash -c '.venv/bin/pytest tests/ --ignore=tests/test_intent.py
+          --cov=hal --cov-report=term-missing
+          --cov-fail-under=$(cat .coverage-threshold)
+          -q --no-header --tb=short'
         language: system
         types: [python]
         pass_filenames: false
