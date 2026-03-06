@@ -141,6 +141,6 @@ run on the host venv (they need direct host access). Old `server.service` and
 - **Observability**: OTel tracing → Grafana Tempo; Pushgateway metrics; Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 787 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 915 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

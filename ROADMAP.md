@@ -27,7 +27,7 @@ What's built, what's next, and where this is going.
 - KB search threshold raised to 0.45, top_k raised to 8
 - Session history poison filter + `prune_old_turns(days=30)` — resolves RC3
 - 96 new unit tests for Judge and MemoryStore
-- Eval harness: 32 queries, 4 code evaluators — baselines: intent 100%, no_raw_json 93.8%, hal_identity 96.9%, web_tool_accuracy 96.9% (Feb 23 2026); all four raised to 100% (Feb 26 2026)
+- Eval harness: 40 queries, 7 code evaluators — baselines: intent 100%, no_raw_json 93.8%, hal_identity 96.9%, web_tool_accuracy 96.9% (Feb 23 2026); all four raised to 100% (Feb 26 2026)
 
 ### Feb 23, 2026 — Trust hardening
 
@@ -133,7 +133,7 @@ What's built, what's next, and where this is going.
 - `OPERATIONS.md`: swap trap documented — `/dev/zram0` is compressed in-RAM swap (not disk); 75 Mi used is normal; investigation found no remediation needed
 - Integration tests: `tests/test_knowledge.py` (13 tests, pgvector `KnowledgeBase.search()`), `tests/test_security.py` (17 tests, Falco/Osquery workers), `tests/test_executor.py` (+3, SSH executor), `tests/test_agent_loop.py` (+10, `_strip_tool_artifacts`), `tests/test_server.py` (+3, routing + fenced-block stripping)
 - Test count: 486 → 530 (all offline, ruff clean)
-- Eval re-run: all four metrics 100% (32/32 queries)
+- Eval re-run: all four code metrics 100% (40 queries as of Mar 6 2026)
 
 ### Feb 26, 2026 — Markdown linting toolchain
 

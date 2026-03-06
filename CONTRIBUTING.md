@@ -78,7 +78,7 @@ HAL_INSTANCE=laptop
 **Run before every push. No exceptions.**
 
 ```bash
-make test           # offline tests only (no Ollama needed) — 558 tests
+make test           # offline tests only (no Ollama needed) — 915 tests
 make test-full      # full suite including intent classifier (requires Ollama)
 ```
 
@@ -92,12 +92,13 @@ OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 .venv/bin/pytest tests/ --ignore=tests/test_intent.py -v
 ```
 
-593 tests total:
+950 tests total:
 
 - **35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
   reachable. Run these on the server if you can't reach Ollama from the laptop.
-- **558 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
-  trust_metrics, Telegram bot, parsers, harvest, prometheus trend, postmortem. Run anywhere with no external services.
+- **915 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
+  trust_metrics, Telegram bot, parsers, harvest, prometheus trend, postmortem, evaluators.
+  Run anywhere with no external services.
 
 `pytest.ini` sets `pythonpath = .` so the `hal` package resolves without install.
 
@@ -115,8 +116,9 @@ make lint       # ruff check — catch errors and import issues
 make lint-md    # markdownlint-cli2 — markdown formatting
 make format     # ruff format — apply formatting
 make typecheck  # mypy — type check hal/ (0 errors in baseline)
-make coverage   # pytest-cov — show coverage report for hal/ (baseline: 62%)
+make coverage   # pytest-cov — show coverage report for hal/ (baseline: 74%)
 make doc-drift  # check for documentation/code drift
+make audit      # pip-audit — check for known vulnerabilities in dependencies
 ```
 
 Or directly:
@@ -155,7 +157,7 @@ KB threshold, tool selection):
 .venv/bin/pip install -r requirements-eval.txt
 
 # On the server (requires vLLM + Ollama + pgvector running)
-python -m eval.run_eval                     # drives 24 queries → eval/responses.jsonl
+python -m eval.run_eval                     # drives 40 queries → eval/responses.jsonl
 python -m eval.evaluate --skip-llm-eval    # scores → eval/results/eval_out.json
 ```
 
@@ -205,7 +207,7 @@ fix stuff                             ← which stuff?
 
 **One logical change per commit.** A commit is ready when:
 
-- `make test` passes (all 558 offline tests)
+- `make test` passes (all 915 offline tests)
 - `make lint` passes
 - `make lint-md` passes
 - `make format` produces no diffs

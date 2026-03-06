@@ -37,7 +37,7 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 
 ## Current state (Mar 2026)
 
-773 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
+915 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
 `hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=100%`, `web_tool_accuracy=100%`.
 
 HAL runs inside a Docker container on the-lab with three defense layers: Judge
@@ -137,8 +137,8 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/trust_metrics.py` | Audit log parser + `get_action_stats` tool |
 | `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
-| `eval/` | Evaluation harness — 24 queries, scorer, baselines |
-| `tests/` | 773 offline tests + 35 intent classifier tests (require Ollama) |
+| `eval/` | Evaluation harness — 40 queries, 7 code evaluators, scorer, baselines |
+| `tests/` | 915 offline tests + 35 intent classifier tests (require Ollama) |
 | `ops/` | Systemd unit files (vllm, watchdog, harvest) + supervisord.conf |
 | `Dockerfile` | Container image definition — python:3.12-slim, non-root user |
 | `docker-compose.yml` | Production deployment — ports, volumes, limits, health check |
