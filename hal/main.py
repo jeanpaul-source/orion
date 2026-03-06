@@ -2,9 +2,10 @@
 """HAL — Orion's coordinator. Run with: python -m hal"""
 
 import argparse
+import contextlib
 import json
-import os
 import readline
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -282,10 +283,8 @@ def main() -> None:
     # Load readline history (skip in non-interactive --print mode)
     if not args.query:
         HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        try:
+        with contextlib.suppress(FileNotFoundError):
             readline.read_history_file(str(HISTORY_FILE))
-        except FileNotFoundError:
-            pass
         readline.set_history_length(1000)
 
     if not args.query:
@@ -419,7 +418,7 @@ def main() -> None:
                 history.clear()
                 console.print(f"[dim]new session {session_id}[/]")
             elif user_input == "/clear":
-                os.system("clear")
+                subprocess.run(["clear"], check=False)  # noqa: S607
             elif user_input.startswith("/"):
                 console.print("[yellow]Unknown command. Type /help.[/]")
             else:

@@ -4,6 +4,7 @@ This module keeps runtime dependencies minimal and only uses HTTP queries.
 It also provides optional metric helpers (no-op when prom pushgateway is absent).
 """
 
+import contextlib
 import os
 import socket
 import threading
@@ -281,14 +282,12 @@ def flush_metrics() -> None:
         return
     instance = os.getenv("HAL_INSTANCE", socket.gethostname())
     body = "\n".join(lines) + "\n"
-    try:
+    with contextlib.suppress(requests.exceptions.RequestException):
         requests.post(
             f"{url.rstrip('/')}/metrics/job/hal/instance/{instance}",
             data=body,
             timeout=2,
         )
-    except requests.exceptions.RequestException:
-        pass
 
 
 def start_metrics_heartbeat(interval_seconds: int = 30) -> None:

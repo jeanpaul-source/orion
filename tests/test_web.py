@@ -364,9 +364,11 @@ class TestFetchUrl:
         mock_resp.iter_content = MagicMock(return_value=[b"<html>long</html>"])
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("hal.web.requests.get", return_value=mock_resp):
-            with patch("hal.web.trafilatura.extract", return_value=long_text):
-                result = fetch_url("https://example.com/long", max_chars=500)
+        with (
+            patch("hal.web.requests.get", return_value=mock_resp),
+            patch("hal.web.trafilatura.extract", return_value=long_text),
+        ):
+            result = fetch_url("https://example.com/long", max_chars=500)
 
         assert len(result.split("\n\n--- [content truncated")[0]) == 500
         assert "truncated" in result
@@ -380,9 +382,11 @@ class TestFetchUrl:
         mock_resp.iter_content = MagicMock(return_value=[html])
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("hal.web.requests.get", return_value=mock_resp):
-            with patch("hal.web.trafilatura.extract", return_value=None):
-                result = fetch_url("https://example.com/fallback")
+        with (
+            patch("hal.web.requests.get", return_value=mock_resp),
+            patch("hal.web.trafilatura.extract", return_value=None),
+        ):
+            result = fetch_url("https://example.com/fallback")
 
         assert "Fallback text for testing." in result
 
@@ -399,9 +403,11 @@ class TestFetchUrl:
         mock_resp.iter_content = MagicMock(return_value=[b"secret"])
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("hal.web.requests.get", return_value=mock_resp):
-            with pytest.raises(ValueError, match="Blocked private"):
-                fetch_url("https://legit-looking.example.com/redirect")
+        with (
+            patch("hal.web.requests.get", return_value=mock_resp),
+            pytest.raises(ValueError, match="Blocked private"),
+        ):
+            fetch_url("https://legit-looking.example.com/redirect")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
     def test_http_error_raises_runtime(self, _mock_dns):  # noqa: PT019
@@ -412,9 +418,11 @@ class TestFetchUrl:
         mock_resp.url = "https://example.com/404"
         mock_resp.raise_for_status.side_effect = req.HTTPError("404 Not Found")
 
-        with patch("hal.web.requests.get", return_value=mock_resp):
-            with pytest.raises(req.HTTPError):
-                fetch_url("https://example.com/404")
+        with (
+            patch("hal.web.requests.get", return_value=mock_resp),
+            pytest.raises(req.HTTPError),
+        ):
+            fetch_url("https://example.com/404")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
     def test_response_size_cap(self, _mock_dns):  # noqa: PT019
@@ -426,9 +434,11 @@ class TestFetchUrl:
         mock_resp.iter_content = MagicMock(return_value=[big_chunk, big_chunk])
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("hal.web.requests.get", return_value=mock_resp):
-            with patch("hal.web.trafilatura.extract", return_value="extracted"):
-                result = fetch_url("https://example.com/huge")
+        with (
+            patch("hal.web.requests.get", return_value=mock_resp),
+            patch("hal.web.trafilatura.extract", return_value="extracted"),
+        ):
+            result = fetch_url("https://example.com/huge")
 
         # Should succeed — the size cap truncates but doesn't error
         assert result == "extracted"
