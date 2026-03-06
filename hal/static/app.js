@@ -28,9 +28,10 @@
   let sending  = false;
 
   // ── Marked config ───────────────────────────────────────────────
-  // NOTE: highlight callback was removed in marked v5+. Syntax highlighting
-  // is handled post-render via hljs.highlightElement() in appendMessage().
-  marked.setOptions({ breaks: true, gfm: true });
+  // CDN libraries are optional — UI degrades to plain text if unavailable.
+  var _marked = typeof marked !== "undefined" ? marked : null;
+  var _hljs = typeof hljs !== "undefined" ? hljs : null;
+  if (_marked) { _marked.setOptions({ breaks: true, gfm: true }); }
 
   // ── Session persistence ─────────────────────────────────────────
   function loadSessions() {
@@ -114,11 +115,17 @@
     body.className = "message-content";
 
     if (role === "hal") {
-      body.innerHTML = marked.parse(content);
-      // Apply syntax highlighting to any code blocks
-      body.querySelectorAll("pre code").forEach(function (block) {
-        hljs.highlightElement(block);
-      });
+      if (_marked) {
+        body.innerHTML = _marked.parse(content);
+        // Apply syntax highlighting to any code blocks
+        if (_hljs) {
+          body.querySelectorAll("pre code").forEach(function (block) {
+            _hljs.highlightElement(block);
+          });
+        }
+      } else {
+        body.textContent = content;
+      }
     } else {
       body.textContent = content;
     }
