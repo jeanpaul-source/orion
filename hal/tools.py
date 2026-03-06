@@ -798,11 +798,11 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
 
 def get_tools(*, tavily_api_key: str = "") -> list[dict]:
     """Return active tools exposed to the LLM for this request."""
-    tools: list[dict] = []
-    for spec in TOOL_REGISTRY.values():
-        if spec["enabled"](tavily_api_key):
-            tools.append(spec["schema"])
-    return tools
+    return [
+        spec["schema"]
+        for spec in TOOL_REGISTRY.values()
+        if spec["enabled"](tavily_api_key)
+    ]
 
 
 def dispatch_tool(

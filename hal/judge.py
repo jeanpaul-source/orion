@@ -486,13 +486,10 @@ def _command_touches_sensitive_path(command: str) -> bool:
             token = token.split("=", 1)[1]
         # Check tokens that look like paths or sensitive basenames
         if (
-            token.startswith("/")
-            or token.startswith("~")
-            or token.startswith(".")
+            token.startswith(("/", "~", "."))
             or os.path.basename(token) in _SENSITIVE_BASENAMES
-        ):
-            if _is_sensitive_path(token):
-                return True
+        ) and _is_sensitive_path(token):
+            return True
     return False
 
 
@@ -802,7 +799,7 @@ class Judge:
             for token in detail.strip().split()[1:]:
                 if "=" in token:
                     token = token.split("=", 1)[1]
-                if token.startswith("/") or token.startswith("~"):
+                if token.startswith(("/", "~")):
                     t = os.path.realpath(os.path.expanduser(token))
                     if any(t.startswith(p) for p in self._extra_sensitive):
                         return 1

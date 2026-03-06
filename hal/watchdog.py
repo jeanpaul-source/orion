@@ -389,9 +389,9 @@ def _check_component_health(config: object | None = None, **_kw: object) -> str 
             except Exception as exc:
                 _log(f"RECOVER ERROR {r.name}: {exc}")
 
-        lines: list[str] = []
-        for r in unhealthy:
-            lines.append(f"{r.name}: {r.status} — {r.detail}")
+        lines: list[str] = [
+            f"{r.name}: {r.status} \u2014 {r.detail}" for r in unhealthy
+        ]
         if recovery_msgs:
             lines.append("")
             lines.append("Recovery actions:")

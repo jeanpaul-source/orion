@@ -312,19 +312,17 @@ def run_all_checks(
     Each check is independent — a failure in one never affects another.
     """
     results: list[ComponentHealth] = []
-    for _name, check_fn in HEALTH_CHECKS:
-        results.append(check_fn(config, timeout))
-    return results
+    return [check_fn(config, timeout) for _name, check_fn in HEALTH_CHECKS]
 
 
 def format_health_table(results: list[ComponentHealth]) -> str:
     """Format health check results as a human-readable table."""
     lines = [f"{'Component':<14} | {'Status':<8} | Detail"]
     lines.append("-" * 60)
-    for r in results:
-        lines.append(
-            f"{r.name:<14} | {r.status:<8} | {r.detail} ({r.latency_ms:.0f}ms)"
-        )
+    lines.extend(
+        f"{r.name:<14} | {r.status:<8} | {r.detail} ({r.latency_ms:.0f}ms)"
+        for r in results
+    )
     return "\n".join(lines)
 
 
