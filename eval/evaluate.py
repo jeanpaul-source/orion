@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HAL evaluation — scores collected responses on four metrics.
+"""HAL evaluation — scores collected responses on seven metrics.
 
 Reads:  eval/responses.jsonl      (output of run_eval.py)
 Writes: eval/results/eval_out.json
@@ -9,12 +9,15 @@ Writes: eval/results/eval_out.json
 
 Evaluators
 ----------
-no_raw_json       Custom code  — B1: response must not contain raw tool-call JSON
-hal_identity      Custom code  — B2: response must not contain "Qwen"/"Alibaba"
-intent_accuracy   Custom code  — routing: intent matched expected_intent
-web_tool_accuracy Custom code  — web: web_search called iff web_search_expected==True
-relevance         Built-in LLM — B3/B6: response relevant to query (needs vLLM)
-coherence         Built-in LLM — general: response is coherent natural language
+no_raw_json          Custom code  — B1: response must not contain raw tool-call JSON
+hal_identity         Custom code  — B2: response must not contain "Qwen"/"Alibaba"
+intent_accuracy      Custom code  — routing: intent matched expected_intent
+web_tool_accuracy    Custom code  — web: web_search called iff web_search_expected==True
+no_tool_simulation   Custom code  — response must not narrate tool calls in fenced JSON
+response_length      Custom code  — response must be 10-4000 chars (skip min for trivial)
+autonomy_quality     Custom code  — autonomy responses must contain specific findings
+relevance            Built-in LLM — B3/B6: response relevant to query (needs vLLM)
+coherence            Built-in LLM — general: response is coherent natural language
 
 Usage:
     .venv/bin/python -m eval.evaluate
@@ -25,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -145,6 +149,142 @@ class WebToolAccuracyEvaluator:
         return {"web_tool_accuracy": 1.0 if correct else 0.0}
 
 
+class NoToolSimulationEvaluator:
+    """Detects tool-call simulation: LLM narrates a tool call in prose.
+
+    Different from B1 (entire response is raw JSON).  Here the response is
+    otherwise-normal prose but contains a fenced JSON block like:
+
+        ```json
+        {"name": "get_metrics", "arguments": {}}
+        ```
+
+    This matches the exact pattern caught by ``hal/sanitize.py``'s
+    ``strip_tool_call_artifacts()`` — but at the eval layer we detect it
+    (score 0) rather than strip it.
+
+    Score 1.0 → clean response (no embedded tool-call fences).
+    Score 0.0 → response simulates a tool call in prose.
+    """
+
+    # Same regex as hal/sanitize.py TOOL_CALL_FENCE_RE — matches fenced JSON
+    # blocks whose body is a single JSON object.
+    _FENCE_RE: ClassVar[re.Pattern[str]] = re.compile(
+        r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL
+    )
+
+    def __call__(self, *, response: str) -> dict:
+        for m in self._FENCE_RE.finditer(response):
+            try:
+                data = json.loads(m.group(1))
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(data, dict) and "name" in data and "arguments" in data:
+                return {"no_tool_simulation": 0.0}
+        return {"no_tool_simulation": 1.0}
+
+
+class ResponseLengthEvaluator:
+    """Checks that responses are neither empty nor excessively long.
+
+    Score 0.0 when:
+      - Response is under 10 characters (for non-trivial queries) — likely a
+        non-answer like "" or "ok".
+      - Response exceeds 4000 characters — likely a raw data dump.
+
+    Score 1.0 otherwise.
+
+    Queries tagged ``"trivial": true`` in the JSONL skip the minimum-length
+    check (greetings like "thanks" legitimately get short responses).
+    """
+
+    _MIN_LENGTH: ClassVar[int] = 10
+    _MAX_LENGTH: ClassVar[int] = 4000
+
+    def __call__(
+        self,
+        *,
+        response: str,
+        trivial: bool | str | None = None,
+    ) -> dict:
+        length = len(response)
+
+        # Normalise trivial flag (may arrive as string from JSONL)
+        is_trivial = False
+        if isinstance(trivial, str):
+            is_trivial = trivial.lower() == "true"
+        elif isinstance(trivial, bool):
+            is_trivial = trivial
+
+        if not is_trivial and length < self._MIN_LENGTH:
+            return {"response_length": 0.0}
+        if length > self._MAX_LENGTH:
+            return {"response_length": 0.0}
+        return {"response_length": 1.0}
+
+
+class AutonomyEvaluator:
+    """Validates that autonomy responses contain specific findings.
+
+    For queries with ``failure_case == "autonomy"``, checks that the response
+    contains at least one status indicator ("healthy", "degraded", "running",
+    etc.) or a known component name.  A generic non-answer like "I'll look
+    into that" scores 0.
+
+    Non-autonomy queries always score 1.0 (not applicable).
+    """
+
+    _STATUS_WORDS: ClassVar[list[str]] = [
+        "healthy",
+        "degraded",
+        "unhealthy",
+        "running",
+        "stopped",
+        "restarted",
+        "recovered",
+        "failed",
+        "up",
+        "down",
+        "ok",
+        "error",
+        "timeout",
+        "unreachable",
+    ]
+
+    _COMPONENT_NAMES: ClassVar[list[str]] = [
+        "vllm",
+        "ollama",
+        "pgvector",
+        "prometheus",
+        "grafana",
+        "pushgateway",
+        "tempo",
+        "falco",
+        "ntopng",
+        "docker",
+        "systemd",
+        "nginx",
+    ]
+
+    def __call__(
+        self,
+        *,
+        response: str,
+        failure_case: str | None = None,
+    ) -> dict:
+        # Only evaluate autonomy queries; everything else passes.
+        if not failure_case or failure_case != "autonomy":
+            return {"autonomy_quality": 1.0}
+
+        lower = response.lower()
+        has_status = any(word in lower for word in self._STATUS_WORDS)
+        has_component = any(name in lower for name in self._COMPONENT_NAMES)
+
+        if has_status or has_component:
+            return {"autonomy_quality": 1.0}
+        return {"autonomy_quality": 0.0}
+
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 
@@ -218,6 +358,9 @@ def main(argv: list[str] | None = None) -> None:
         "hal_identity": HalIdentityEvaluator(),
         "intent_accuracy": IntentAccuracyEvaluator(),
         "web_tool_accuracy": WebToolAccuracyEvaluator(),
+        "no_tool_simulation": NoToolSimulationEvaluator(),
+        "response_length": ResponseLengthEvaluator(),
+        "autonomy_quality": AutonomyEvaluator(),
     }
 
     evaluator_config: dict = {
@@ -230,6 +373,15 @@ def main(argv: list[str] | None = None) -> None:
         "web_tool_accuracy": {
             "tools_called": "${data.tools_called}",
             "web_search_expected": "${data.web_search_expected}",
+        },
+        "no_tool_simulation": {"response": "${data.response}"},
+        "response_length": {
+            "response": "${data.response}",
+            "trivial": "${data.trivial}",
+        },
+        "autonomy_quality": {
+            "response": "${data.response}",
+            "failure_case": "${data.failure_case}",
         },
     }
 
