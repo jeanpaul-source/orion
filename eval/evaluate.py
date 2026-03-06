@@ -277,7 +277,11 @@ class AutonomyEvaluator:
             return {"autonomy_quality": 1.0}
 
         lower = response.lower()
-        has_status = any(word in lower for word in self._STATUS_WORDS)
+        # Use word-boundary matching to avoid substring false positives
+        # (e.g. "ok" matching inside "look").
+        has_status = any(
+            re.search(rf"\b{re.escape(word)}\b", lower) for word in self._STATUS_WORDS
+        )
         has_component = any(name in lower for name in self._COMPONENT_NAMES)
 
         if has_status or has_component:
