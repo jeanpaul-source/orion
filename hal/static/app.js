@@ -42,6 +42,7 @@
   const $loginBtn    = document.getElementById("login-btn");
   const $loginError  = document.getElementById("login-error");
   const $signOutBtn  = document.getElementById("sign-out-btn");
+  const $sessionSearch = document.getElementById("session-search");
 
   // ── State ───────────────────────────────────────────────────────
   let sessions = loadSessions();     // { id, created, messages[] }
@@ -129,6 +130,8 @@
 
   // ── Rendering ───────────────────────────────────────────────────
   function sessionLabel(sess, index) {
+    // Custom label takes priority
+    if (sess.label) return sess.label;
     // Show first user message as preview, or fall back to "Session N"
     var firstMsg = sess.messages.find(function (m) { return m.role === "user"; });
     if (firstMsg && firstMsg.content) {
@@ -140,7 +143,18 @@
 
   function renderSessions() {
     $sessionList.innerHTML = "";
-    sessions.forEach(function (s, i) {
+
+    // Filter by search text
+    var searchTerm = ($sessionSearch.value || "").toLowerCase().trim();
+    var filtered = sessions;
+    if (searchTerm) {
+      filtered = sessions.filter(function (s, i) {
+        return sessionLabel(s, i).toLowerCase().indexOf(searchTerm) !== -1;
+      });
+    }
+
+    filtered.forEach(function (s) {
+      var i = sessions.indexOf(s);  // real index for label fallback
       var el = document.createElement("div");
       el.className = "session-item" + (s.id === activeId ? " active" : "");
 
@@ -148,7 +162,12 @@
       labelRow.className = "session-label-row";
 
       var label = document.createElement("span");
+      label.className = "session-label-text";
       label.textContent = sessionLabel(s, i);
+      label.addEventListener("dblclick", function (e) {
+        e.stopPropagation();
+        startEditLabel(s, label, labelRow);
+      });
       labelRow.appendChild(label);
 
       var exportBtn = document.createElement("button");
@@ -183,6 +202,36 @@
 
     // Update mobile session indicator
     $mobileSess.textContent = activeId ? shortId(activeId) : "";
+  }
+
+  function startEditLabel(sess, labelSpan, row) {
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "session-label-edit";
+    input.value = sess.label || "";
+    input.placeholder = "session name…";
+
+    // Replace the label span with the input
+    row.replaceChild(input, labelSpan);
+    input.focus();
+    input.select();
+
+    function commit() {
+      var val = input.value.trim();
+      if (val) {
+        sess.label = val;
+      } else {
+        delete sess.label;  // revert to auto-generated
+      }
+      saveSessions();
+      renderSessions();
+    }
+
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      if (e.key === "Escape") { e.preventDefault(); renderSessions(); }
+    });
+    input.addEventListener("blur", commit);
   }
 
   function renderMessages() {
@@ -647,6 +696,10 @@
     createSession();
     closeSidebar();
     $input.focus();
+  });
+
+  $sessionSearch.addEventListener("input", function () {
+    renderSessions();
   });
 
   $hamburger.addEventListener("click", function () {

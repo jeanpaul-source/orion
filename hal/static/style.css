@@ -107,6 +107,30 @@ body {
   padding: 4px 0;
 }
 
+/* ── Session search ────────────────────────────────────────────────── */
+.session-search {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 0 16px 4px;
+  padding: 6px 10px;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.session-search:focus {
+  border-color: var(--accent);
+}
+
+.session-search::placeholder {
+  color: var(--text-muted);
+}
+
 .session-item {
   padding: 8px 16px;
   font-family: var(--font-sans);
@@ -170,6 +194,24 @@ body {
 
 .session-delete:hover {
   color: var(--red);
+}
+
+/* ── Session label inline edit ──────────────────────────────────── */
+.session-label-text {
+  cursor: default;
+}
+
+.session-label-edit {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
 }
 
 .sidebar-footer {
