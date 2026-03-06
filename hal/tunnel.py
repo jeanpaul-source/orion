@@ -54,9 +54,9 @@ class SSHTunnel:
             self._proc.terminate()
             self._proc = None
 
-    def __enter__(self):
+    def __enter__(self) -> "SSHTunnel":
         self.start()
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, *_: object) -> None:
         self.stop()
