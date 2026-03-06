@@ -73,6 +73,9 @@ class KnowledgeBase:
                 # outside top_k.  Final slice back to top_k happens below.
                 fetch_k = top_k * _BOOST_FETCH_MULTIPLIER
                 params.extend([embedding, fetch_k])
+                # S608: {where} only interpolates hardcoded column names
+                # ("category = %s", "doc_tier = %s").  All user-supplied
+                # values go through psycopg2 param binding — no injection.
                 cur.execute(
                     f"""
                     SELECT content, file_name, category,
@@ -82,7 +85,7 @@ class KnowledgeBase:
                     {where}
                     ORDER BY embedding <=> %s
                     LIMIT %s
-                    """,
+                    """,  # noqa: S608
                     params,
                 )
                 rows = cur.fetchall()
