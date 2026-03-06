@@ -2,9 +2,32 @@
 target-version = "py312"
 
 [tool.ruff.lint]
-# Defaults: E4, E7, E9 (pycodestyle errors), F (pyflakes).
-# Extend with I (isort) so import order is consistent.
-select = ["E4", "E7", "E9", "F", "I"]
+# Rule sets — each group serves a specific purpose:
+#   E4/E7/E9 — pycodestyle errors (syntax, indentation, runtime)
+#   F        — pyflakes (unused imports, undefined names)
+#   I        — isort (import ordering)
+#   B        — bugbear (common Python gotchas: mutable defaults, assert in except, etc.)
+#   UP       — pyupgrade (modernize to Python 3.12 idioms)
+#   SIM      — simplify (collapse redundant if/with/try patterns)
+#   RUF      — ruff-specific (unused noqa, mutable class attrs, ambiguous unicode)
+#   C4       — comprehensions (simplify list/dict/set construction)
+#   DTZ      — datetime timezone safety (no naive datetimes)
+#   PIE      — misc code quality (no unnecessary pass, deduplicate isinstance)
+#   PERF     — performance (avoid unnecessary copies, use comprehensions)
+#   PT       — pytest best practices (fixture style, parametrize format)
+#   S        — bandit security (subprocess, SQL injection, XML, silent exceptions)
+#   T20      — print statements (enforce structured logging in production code)
+select = [
+    "E4", "E7", "E9", "F", "I",
+    "B", "UP", "SIM", "RUF", "C4",
+    "DTZ", "PIE", "PERF", "PT", "S", "T20",
+]
+
+# Rules that are intentionally disabled project-wide:
+#   RUF001/RUF002/RUF003 — ambiguous unicode: en-dashes and multiplication signs
+#     are used intentionally in prose strings, docstrings, and comments
+#   S101 — assert: used correctly in test files; production code does not assert
+ignore = ["RUF001", "RUF002", "RUF003", "S101"]
 
 [tool.ruff.format]
 # Defaults match black: double quotes, 88-char line length, trailing commas.
@@ -14,8 +37,15 @@ select = ["E4", "E7", "E9", "F", "I"]
 # server.py manipulates sys.path before importing hal.* (required when run
 # directly as a script).  E402 = module-level import not at top of file;
 # I001 = isort treats the sys.path block as separating two import groups.
-# why: path updated when server.py graduated from hal/_unlocked/ to hal/
 "hal/server.py" = ["E402", "I001"]
+# harvest/ and eval/ are CLI tools — print() is their correct output mechanism.
+# scripts/ likewise uses print for user-facing output.
+"harvest/**" = ["T20"]
+"eval/**" = ["T20"]
+"scripts/**" = ["T20"]
+# Test files: pytest fixtures and parametrize have their own conventions;
+# subprocess calls in tests are mocked, not real security concerns.
+"tests/**" = ["S603", "S607"]
 
 [tool.mypy]
 python_version = "3.12"
