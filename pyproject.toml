@@ -56,6 +56,8 @@ python_version = "3.12"
 ignore_missing_imports = true
 # Check function bodies even when they have no annotations
 check_untyped_defs = true
+# Require type annotations on all function definitions
+disallow_untyped_defs = true
 
 [tool.coverage.run]
 # Write coverage data to /tmp so the pre-push hook doesn't see "files modified"
