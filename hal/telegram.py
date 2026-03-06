@@ -89,7 +89,7 @@ def _authorized(update: Update) -> bool:
     )
 
 
-async def cmd_start(update: Update, context) -> None:  # noqa: ARG001
+async def cmd_start(update: Update, context) -> None:
     """/start — greeting."""
     if not _authorized(update):
         return
@@ -98,7 +98,7 @@ async def cmd_start(update: Update, context) -> None:  # noqa: ARG001
     await update.message.reply_text("HAL online. Send any message.")
 
 
-async def cmd_new(update: Update, context) -> None:  # noqa: ARG001
+async def cmd_new(update: Update, context) -> None:
     """/new — reset session."""
     if not _authorized(update):
         return
@@ -109,7 +109,7 @@ async def cmd_new(update: Update, context) -> None:  # noqa: ARG001
     await update.message.reply_text("Session reset.")
 
 
-async def handle_message(update: Update, context) -> None:  # noqa: ARG001
+async def handle_message(update: Update, context) -> None:
     """Process a plain-text message: thinking → POST /chat → edit reply."""
     if not _authorized(update):
         return
@@ -168,10 +168,10 @@ def main() -> None:
         log.error("TELEGRAM_ALLOWED_USER_ID is not set — exiting.")
         sys.exit(1)
 
-    global ALLOWED_USER_ID  # noqa: PLW0603
+    global ALLOWED_USER_ID
     ALLOWED_USER_ID = config.telegram_allowed_user_id
 
-    global _WEB_TOKEN  # noqa: PLW0603
+    global _WEB_TOKEN
     _WEB_TOKEN = getattr(config, "hal_web_token", "") or ""
 
     app = Application.builder().token(config.telegram_bot_token).build()

@@ -46,10 +46,10 @@ class ToolContext(NamedTuple):
     and its single construction site — not every handler signature.
     """
 
-    executor: "SSHExecutor"
-    judge: "Judge"
-    kb: "KnowledgeBase"
-    prom: "PrometheusClient"
+    executor: SSHExecutor
+    judge: Judge
+    kb: KnowledgeBase
+    prom: PrometheusClient
     ntopng_url: str = "http://localhost:3000"
     tavily_api_key: str = ""
     config: object | None = None  # hal.config.Config — optional, enables health checks

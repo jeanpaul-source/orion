@@ -14,7 +14,7 @@ import logging
 import os
 import sys
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -25,8 +25,8 @@ _ctx_turn_id: ContextVar[str | None] = ContextVar("turn_id", default=None)
 
 
 class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:  # noqa: D401
-        payload: Dict[str, Any] = {
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -59,7 +59,7 @@ class JsonFormatter(logging.Formatter):
 
 def setup_logging(
     level: str | int | None = None,
-    console: "Console | None" = None,
+    console: Console | None = None,
 ) -> None:
     """Configure the root logger.
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -160,7 +160,7 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_trips_at_limit(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         timestamps = [
             (now - timedelta(minutes=i)).isoformat(timespec="seconds") for i in range(3)
         ]
@@ -179,7 +179,7 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_prunes_old_entries(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         old_ts = (now - timedelta(hours=2)).isoformat(timespec="seconds")
         recent_ts = (now - timedelta(minutes=5)).isoformat(timespec="seconds")
         state_file.write_text(json.dumps({"test_pb": [old_ts, old_ts, recent_ts]}))
@@ -221,7 +221,7 @@ class TestCircuitBreaker:
 class TestPlaybookExecutor:
     """Test execute_playbook with mocked executor and judge."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_executor(self) -> MagicMock:
         executor = MagicMock()
         executor.run.return_value = {
@@ -231,14 +231,14 @@ class TestPlaybookExecutor:
         }
         return executor
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_judge(self) -> MagicMock:
         judge = MagicMock()
         judge.approve.return_value = True
         judge.record_outcome = MagicMock()
         return judge
 
-    @pytest.fixture()
+    @pytest.fixture
     def sample_playbook(self) -> RecoveryPlaybook:
         return RecoveryPlaybook(
             name="test_restart",
@@ -344,7 +344,7 @@ class TestPlaybookExecutor:
         tmp_path: Path,
     ) -> None:
         state_file = tmp_path / "state.json"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         timestamps = [
             (now - timedelta(minutes=i)).isoformat(timespec="seconds") for i in range(3)
         ]

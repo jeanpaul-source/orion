@@ -24,10 +24,11 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -60,7 +61,7 @@ class CounterStats:
     approved: int = 0
     denied: int = 0
     errors: int = 0  # Not present in audit log; reserved for future
-    last_timestamp: Optional[datetime] = None
+    last_timestamp: datetime | None = None
 
     def update(self, ev: AuditEvent) -> None:
         self.total += 1
@@ -71,7 +72,7 @@ class CounterStats:
         if self.last_timestamp is None or ev.ts > self.last_timestamp:
             self.last_timestamp = ev.ts
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "total": self.total,
             "approved": self.approved,
@@ -94,7 +95,7 @@ _STATUS_NORMALIZE = {
 }
 
 
-def _extract_action_class(action_type: str, detail: str) -> Optional[str]:
+def _extract_action_class(action_type: str, detail: str) -> str | None:
     """Return a normalized action class for run_command; else None.
 
     Heuristics:
@@ -138,7 +139,7 @@ def _extract_action_class(action_type: str, detail: str) -> Optional[str]:
     return parts[0] if parts else None
 
 
-def _parse_line(line: str) -> Optional[AuditEvent]:
+def _parse_line(line: str) -> AuditEvent | None:
     """Parse a single JSON audit log line."""
     stripped = line.strip()
     if not stripped or not stripped.startswith("{"):
@@ -146,7 +147,7 @@ def _parse_line(line: str) -> Optional[AuditEvent]:
     return _parse_json_line(stripped)
 
 
-def _parse_json_line(line: str) -> Optional[AuditEvent]:
+def _parse_json_line(line: str) -> AuditEvent | None:
     """Parse a JSON-format audit entry."""
     try:
         obj = json.loads(line)
@@ -209,7 +210,7 @@ def load_audit_log(path: Path | str | None = None) -> Iterator[AuditEvent]:
 
     def _iter() -> Iterator[AuditEvent]:
         try:
-            with open(resolved, "r", encoding="utf-8", errors="ignore") as f:
+            with open(resolved, encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     ev = _parse_line(line)
                     if ev is not None:
@@ -236,7 +237,7 @@ def load_outcome_log(path: Path | str | None = None) -> Iterator[OutcomeEvent]:
 
     def _iter() -> Iterator[OutcomeEvent]:
         try:
-            with open(resolved, "r", encoding="utf-8", errors="ignore") as f:
+            with open(resolved, encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     stripped = line.strip()
                     if not stripped or not stripped.startswith("{"):
@@ -279,13 +280,13 @@ def load_outcome_log(path: Path | str | None = None) -> Iterator[OutcomeEvent]:
 
 def aggregate_stats(
     events: Iterable[AuditEvent],
-) -> Dict[str, Dict[str, Dict[str, object]]]:
+) -> dict[str, dict[str, dict[str, object]]]:
     """Aggregate events into by_tool and by_action_class counters.
 
     Returns a dict with two maps: by_tool and by_action_class, each mapping key → stats dict.
     """
-    by_tool: Dict[str, CounterStats] = {}
-    by_action_class: Dict[str, CounterStats] = {}
+    by_tool: dict[str, CounterStats] = {}
+    by_action_class: dict[str, CounterStats] = {}
 
     for ev in events:
         # By tool/action_type
@@ -308,7 +309,7 @@ def aggregate_stats(
 # ---------------------------------------------------------------------------
 
 
-def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, Any]:
+def get_action_stats(pattern: str, path: Path | str | None = None) -> dict[str, Any]:
     """Return aggregated stats for events matching a pattern.
 
     Pattern behavior:
@@ -321,7 +322,7 @@ def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, 
     events = list(load_audit_log(path))
 
     # Prepare matcher
-    regex: Optional[re.Pattern[str]] = None
+    regex: re.Pattern[str] | None = None
     use_regex = True
     try:
         regex = re.compile(pattern, re.IGNORECASE)
@@ -345,7 +346,7 @@ def get_action_stats(pattern: str, path: Path | str | None = None) -> Dict[str, 
     total = 0
     approved = 0
     denied = 0
-    last_ts: Optional[datetime] = None
+    last_ts: datetime | None = None
     for ev in matched:
         total += 1
         if ev.status in ("approved", "auto"):

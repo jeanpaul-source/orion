@@ -13,7 +13,7 @@ No LLM calls are made here.  All I/O errors are caught and produce an
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from hal.executor import SSHExecutor
 from hal.judge import Judge
@@ -39,7 +39,7 @@ def _format_ts(dt: datetime) -> str:
     try:
         # Normalise timezone-aware datetimes to UTC; keep naive datetimes as-is.
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            dt = dt.astimezone(UTC).replace(tzinfo=None)
         return dt.strftime("%Y-%m-%dT%H:%M:%S")
     except Exception:
         return str(dt)

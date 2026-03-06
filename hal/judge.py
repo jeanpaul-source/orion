@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -716,7 +716,7 @@ def _load_trust_overrides(
     # Log newly-demoted keys (only keys not already logged as demoted)
     for key in new_demotions - demoted_keys:
         _entry = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "status": "trust_demotion",
             "action": key.split(":", 1)[0] if ":" in key else key,
             "detail": key.split(":", 1)[1] if ":" in key else "",
@@ -903,7 +903,7 @@ class Judge:
         """
         status = "auto" if auto else ("approved" if approved else "denied")
         entry: dict[str, object] = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "tier": tier,
             "status": status,
             "action": action_type,
@@ -952,7 +952,7 @@ class Judge:
         approval entry via session_id / trace_id for trust evolution (B-2).
         """
         entry: dict[str, object] = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "status": "outcome",
             "outcome": outcome,
             "action": action_type,

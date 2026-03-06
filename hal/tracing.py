@@ -125,10 +125,10 @@ class _NoOpSpan:
     def __exit__(self, *_):
         pass
 
-    def set_attribute(self, *_):  # noqa: ANN001
+    def set_attribute(self, *_):
         pass
 
-    def record_exception(self, *_):  # noqa: ANN001
+    def record_exception(self, *_):
         pass
 
 

@@ -270,7 +270,7 @@ def test_falco_log_path_env_var_override(monkeypatch):
 
     importlib.reload(sec)
     try:
-        assert sec.FALCO_LOG == custom_path
+        assert custom_path == sec.FALCO_LOG
 
         # Verify the path is used in the executor call
         exc = _executor(stdout=json.dumps(_FALCO_EVENT))

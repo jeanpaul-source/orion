@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -95,7 +95,7 @@ def _check_circuit_breaker(playbook: RecoveryPlaybook) -> bool:
     """
     state = _load_recovery_state()
     timestamps = state.get(playbook.name, [])
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Prune entries older than 1 hour
     recent: list[str] = []
@@ -118,7 +118,7 @@ def _record_attempt(playbook: RecoveryPlaybook) -> None:
     """Record a recovery attempt timestamp for circuit breaker tracking."""
     state = _load_recovery_state()
     timestamps = state.get(playbook.name, [])
-    timestamps.append(datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    timestamps.append(datetime.now(UTC).isoformat(timespec="seconds"))
     state[playbook.name] = timestamps
     _save_recovery_state(state)
 
@@ -130,8 +130,8 @@ def _record_attempt(playbook: RecoveryPlaybook) -> None:
 
 def execute_playbook(
     playbook: RecoveryPlaybook,
-    executor: "SSHExecutor",
-    judge: "Judge",
+    executor: SSHExecutor,
+    judge: Judge,
 ) -> PlaybookResult:
     """Execute a recovery playbook with circuit breaker and Judge gating.
 

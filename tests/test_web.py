@@ -344,12 +344,11 @@ class TestFetchUrl:
         )
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("hal.web.requests.get", return_value=mock_resp):
-            with patch(
-                "hal.web.trafilatura.extract",
-                return_value="Important article content here.",
-            ):
-                result = fetch_url("https://example.com/article")
+        with patch("hal.web.requests.get", return_value=mock_resp), patch(
+            "hal.web.trafilatura.extract",
+            return_value="Important article content here.",
+        ):
+            result = fetch_url("https://example.com/article")
 
         assert "Important article content here." in result
 

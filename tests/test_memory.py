@@ -59,7 +59,7 @@ def test_poison_detection_false(text):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def mem(tmp_path, monkeypatch):
     """MemoryStore backed by a temp directory — isolated per test."""
     monkeypatch.setattr("hal.memory.DB_PATH", tmp_path / "memory.db")

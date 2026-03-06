@@ -7,7 +7,7 @@ are needed.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import hal.postmortem as pm
@@ -33,7 +33,7 @@ def _make_event(
     reason: str = "fix",
 ) -> AuditEvent:
     return AuditEvent(
-        ts=datetime.fromtimestamp(ts_posix, tz=timezone.utc),
+        ts=datetime.fromtimestamp(ts_posix, tz=UTC),
         tier=tier,
         status=status,
         action_type=action_type,
