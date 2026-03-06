@@ -480,7 +480,7 @@ def run() -> None:
         ("falco", _check_falco, "urgent"),
         ("trend", _check_trends, "high"),
     ]
-    for key, check_fn, urgency in simple_checks:
+    for key, check_fn, _urgency in simple_checks:
         msg = check_fn(state=state, prom=prom, config=config)
         if msg:
             if not _in_cooldown(state, key):

@@ -85,7 +85,7 @@ def web_search(query: str, api_key: str, max_results: int = 5) -> list[dict]:
     except ImportError:
         raise RuntimeError(
             "tavily-python is not installed. Run: pip install tavily-python"
-        )
+        ) from None
 
     client = TavilyClient(api_key=api_key)
     response = client.search(query=cleaned, max_results=max_results)
@@ -178,10 +178,10 @@ def _validate_url(url: str) -> str:
             parsed.port or (443 if parsed.scheme == "https" else 80),
             proto=socket.IPPROTO_TCP,
         )
-    except socket.gaierror:
-        raise ValueError(f"DNS resolution failed for {hostname}")
+    except socket.gaierror as err:
+        raise ValueError(f"DNS resolution failed for {hostname}") from err
 
-    for family, _type, _proto, _canon, sockaddr in addrinfos:
+    for _family, _type, _proto, _canon, sockaddr in addrinfos:
         ip: str = sockaddr[0]  # type: ignore[assignment]  # getaddrinfo always str
         if _is_private_ip(ip):
             raise ValueError(
