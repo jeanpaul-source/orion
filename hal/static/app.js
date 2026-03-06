@@ -137,6 +137,16 @@
       label.textContent = sessionLabel(s, i);
       labelRow.appendChild(label);
 
+      var exportBtn = document.createElement("button");
+      exportBtn.className = "session-export";
+      exportBtn.title = "Export session";
+      exportBtn.textContent = "\u21E9";
+      exportBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        exportSession(s.id);
+      });
+      labelRow.appendChild(exportBtn);
+
       var delBtn = document.createElement("button");
       delBtn.className = "session-delete";
       delBtn.title = "Delete session";
@@ -167,14 +177,70 @@
     if (!sess) return;
 
     sess.messages.forEach(function (msg) {
-      appendMessage(msg.role, msg.content, msg.intent, false);
+      appendMessage(msg.role, msg.content, msg.intent, false, msg.steps);
     });
     scrollToBottom();
   }
 
-  function appendMessage(role, content, intent, animate) {
+  function appendMessage(role, content, intent, animate, steps) {
     var wrapper = document.createElement("div");
     wrapper.className = "message message-" + role;
+
+    // ── Step cards (tool calls, KB/metrics seeds) ─────────────────
+    if (role === "hal" && steps && steps.length > 0) {
+      var stepsContainer = document.createElement("div");
+      stepsContainer.className = "steps-container";
+
+      steps.forEach(function (step) {
+        if (step.type === "kb_seed") {
+          var tag = document.createElement("div");
+          tag.className = "step-seed";
+          tag.innerHTML = '<span class="step-seed-icon">&#x1F4DA;</span> searched knowledge base <span class="step-seed-detail">' + step.chunks + ' chunks</span>';
+          stepsContainer.appendChild(tag);
+        } else if (step.type === "metrics_seed") {
+          var tag2 = document.createElement("div");
+          tag2.className = "step-seed";
+          tag2.innerHTML = '<span class="step-seed-icon">&#x1F4CA;</span> pulled live metrics';
+          stepsContainer.appendChild(tag2);
+        } else if (step.type === "tool_call") {
+          var card = document.createElement("details");
+          card.className = "step-tool-card";
+
+          var summary = document.createElement("summary");
+          summary.className = "step-tool-summary";
+          var argsPreview = "";
+          if (step.args) {
+            var keys = Object.keys(step.args);
+            if (keys.length > 0) {
+              var firstVal = String(step.args[keys[0]]);
+              if (firstVal.length > 50) firstVal = firstVal.slice(0, 50) + "…";
+              argsPreview = ' <span class="step-tool-arg">' + _escapeHtml(keys[0]) + '=' + _escapeHtml(firstVal) + '</span>';
+            }
+          }
+          summary.innerHTML = '<span class="step-tool-icon">&#x26A1;</span> <span class="step-tool-name">' + _escapeHtml(step.name) + '</span>' + argsPreview;
+          card.appendChild(summary);
+
+          var detail = document.createElement("div");
+          detail.className = "step-tool-detail";
+          if (step.args) {
+            var argsBlock = document.createElement("pre");
+            argsBlock.className = "step-tool-args";
+            argsBlock.textContent = JSON.stringify(step.args, null, 2);
+            detail.appendChild(argsBlock);
+          }
+          if (step.result) {
+            var resultBlock = document.createElement("pre");
+            resultBlock.className = "step-tool-result";
+            resultBlock.textContent = step.result;
+            detail.appendChild(resultBlock);
+          }
+          card.appendChild(detail);
+          stepsContainer.appendChild(card);
+        }
+      });
+
+      wrapper.appendChild(stepsContainer);
+    }
 
     var body = document.createElement("div");
     body.className = "message-content";
@@ -182,12 +248,25 @@
     if (role === "hal") {
       if (_marked) {
         body.innerHTML = _marked.parse(content);
-        // Apply syntax highlighting to any code blocks
-        if (_hljs) {
-          body.querySelectorAll("pre code").forEach(function (block) {
-            _hljs.highlightElement(block);
+        // Apply syntax highlighting and copy buttons to code blocks
+        body.querySelectorAll("pre").forEach(function (pre) {
+          var codeEl = pre.querySelector("code");
+          if (_hljs && codeEl) _hljs.highlightElement(codeEl);
+
+          // Copy button
+          pre.style.position = "relative";
+          var copyBtn = document.createElement("button");
+          copyBtn.className = "copy-btn";
+          copyBtn.textContent = "copy";
+          copyBtn.addEventListener("click", function () {
+            var text = (codeEl || pre).textContent;
+            navigator.clipboard.writeText(text).then(function () {
+              copyBtn.textContent = "copied!";
+              setTimeout(function () { copyBtn.textContent = "copy"; }, 1500);
+            });
           });
-        }
+          pre.appendChild(copyBtn);
+        });
       } else {
         body.textContent = content;
       }
@@ -197,11 +276,29 @@
 
     wrapper.appendChild(body);
 
-    if (intent && role === "hal") {
-      var badge = document.createElement("span");
-      badge.className = "intent-badge";
-      badge.textContent = intent;
-      wrapper.appendChild(badge);
+    // Badge row: intent + step count
+    if (role === "hal") {
+      var badgeRow = document.createElement("div");
+      badgeRow.className = "badge-row";
+
+      if (intent) {
+        var badge = document.createElement("span");
+        badge.className = "intent-badge";
+        badge.textContent = intent;
+        badgeRow.appendChild(badge);
+      }
+
+      var toolSteps = (steps || []).filter(function (s) { return s.type === "tool_call"; });
+      if (toolSteps.length > 0) {
+        var stepBadge = document.createElement("span");
+        stepBadge.className = "intent-badge step-count-badge";
+        stepBadge.textContent = toolSteps.length + " tool call" + (toolSteps.length > 1 ? "s" : "");
+        badgeRow.appendChild(stepBadge);
+      }
+
+      if (badgeRow.children.length > 0) {
+        wrapper.appendChild(badgeRow);
+      }
     }
 
     $messages.appendChild(wrapper);
@@ -273,8 +370,8 @@
         } catch (_) {
           errText = res.statusText;
         }
-        appendMessage("hal", "**Error:** " + errText, null, true);
-        sess.messages.push({ role: "hal", content: "**Error:** " + errText, intent: null });
+        appendMessage("hal", "**Error:** " + errText, null, true, null);
+        sess.messages.push({ role: "hal", content: "**Error:** " + errText, intent: null, steps: [] });
       } else {
         var data = await res.json();
         // Update session ID if server assigned a different one
@@ -283,14 +380,14 @@
           activeId = sess.id;
           localStorage.setItem(ACTIVE_KEY, sess.id);
         }
-        appendMessage("hal", data.response, data.intent, true);
-        sess.messages.push({ role: "hal", content: data.response, intent: data.intent });
+        appendMessage("hal", data.response, data.intent, true, data.steps);
+        sess.messages.push({ role: "hal", content: data.response, intent: data.intent, steps: data.steps || [] });
       }
     } catch (err) {
       hideThinking();
       var msg = "**Connection error:** " + err.message;
-      appendMessage("hal", msg, null, true);
-      sess.messages.push({ role: "hal", content: msg, intent: null });
+      appendMessage("hal", msg, null, true, null);
+      sess.messages.push({ role: "hal", content: msg, intent: null, steps: [] });
     }
 
     saveSessions();
@@ -331,11 +428,39 @@
   }
 
   // ── Utilities ───────────────────────────────────────────────────
+  function _escapeHtml(str) {
+    var div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   function shortId(id) {
     if (!id) return "";
     // "web-1709654321000" -> "web-...1000"
     if (id.length > 16) return id.slice(0, 4) + "..." + id.slice(-4);
     return id;
+  }
+
+  function exportSession(id) {
+    var sess = sessions.find(function (s) { return s.id === id; });
+    if (!sess) return;
+    var lines = [];
+    lines.push("# HAL Session — " + new Date(sess.created).toLocaleString());
+    lines.push("");
+    sess.messages.forEach(function (msg) {
+      if (msg.role === "user") {
+        lines.push("> " + msg.content.replace(/\n/g, "\n> "));
+      } else {
+        lines.push(msg.content);
+      }
+      lines.push("");
+    });
+    var blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "hal-session-" + id + ".md";
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   function relativeTime(ts) {
@@ -390,6 +515,22 @@
   });
 
   $overlay.addEventListener("click", closeSidebar);
+
+  // Keyboard shortcuts
+  document.addEventListener("keydown", function (e) {
+    var mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "n") {
+      e.preventDefault();
+      createSession();
+      closeSidebar();
+      $input.focus();
+    } else if (mod && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      $input.focus();
+    } else if (e.key === "Escape") {
+      closeSidebar();
+    }
+  });
 
   // ── Login / auth ────────────────────────────────────────────────
   function showLogin(msg) {
