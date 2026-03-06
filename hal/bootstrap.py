@@ -120,7 +120,8 @@ Disk /data ≥85%, Swap ≥80%, Load ≥16, GPU VRAM ≥95%, GPU temp ≥83°C
 
 • gpu-metrics.timer (every 15s) — nvidia-smi → .prom file for node-exporter textfile collector
 
-• server.service — your HTTP API (FastAPI, port 8087, /chat + /health endpoints)
+• server.service — your HTTP API (FastAPI, port 8087, /chat + /health endpoints). \
+Also serves the Web UI at GET / (vanilla JS chat interface at http://localhost:8087).
 • telegram.service — Telegram bot, polls API, POSTs to http://127.0.0.1:8087/chat
   Both are user systemd services (Restart=on-failure). Deploy order: server first, then telegram.
 

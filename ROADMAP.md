@@ -229,11 +229,25 @@ Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, 
 - System prompt (`hal/bootstrap.py`): Tempo added to Core services so HAL knows it exists
 - `OTLP_ENDPOINT=http://host.docker.internal:4318` — correct value for HAL container → host Tempo
 
+### Mar 5, 2026 — Web UI
+
+- Lightweight browser chat interface served by FastAPI at `GET /` — vanilla JS, no build tooling
+- `hal/static/index.html` + `style.css` + `app.js` — single-page chat app
+- Design: dark monospace-rooted interface with collapsible sidebar (session list + `/health` status dot)
+- Markdown rendering via `marked.js` (CDN), syntax highlighting via `highlight.js` (CDN, github-dark theme)
+- Sessions stored in `localStorage` as `web-{timestamp}`; "New Session" button in sidebar
+- Flat message blocks (no bubbles): user messages prefixed with `>`, HAL messages with blue left border
+- Intent badge displayed below each HAL response; "thinking..." animation while waiting
+- Mobile responsive: sidebar collapses to hamburger menu, full-width chat, pinned input
+- `StaticFiles` mount at `/static` + `CORSMiddleware` added to `hal/server.py`
+- 3 new tests in `test_server.py` (root HTML, CSS served, JS served)
+- Test count: 784 → 787 (all offline, ruff clean)
+
 ---
 
 ## Backlog (immediate)
 
-- **Web UI:** Lightweight browser interface using the same `/chat` HTTP endpoint
+<!-- empty — all items shipped -->
 
 ---
 

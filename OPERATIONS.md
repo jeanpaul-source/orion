@@ -14,7 +14,7 @@ Deploy, configure, and run Orion/HAL on the homelab server.
 
 | Service | How it runs | Port | Notes |
 | --- | --- | --- | --- |
-| **HAL** | Docker Compose (`orion` container) | 127.0.0.1:8087 | HTTP server + Telegram bot via supervisord |
+| **HAL** | Docker Compose (`orion` container) | 127.0.0.1:8087 | HTTP server + Web UI + Telegram bot via supervisord. Open `http://localhost:8087` in a browser for the Web UI. |
 | vLLM | user systemd `vllm.service` | 8000 | Chat LLM — must be fully loaded before starting HAL |
 | Ollama | system systemd | 11434 | Embeddings only, CPU-bound — `OLLAMA_NUM_GPU=0` is load-bearing |
 | pgvector | Docker | 5432 | PostgreSQL + pgvector extension |

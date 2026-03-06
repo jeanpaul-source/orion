@@ -930,3 +930,35 @@ def test_retry_init_health_check_failure_does_not_block_recovery() -> None:
     finally:
         server._state.clear()
         server._state.update(old)
+
+
+# ---------------------------------------------------------------------------
+# Web UI static file serving tests
+# ---------------------------------------------------------------------------
+
+
+def test_root_returns_html() -> None:
+    """GET / serves the web UI index.html."""
+    client = TestClient(server.app)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers.get("content-type", "")
+    assert "<title>HAL</title>" in resp.text
+
+
+def test_static_css_served() -> None:
+    """GET /static/style.css returns the stylesheet."""
+    client = TestClient(server.app)
+    resp = client.get("/static/style.css")
+    assert resp.status_code == 200
+    assert "text/css" in resp.headers.get("content-type", "")
+    assert "--bg-page" in resp.text
+
+
+def test_static_js_served() -> None:
+    """GET /static/app.js returns the JavaScript."""
+    client = TestClient(server.app)
+    resp = client.get("/static/app.js")
+    assert resp.status_code == 200
+    assert "javascript" in resp.headers.get("content-type", "")
+    assert "sendMessage" in resp.text

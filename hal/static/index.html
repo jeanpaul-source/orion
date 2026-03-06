@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HAL</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-brand">HAL</span>
+      <span id="health-dot" class="health-dot" title="Checking..."></span>
+    </div>
+    <button id="new-session-btn" class="new-session-btn">+ New Session</button>
+    <div id="session-list" class="session-list"></div>
+    <div class="sidebar-footer">
+      <span id="health-text" class="health-text">checking...</span>
+    </div>
+  </aside>
+
+  <!-- Main chat area -->
+  <main id="main" class="main">
+    <!-- Mobile header -->
+    <header id="mobile-header" class="mobile-header">
+      <button id="hamburger" class="hamburger" aria-label="Toggle sidebar">&#9776;</button>
+      <span class="mobile-brand">HAL</span>
+      <span id="mobile-session" class="mobile-session"></span>
+    </header>
+
+    <div id="chat-area" class="chat-area">
+      <div id="messages" class="messages"></div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea id="message-input" class="message-input" placeholder="ask hal..." rows="2"></textarea>
+        <button id="send-btn" class="send-btn" aria-label="Send" title="Send">&#8593;</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Sidebar overlay for mobile -->
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

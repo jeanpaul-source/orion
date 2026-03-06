@@ -114,10 +114,10 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/web.py` | `web_search()` via Tavily; `fetch_url()` with SSRF protection + DNS rebinding defence; `sanitize_query()` privacy guard |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/prometheus.py` | PromQL client; `flush_metrics()` batch push to Pushgateway |
-| `hal/server.py` | FastAPI `/chat` + `/health`; `ServerJudge` auto-denies tier 1+ |
+| `hal/server.py` | FastAPI `/chat` + `/health` + Web UI at `GET /`; `ServerJudge` auto-denies tier 1+ |
 | `hal/telegram.py` | Telegram bot; polls API, POSTs to `/chat`; auth by `TELEGRAM_ALLOWED_USER_ID` |
 | `hal/trust_metrics.py` | Audit log parser; `get_action_stats()` tool |
 | `hal/config.py` | Dataclass + `.env` loader; all tunable values live here |
 | `harvest/collect.py` | Lab state + static docs collectors |
 | `harvest/ingest.py` | Chunk → embed → upsert; clears stale chunks before re-ingest |
-| `tests/` | 423 tests: 35 intent (require Ollama) + 388 offline |
+| `tests/` | 787 offline tests passing; intent tests require reachable Ollama |

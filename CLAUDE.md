@@ -137,10 +137,10 @@ run on the host venv (they need direct host access). Old `server.service` and
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log
 - **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am; each successful harvest writes `knowledge/harvest_snapshot.json` (git-tracked) for temporal diff queries
-- **Interface**: terminal REPL (all slash commands including `/postmortem`); HTTP + Telegram interfaces active
-- **Observability**: OTel tracing, Pushgateway metrics, Grafana dashboard
+- **Interface**: terminal REPL (all slash commands including `/postmortem`); HTTP + Telegram interfaces active; Web UI at `GET /` (vanilla JS, dark theme, session sidebar, markdown + syntax highlighting)
+- **Observability**: OTel tracing → Grafana Tempo; Pushgateway metrics; Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 773 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 787 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

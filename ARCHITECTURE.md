@@ -31,7 +31,14 @@ Supporting components:
 
 HTTP layer (hal/server.py):
   FastAPI server — /chat (POST) + /health (GET); ServerJudge auto-denies tier 1+
-  Used by: Telegram bot, future Web UI, external integrations
+  Used by: Web UI, Telegram bot, external integrations
+  Serves static web UI at GET / (hal/static/ — vanilla JS, marked.js, highlight.js)
+
+Web UI (hal/static/):
+  Lightweight browser chat interface — served by FastAPI at /
+  Vanilla JS + marked.js (markdown) + highlight.js (syntax highlighting), no build step
+  Sessions stored in localStorage as web-{timestamp}; sidebar with session list + /health status
+  Same ServerJudge tier-0-only behavior as Telegram
 
 Telegram interface (hal/telegram.py):
   Thin async wrapper — POSTs to /chat endpoint over localhost

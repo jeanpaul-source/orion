@@ -34,6 +34,9 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from rich.console import Console
 
@@ -291,6 +294,28 @@ async def lifespan(app: FastAPI):  # noqa: RUF029
 app = FastAPI(
     title="HAL — Orion homelab coordinator", version="1.0.0", lifespan=lifespan
 )
+
+# CORS — permissive for same-origin; useful during development.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static files for the web UI
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.get("/")
+async def root():
+    """Serve the web UI."""
+    index = _STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(str(index), media_type="text/html")
+    return {"detail": "Web UI not found — hal/static/index.html is missing"}
 
 
 @app.get("/health")
