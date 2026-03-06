@@ -180,8 +180,6 @@ body {
   color: var(--text-muted);
 }
 
-.health-text { }
-
 /* ── Main area ────────────────────────────────────────────────────── */
 .main {
   flex: 1;

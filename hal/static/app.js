@@ -4,7 +4,7 @@
 
   // ── Config ──────────────────────────────────────────────────────
   const API_BASE = "";  // same origin
-  const HEALTH_POLL_MS = 60_000;
+  const HEALTH_POLL_MS = 60000;
   const SESSION_KEY = "hal_sessions";
   const ACTIVE_KEY = "hal_active_session";
   const MAX_SESSIONS = 50;  // prune oldest beyond this limit
@@ -38,7 +38,7 @@
   function loadSessions() {
     try {
       return JSON.parse(localStorage.getItem(SESSION_KEY)) || [];
-    } catch { return []; }
+    } catch (e) { return []; }
   }
 
   function saveSessions() {
