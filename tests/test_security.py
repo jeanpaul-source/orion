@@ -10,7 +10,13 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from hal.security import get_host_connections, get_security_events
+from hal.security import (
+    _parse_nmap_xml,
+    get_host_connections,
+    get_security_events,
+    get_traffic_summary,
+    scan_lan,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -288,3 +294,153 @@ def test_falco_log_path_default():
     from hal.security import FALCO_LOG
 
     assert FALCO_LOG == "/var/log/falco/events.json"
+
+
+# ---------------------------------------------------------------------------
+# get_traffic_summary tests
+# ---------------------------------------------------------------------------
+
+_NTOPNG_IFACE_RESPONSE = json.dumps(
+    {"rc": 0, "rsp": {"bytes_sent": 1000, "bytes_rcvd": 2000, "num_hosts": 5}}
+)
+_NTOPNG_FLOWS_RESPONSE = json.dumps(
+    {
+        "rc": 0,
+        "rsp": [{"src_ip": "192.168.5.10", "dst_ip": "8.8.8.8", "bytes": 500}],
+    }
+)
+
+
+def test_get_traffic_summary_returns_expected_keys():
+    """get_traffic_summary must return a dict with interface and top_flows keys."""
+    exc = _multi_executor(
+        {"stdout": _NTOPNG_IFACE_RESPONSE, "returncode": 0, "stderr": ""},
+        {"stdout": _NTOPNG_FLOWS_RESPONSE, "returncode": 0, "stderr": ""},
+    )
+    result = get_traffic_summary(exc, _judge())
+    assert set(result.keys()) == {"interface", "top_flows"}
+
+
+def test_get_traffic_summary_interface_data_parsed():
+    """Interface data from ntopng must be present in the result."""
+    exc = _multi_executor(
+        {"stdout": _NTOPNG_IFACE_RESPONSE, "returncode": 0, "stderr": ""},
+        {"stdout": _NTOPNG_FLOWS_RESPONSE, "returncode": 0, "stderr": ""},
+    )
+    result = get_traffic_summary(exc, _judge())
+    assert isinstance(result["interface"], dict)
+    assert result["interface"]["rsp"]["bytes_sent"] == 1000
+
+
+def test_get_traffic_summary_empty_when_judge_denies():
+    """Judge denial must return {} without calling executor."""
+    exc = _executor()
+    result = get_traffic_summary(exc, _judge(approve=False))
+    assert result == {}
+    exc.run.assert_not_called()
+
+
+def test_get_traffic_summary_curl_failure():
+    """If curl fails, the value for that endpoint is an error string."""
+    exc = _multi_executor(
+        {"stdout": "", "returncode": 1, "stderr": "connection refused"},
+        {"stdout": _NTOPNG_FLOWS_RESPONSE, "returncode": 0, "stderr": ""},
+    )
+    result = get_traffic_summary(exc, _judge())
+    assert isinstance(result["interface"], str)
+    assert "curl failed" in result["interface"]
+
+
+def test_get_traffic_summary_json_parse_error():
+    """Invalid JSON from ntopng results in an error string, not a crash."""
+    exc = _multi_executor(
+        {"stdout": "not json at all", "returncode": 0, "stderr": ""},
+        {"stdout": _NTOPNG_FLOWS_RESPONSE, "returncode": 0, "stderr": ""},
+    )
+    result = get_traffic_summary(exc, _judge())
+    assert isinstance(result["interface"], str)
+    assert "json parse error" in result["interface"]
+
+
+# ---------------------------------------------------------------------------
+# _parse_nmap_xml tests
+# ---------------------------------------------------------------------------
+
+_NMAP_XML_VALID = """<?xml version="1.0"?>
+<nmaprun>
+  <host>
+    <status state="up"/>
+    <address addr="192.168.5.1" addrtype="ipv4"/>
+    <address addr="AA:BB:CC:DD:EE:FF" addrtype="mac" vendor="Netgear"/>
+    <hostnames>
+      <hostname name="router.local"/>
+    </hostnames>
+  </host>
+  <host>
+    <status state="up"/>
+    <address addr="192.168.5.10" addrtype="ipv4"/>
+  </host>
+</nmaprun>
+"""
+
+
+def test_parse_nmap_xml_returns_host_list():
+    """Valid Nmap XML must produce a list of host dicts."""
+    hosts = _parse_nmap_xml(_NMAP_XML_VALID)
+    assert len(hosts) == 2
+    assert hosts[0]["ip"] == "192.168.5.1"
+    assert hosts[0]["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert hosts[0]["mac_vendor"] == "Netgear"
+    assert hosts[0]["hostname"] == "router.local"
+    assert hosts[0]["status"] == "up"
+
+
+def test_parse_nmap_xml_host_without_mac():
+    """Host with only an IPv4 address (no MAC) must still parse cleanly."""
+    hosts = _parse_nmap_xml(_NMAP_XML_VALID)
+    assert hosts[1]["ip"] == "192.168.5.10"
+    assert hosts[1]["mac"] == ""
+    assert hosts[1]["hostname"] == ""
+
+
+def test_parse_nmap_xml_malformed_returns_error():
+    """Malformed XML must return a single-element list with an error key."""
+    hosts = _parse_nmap_xml("this is not xml <><>")
+    assert len(hosts) == 1
+    assert "error" in hosts[0]
+
+
+def test_parse_nmap_xml_empty_nmaprun():
+    """Valid XML with no <host> elements returns an empty list."""
+    hosts = _parse_nmap_xml('<?xml version="1.0"?><nmaprun></nmaprun>')
+    assert hosts == []
+
+
+# ---------------------------------------------------------------------------
+# scan_lan tests
+# ---------------------------------------------------------------------------
+
+
+def test_scan_lan_returns_parsed_hosts():
+    """scan_lan with valid nmap XML output returns parsed host list."""
+    exc = _executor(stdout=_NMAP_XML_VALID)
+    hosts = scan_lan("192.168.5.0/24", exc, _judge())
+    assert len(hosts) == 2
+    assert hosts[0]["ip"] == "192.168.5.1"
+
+
+def test_scan_lan_empty_when_judge_denies():
+    """Judge denial must return [] without calling executor."""
+    exc = _executor()
+    hosts = scan_lan("192.168.5.0/24", exc, _judge(approve=False))
+    assert hosts == []
+    exc.run.assert_not_called()
+
+
+def test_scan_lan_nmap_failure():
+    """Nmap failure (non-zero exit) returns a single-element error list."""
+    exc = _executor(returncode=1, stderr="nmap: not found")
+    hosts = scan_lan("192.168.5.0/24", exc, _judge())
+    assert len(hosts) == 1
+    assert "error" in hosts[0]
+    assert "nmap failed" in hosts[0]["error"]
