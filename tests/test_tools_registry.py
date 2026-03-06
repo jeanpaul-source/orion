@@ -1,6 +1,9 @@
 """Focused tests for hal.tools registry behavior."""
 
-from unittest.mock import MagicMock
+from __future__ import annotations
+
+import json
+from unittest.mock import MagicMock, patch
 
 from hal.tools import TOOL_REGISTRY, ToolContext, dispatch_tool, get_tools
 
@@ -313,3 +316,407 @@ def test_recover_component_schema_in_registry():
     assert "reason" in params
     required = spec["schema"]["function"]["parameters"]["required"]
     assert "component" in required
+
+
+# ---------------------------------------------------------------------------
+# Handler happy-path tests (Item 5 — coverage expansion)
+# ---------------------------------------------------------------------------
+
+
+def _approve_judge():
+    """Return a Judge-like mock that always approves."""
+    judge = MagicMock()
+    judge.approve.return_value = True
+    return judge
+
+
+def _make_ctx(**overrides) -> ToolContext:
+    """Build a ToolContext with mocks, allowing per-test overrides."""
+    defaults = {
+        "executor": MagicMock(),
+        "judge": _approve_judge(),
+        "kb": MagicMock(),
+        "prom": MagicMock(),
+    }
+    defaults.update(overrides)
+    return ToolContext(**defaults)
+
+
+# --- run_command (happy path) ---
+
+
+def test_run_command_approved_returns_stdout():
+    executor = MagicMock()
+    executor.run.return_value = {
+        "stdout": "PID  CMD\n1  init\n",
+        "stderr": "",
+        "returncode": 0,
+    }
+    ctx = _make_ctx(executor=executor)
+    out = dispatch_tool("run_command", {"command": "ps aux", "reason": "check"}, ctx)
+    assert "PID" in out
+    assert "[exit" not in out
+
+
+def test_run_command_nonzero_exit_includes_exit_code():
+    executor = MagicMock()
+    executor.run.return_value = {"stdout": "", "stderr": "not found", "returncode": 127}
+    ctx = _make_ctx(executor=executor)
+    out = dispatch_tool("run_command", {"command": "badcmd"}, ctx)
+    assert "[stderr] not found" in out
+    assert "[exit 127]" in out
+
+
+def test_run_command_empty_output():
+    executor = MagicMock()
+    executor.run.return_value = {"stdout": "", "stderr": "", "returncode": 0}
+    ctx = _make_ctx(executor=executor)
+    out = dispatch_tool("run_command", {"command": "true"}, ctx)
+    assert out == "(no output)"
+
+
+# --- read_file ---
+
+
+def test_read_file_handler_returns_content():
+    with patch("hal.tools.read_file", return_value="file contents here"):
+        ctx = _make_ctx()
+        out = dispatch_tool(
+            "read_file", {"path": "/etc/hostname", "reason": "check"}, ctx
+        )
+    assert out == "file contents here"
+
+
+def test_read_file_handler_none_returns_error():
+    with patch("hal.tools.read_file", return_value=None):
+        ctx = _make_ctx()
+        out = dispatch_tool("read_file", {"path": "/bad"}, ctx)
+    assert "Could not read" in out
+
+
+# --- list_dir ---
+
+
+def test_list_dir_handler_returns_listing():
+    with patch("hal.tools.list_dir", return_value="bin\netc\nvar"):
+        ctx = _make_ctx()
+        out = dispatch_tool("list_dir", {"path": "/", "reason": "explore"}, ctx)
+    assert "bin" in out
+
+
+def test_list_dir_handler_none_returns_error():
+    with patch("hal.tools.list_dir", return_value=None):
+        ctx = _make_ctx()
+        out = dispatch_tool("list_dir", {"path": "/nope"}, ctx)
+    assert "Could not list" in out
+
+
+# --- write_file ---
+
+
+def test_write_file_handler_success():
+    with patch("hal.tools.write_file", return_value=True):
+        ctx = _make_ctx()
+        out = dispatch_tool(
+            "write_file",
+            {"path": "/tmp/test.txt", "content": "hello", "reason": "test"},
+            ctx,
+        )
+    assert "Written 5 bytes" in out
+
+
+def test_write_file_handler_denied():
+    with patch("hal.tools.write_file", return_value=False):
+        ctx = _make_ctx()
+        out = dispatch_tool("write_file", {"path": "/tmp/x", "content": "y"}, ctx)
+    assert "failed or denied" in out.lower()
+
+
+# --- search_kb ---
+
+
+def test_search_kb_returns_formatted_chunks():
+    kb = MagicMock()
+    kb.search.return_value = [
+        {"file": "docs/ops.md", "score": 0.82, "content": "Deploy via docker compose"},
+        {
+            "file": "docs/arch.md",
+            "score": 0.30,
+            "content": "Low score — should be filtered",
+        },
+    ]
+    ctx = _make_ctx(kb=kb)
+    out = dispatch_tool("search_kb", {"query": "deploy"}, ctx)
+    assert "docs/ops.md" in out
+    assert "0.82" in out
+    assert "Deploy via docker compose" in out
+    # score 0.30 is below 0.45 threshold — should NOT appear
+    assert "Low score" not in out
+
+
+def test_search_kb_no_results():
+    kb = MagicMock()
+    kb.search.return_value = [{"file": "x", "score": 0.20, "content": "noise"}]
+    ctx = _make_ctx(kb=kb)
+    out = dispatch_tool("search_kb", {"query": "nonexistent"}, ctx)
+    assert "No relevant results" in out
+
+
+def test_search_kb_exception():
+    kb = MagicMock()
+    kb.search.side_effect = RuntimeError("connection refused")
+    ctx = _make_ctx(kb=kb)
+    out = dispatch_tool("search_kb", {"query": "test"}, ctx)
+    assert "KB search failed" in out
+
+
+# --- get_metrics ---
+
+
+def test_get_metrics_returns_formatted_health():
+    prom = MagicMock()
+    prom.health.return_value = {"cpu": "23%", "mem": "4.2 GiB", "uptime": None}
+    ctx = _make_ctx(prom=prom)
+    out = dispatch_tool("get_metrics", {}, ctx)
+    assert "cpu: 23%" in out
+    assert "mem: 4.2 GiB" in out
+    # uptime is None — should be excluded
+    assert "uptime" not in out
+
+
+def test_get_metrics_exception():
+    prom = MagicMock()
+    prom.health.side_effect = ConnectionError("timeout")
+    ctx = _make_ctx(prom=prom)
+    out = dispatch_tool("get_metrics", {}, ctx)
+    assert "Metrics unavailable" in out
+
+
+# --- get_trend (custom metric path) ---
+
+
+def test_get_trend_custom_metric():
+    prom = MagicMock()
+    prom.trend.return_value = {
+        "first": 1.0,
+        "last": 2.0,
+        "min": 0.5,
+        "max": 2.5,
+        "delta": 1.0,
+        "delta_per_hour": 1.0,
+        "direction": "rising",
+    }
+    ctx = _make_ctx(prom=prom)
+    out = dispatch_tool(
+        "get_trend",
+        {"metric": "custom", "promql": "up{job='vllm'}", "window": "1h"},
+        ctx,
+    )
+    assert "custom" in out
+    assert "rising" in out
+
+
+def test_get_trend_custom_missing_promql():
+    ctx = _make_ctx()
+    out = dispatch_tool("get_trend", {"metric": "custom"}, ctx)
+    assert "promql is required" in out
+
+
+def test_get_trend_exception():
+    prom = MagicMock()
+    prom.trend.side_effect = RuntimeError("prom down")
+    ctx = _make_ctx(prom=prom)
+    out = dispatch_tool("get_trend", {"metric": "cpu", "window": "1h"}, ctx)
+    assert "Trend query failed" in out
+
+
+# --- web_search ---
+
+
+def test_web_search_returns_formatted_results():
+    with patch("hal.web.web_search") as mock_ws:
+        mock_ws.return_value = [
+            {
+                "score": 0.95,
+                "title": "vLLM Docs",
+                "url": "https://docs.vllm.ai",
+                "content": "Serve LLMs",
+            },
+        ]
+        ctx = _make_ctx(tavily_api_key="test-key")
+        out = dispatch_tool("web_search", {"query": "vllm docs"}, ctx)
+    assert "vLLM Docs" in out
+    assert "https://docs.vllm.ai" in out
+
+
+def test_web_search_no_results():
+    with patch("hal.web.web_search", return_value=[]):
+        ctx = _make_ctx(tavily_api_key="k")
+        out = dispatch_tool("web_search", {"query": "nothing"}, ctx)
+    assert "No results found" in out
+
+
+def test_web_search_exception():
+    with patch("hal.web.web_search", side_effect=RuntimeError("api error")):
+        ctx = _make_ctx(tavily_api_key="k")
+        out = dispatch_tool("web_search", {"query": "test"}, ctx)
+    assert "web_search failed" in out
+
+
+# --- fetch_url (success path) ---
+
+
+def test_fetch_url_approved_returns_text():
+    with patch("hal.web.fetch_url", return_value="Article text here"):
+        judge = _approve_judge()
+        ctx = _make_ctx(judge=judge)
+        out = dispatch_tool(
+            "fetch_url", {"url": "https://example.com", "reason": "research"}, ctx
+        )
+    assert out == "Article text here"
+
+
+def test_fetch_url_exception():
+    with patch("hal.web.fetch_url", side_effect=ValueError("SSRF blocked")):
+        ctx = _make_ctx()
+        out = dispatch_tool("fetch_url", {"url": "http://10.0.0.1"}, ctx)
+    assert "fetch_url failed" in out
+
+
+# --- get_action_stats ---
+
+
+def test_get_action_stats_returns_formatted_stats():
+    with patch("hal.trust_metrics.get_action_stats") as mock_stats:
+        mock_stats.return_value = {
+            "by_tool": {
+                "run_command": {
+                    "total": 42,
+                    "approved": 40,
+                    "denied": 2,
+                    "last_timestamp": "2026-03-01T12:00:00",
+                },
+            },
+        }
+        ctx = _make_ctx()
+        out = dispatch_tool("get_action_stats", {"pattern": "run"}, ctx)
+    assert "run_command" in out
+    assert "total=42" in out
+    assert "approved=40" in out
+
+
+def test_get_action_stats_no_entries():
+    with patch("hal.trust_metrics.get_action_stats", return_value={"by_tool": {}}):
+        ctx = _make_ctx()
+        out = dispatch_tool("get_action_stats", {"pattern": "xyz"}, ctx)
+    assert "No audit entries" in out
+
+
+def test_get_action_stats_exception():
+    with patch("hal.trust_metrics.get_action_stats", side_effect=OSError("no file")):
+        ctx = _make_ctx()
+        out = dispatch_tool("get_action_stats", {}, ctx)
+    assert "get_action_stats failed" in out
+
+
+# --- security handler wrappers ---
+
+
+def test_get_security_events_handler_formats_json():
+    with patch("hal.security.get_security_events") as mock_events:
+        mock_events.return_value = [{"time": "12:00", "rule": "some_rule"}]
+        ctx = _make_ctx()
+        out = dispatch_tool("get_security_events", {"n": "10", "reason": "audit"}, ctx)
+    parsed = json.loads(out)
+    assert parsed[0]["rule"] == "some_rule"
+
+
+def test_get_security_events_handler_empty():
+    with patch("hal.security.get_security_events", return_value=[]):
+        ctx = _make_ctx()
+        out = dispatch_tool("get_security_events", {}, ctx)
+    assert "No security events" in out
+
+
+def test_get_host_connections_handler_formats_json():
+    with patch("hal.security.get_host_connections") as mock_conn:
+        mock_conn.return_value = {"listening": [{"port": 8000}]}
+        ctx = _make_ctx()
+        out = dispatch_tool("get_host_connections", {"reason": "check"}, ctx)
+    parsed = json.loads(out)
+    assert parsed["listening"][0]["port"] == 8000
+
+
+def test_get_host_connections_handler_empty():
+    with patch("hal.security.get_host_connections", return_value={}):
+        ctx = _make_ctx()
+        out = dispatch_tool("get_host_connections", {}, ctx)
+    assert "No host connection data" in out
+
+
+def test_get_traffic_summary_handler_formats_json():
+    with patch("hal.security.get_traffic_summary") as mock_traffic:
+        mock_traffic.return_value = {"interfaces": {"eth0": {}}}
+        ctx = _make_ctx(ntopng_url="http://localhost:3000")
+        out = dispatch_tool("get_traffic_summary", {"reason": "monitor"}, ctx)
+    parsed = json.loads(out)
+    assert "interfaces" in parsed
+
+
+def test_get_traffic_summary_handler_empty():
+    with patch("hal.security.get_traffic_summary", return_value={}):
+        ctx = _make_ctx()
+        out = dispatch_tool("get_traffic_summary", {}, ctx)
+    assert "No traffic data" in out
+
+
+def test_scan_lan_handler_formats_json():
+    with patch("hal.security.scan_lan") as mock_scan:
+        mock_scan.return_value = [{"ip": "192.168.5.1", "mac": "aa:bb:cc:dd:ee:ff"}]
+        ctx = _make_ctx()
+        out = dispatch_tool(
+            "scan_lan", {"subnet": "192.168.5.0/24", "reason": "inventory"}, ctx
+        )
+    parsed = json.loads(out)
+    assert parsed[0]["ip"] == "192.168.5.1"
+
+
+def test_scan_lan_handler_missing_subnet():
+    ctx = _make_ctx()
+    out = dispatch_tool("scan_lan", {}, ctx)
+    assert "subnet is required" in out
+
+
+def test_scan_lan_handler_empty():
+    with patch("hal.security.scan_lan", return_value=[]):
+        ctx = _make_ctx()
+        out = dispatch_tool("scan_lan", {"subnet": "10.0.0.0/24"}, ctx)
+    assert "No hosts found" in out
+
+
+# --- check_system_health ---
+
+
+def test_check_system_health_no_config():
+    ctx = _make_ctx(config=None)
+    out = dispatch_tool("check_system_health", {}, ctx)
+    assert "unavailable" in out.lower()
+
+
+def test_check_system_health_with_config(monkeypatch):
+    monkeypatch.setattr(
+        "hal.healthcheck.run_all_checks",
+        lambda cfg: [],
+    )
+    monkeypatch.setattr(
+        "hal.healthcheck.format_health_table",
+        lambda results: "| Name | Status |",
+    )
+    monkeypatch.setattr(
+        "hal.healthcheck.summary_line",
+        lambda results: "0/0 healthy",
+    )
+    ctx = _make_ctx(config=MagicMock())
+    out = dispatch_tool("check_system_health", {}, ctx)
+    assert "0/0 healthy" in out
+    assert "| Name | Status |" in out
