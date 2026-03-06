@@ -34,3 +34,4 @@ htmlcov/
 *.swo
 .idea/
 .vscode/settings.json
+.hypothesis/
