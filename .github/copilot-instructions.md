@@ -1,7 +1,30 @@
 # Orion — Copilot Instructions
 
 This file is auto-injected into every AI assistant context. It is the orientation layer —
-not the full reference. For depth, read the dedicated docs:
+not the full reference. For depth, read the dedicated docs.
+
+## Communication contract
+
+This project is maintained by someone actively learning to code. Every AI interaction
+is both a work session and a learning opportunity. In addition to global instructions:
+
+1. **Show your work before every code change.** State what you think the problem is
+   (root cause, not symptom), what you plan to change, and why this approach is correct
+   long-term. This is a reliability mechanism — it forces you to reason through the
+   change before making it. If you're guessing, say "I'm guessing because..." explicitly.
+2. **One change at a time.** Make one change, verify it works (tests, lint), then
+   move to the next. Multiple simultaneous changes make it impossible to know what
+   helped or broke.
+3. **No band-aids.** If you're adding a flag, rule, or workaround to suppress a symptom,
+   stop and ask whether the underlying component is actually wrong.
+
+These rules exist because AI assistants drift on long projects — each fix looks
+plausible in isolation, but over many sessions the system degrades. Forcing
+explanation-before-action is the catch mechanism.
+
+---
+
+## Reference docs
 
 | Doc | What it covers |
 |---|---|
