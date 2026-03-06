@@ -28,8 +28,9 @@ if _workspace_root not in sys.path:
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from io import StringIO
+from collections.abc import AsyncIterator
 from typing import Any
 
 import uvicorn
@@ -107,6 +108,7 @@ class ChatResponse(BaseModel):
     response: str
     session_id: str
     intent: str
+    steps: list[dict] = []
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +159,7 @@ def _log_recovery_event(attempt: int, elapsed_seconds: int) -> None:
     parsers, and future autonomy features consume it uniformly.
     """
     entry = {
-        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "tier": 0,
         "status": "auto",
         "action": "system",
@@ -196,7 +198,7 @@ async def _retry_init(config: cfg.Config) -> None:
 
         _populate_state(config, llm, embed, tunnels)
         elapsed = attempt * _RETRY_DELAY
-        recovery_ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        recovery_ts = datetime.now(UTC).isoformat(timespec="seconds")
         _state["_last_recovery"] = recovery_ts
         _state["_recovery_attempts"] = attempt
 
@@ -253,7 +255,7 @@ async def _retry_init(config: cfg.Config) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # noqa: RUF029
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = cfg.load()
     setup_logging()
     setup_tracing()
@@ -337,8 +339,8 @@ async def require_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid bearer token")
 
 
-@app.get("/")
-async def root():
+@app.get("/", response_model=None)
+async def root() -> FileResponse | dict[str, str]:
     """Serve the web UI."""
     index = _STATIC_DIR / "index.html"
     if index.exists():
@@ -382,9 +384,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
     executor: SSHExecutor = _state["executor"]
     judge: Judge = _state["judge"]
 
-    def _run() -> tuple[str, str, str]:
+    def _run() -> tuple[str, list[dict], str, str]:
         # Classify intent inside the thread — embed() is a blocking HTTP call
-        intent, confidence = classifier.classify(req.message)
+        intent, _confidence = classifier.classify(req.message)
 
         # MemoryStore opens a SQLite connection — must be created in the thread
         # that uses it.  asyncio.to_thread runs in a thread-pool thread, so we
@@ -406,7 +408,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             if startup_ctx:
                 system_prompt += f"\n\n── STARTUP EVENT ──\n{startup_ctx}"
 
-            response = dispatch_intent(
+            result = dispatch_intent(
                 req.message,
                 history,
                 llm,
@@ -422,13 +424,15 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 tavily_api_key=config.tavily_api_key,
                 config=config,
             )
-            return response, session_id, intent
+            return str(result), getattr(result, "steps", []), session_id, intent
         finally:
             mem.close()
 
-    response, session_id, intent = await asyncio.to_thread(_run)
+    response, steps, session_id, intent = await asyncio.to_thread(_run)
     response = strip_tool_call_artifacts(response)
-    return ChatResponse(response=response, session_id=session_id, intent=intent)
+    return ChatResponse(
+        response=response, session_id=session_id, intent=intent, steps=steps
+    )
 
 
 # ---------------------------------------------------------------------------

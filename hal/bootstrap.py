@@ -12,13 +12,13 @@ Provides:
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 from rich.console import Console
 
 import hal.config as cfg
-from hal.agent import run_agent
+from hal.agent import AgentResult, run_agent
 from hal.executor import SSHExecutor
 from hal.intent import (
     IntentClassifier,  # why: Layer 1 — needed for conversational routing in dispatch_intent
@@ -41,7 +41,7 @@ _console = Console()
 
 def get_system_prompt(config: cfg.Config) -> str:
     """Return the system prompt with today's date and config values injected."""
-    today = datetime.now().strftime("%A, %B %d, %Y")
+    today = datetime.now(tz=UTC).strftime("%A, %B %d, %Y")
     _vllm_port = urlparse(config.vllm_url).port or 8000
     _ollama_port = urlparse(config.ollama_host).port or 11434
     _prom_port = urlparse(config.prometheus_url).port or 9091
@@ -273,14 +273,14 @@ def _handle_conversational(
     session_id: str,
     system_prompt: str,
     console: Console,
-) -> str:
+) -> AgentResult:
     """Respond to greetings and acknowledgements with a single LLM call, no tools.
 
     # why: conversational turns (hello, thanks, ok) need no tool calls, no KB lookup,
     # and no Prometheus queries — routing them through run_agent wastes at least one
     # extra LLM round-trip and can trigger spurious tool calls.
     """
-    working = list(history) + [{"role": "user", "content": user_input}]
+    working = [*history, {"role": "user", "content": user_input}]
     try:
         msg = llm.chat_with_tools(working, [], system=system_prompt)
     except Exception as e:
@@ -288,7 +288,7 @@ def _handle_conversational(
         # why: error strings in history corrupt every subsequent turn (H-1 contract).
         err = f"LLM unavailable: {e}"
         console.print(f"\n[bold red]hal>[/] {err}")
-        return err
+        return AgentResult(response=err)
     response = (msg.get("content") or "").strip()
     console.print(f"\n[bold cyan]hal>[/] {response}")
     history.append({"role": "user", "content": user_input})
@@ -297,7 +297,7 @@ def _handle_conversational(
     mem.save_turn(session_id, "assistant", response)
     if len(history) > 40:
         history[:] = history[-40:]
-    return response
+    return AgentResult(response=response)
 
 
 def dispatch_intent(
@@ -317,7 +317,7 @@ def dispatch_intent(
     ntopng_url: str = "",
     tavily_api_key: str = "",
     config: object | None = None,
-) -> str:
+) -> AgentResult:
     """Route a query to one of two paths based on intent classification.
 
     Path 1 — conversational (fast): greetings and acknowledgements skip the

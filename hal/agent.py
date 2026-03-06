@@ -1,7 +1,11 @@
 """Agentic loop — LLM calls tools autonomously, Judge gates everything."""
 
+from __future__ import annotations
+
 import json
 import textwrap
+from dataclasses import dataclass, field
+from typing import Any
 
 from rich.console import Console
 
@@ -29,6 +33,58 @@ TOOL_CALLS_TOTAL = Counter("hal_tool_calls_total", labels=("tool", "outcome"))
 log = get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Structured result — behaves like a string so all existing callers/tests
+# continue to work, but carries structured step metadata for the Web UI.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AgentResult:
+    """Return type for run_agent / dispatch_intent.
+
+    Behaves like a ``str`` for backward compatibility (``==``, ``in``,
+    ``.lower()``, ``str()``), while carrying an optional ``steps`` list
+    that the HTTP API serialises for the Web UI.
+    """
+
+    response: str
+    steps: list[dict[str, Any]] = field(default_factory=list)
+
+    # -- string protocol for backward compat with existing tests/callers --
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self.response == other
+        if isinstance(other, AgentResult):
+            return self.response == other.response
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.response)
+
+    def __contains__(self, item: str) -> bool:  # type: ignore[override]
+        return item in self.response
+
+    def __str__(self) -> str:
+        return self.response
+
+    def __repr__(self) -> str:
+        return f"AgentResult(response={self.response!r}, steps={len(self.steps)})"
+
+    def __bool__(self) -> bool:
+        return bool(self.response)
+
+    def lower(self) -> str:
+        return self.response.lower()
+
+    def strip(self, chars: str | None = None) -> str:
+        return self.response.strip(chars)
+
+    def startswith(self, prefix: str | tuple[str, ...], *args: int) -> bool:
+        return self.response.startswith(prefix, *args)
+
+
 def run_agent(
     user_input: str,
     history: list[dict],
@@ -44,16 +100,17 @@ def run_agent(
     ntopng_url: str = "http://localhost:3000",
     tavily_api_key: str = "",
     config: object | None = None,
-) -> str:
+) -> AgentResult:
     """Agentic loop: LLM calls tools autonomously until it produces a final answer.
 
-    Returns the final text response.
-    On LLM failure: prints error, returns error string, does NOT write to history.
+    Returns AgentResult (str-like with .steps metadata).
+    On LLM failure: prints error, returns AgentResult with error, does NOT write to history.
     """
     import time
 
     t0 = time.perf_counter()
     outcome = "ok"
+    steps: list[dict[str, Any]] = []
     with get_tracer().start_as_current_span("hal.run_agent") as span:
         span.set_attribute("hal.session_id", session_id)
         span.set_attribute("hal.query", user_input[:200])
@@ -81,6 +138,8 @@ def run_agent(
                 sections.append("KB context:\n" + context_str)
                 kb_seeded_chunks = len(context_lines) // 2
             span.set_attribute("hal.kb.seeded_chunks", kb_seeded_chunks)
+            if kb_seeded_chunks > 0:
+                steps.append({"type": "kb_seed", "chunks": kb_seeded_chunks})
         except Exception:
             span.set_attribute("hal.kb.seeded_chunks", 0)
 
@@ -111,6 +170,7 @@ def run_agent(
                     f"gpu_temp={_fmt_metric(_metrics.get('gpu_temp_c'), '\u00b0C')}"
                 )
                 sections.append("Live metrics: " + _snapshot)
+                steps.append({"type": "metrics_seed", "snapshot": _snapshot})
                 span.set_attribute("hal.metrics.seeded", True)
         except Exception:
             span.set_attribute("hal.metrics.seeded", False)
@@ -119,7 +179,7 @@ def run_agent(
         augmented = "\n\n".join(sections)
 
         # Working history — don't mutate the session history until we have a final answer
-        working = list(history) + [{"role": "user", "content": augmented}]
+        working = [*history, {"role": "user", "content": augmented}]
 
         response_text = ""
         seen_calls: set[tuple] = set()  # (name, args_json) — detect repeat tool calls
@@ -148,7 +208,7 @@ def run_agent(
                 REQ_LATENCY.observe(dur, intent="agent")
                 REQ_TOTAL.inc(intent="agent", outcome=outcome)
                 flush_metrics()
-                return err
+                return AgentResult(response=err, steps=steps)
 
             working.append(msg)
             tool_calls = msg.get("tool_calls") or []
@@ -235,6 +295,16 @@ def run_agent(
                 preview = textwrap.shorten(result, width=140, placeholder="…")
                 console.print(f"  [dim]{preview}[/]")
 
+                steps.append(
+                    {
+                        "type": "tool_call",
+                        "name": name,
+                        "args": raw_args,
+                        "result": preview,
+                        "iteration": iteration,
+                    }
+                )
+
                 working.append(
                     {"role": "tool", "content": result, "tool_call_id": call_id}
                 )
@@ -277,7 +347,7 @@ def run_agent(
         REQ_TOTAL.inc(intent="agent", outcome=outcome)
         flush_metrics()
         log.info("agent turn", extra={"intent": "agent"})
-        return response_text
+        return AgentResult(response=response_text, steps=steps)
 
 
 def _fmt_args(args: dict) -> str:

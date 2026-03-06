@@ -176,6 +176,7 @@ def test_chat_happy_path_returns_response_session_and_intent(monkeypatch) -> Non
         "response": "final response",
         "session_id": "sess-1",
         "intent": "conversational",
+        "steps": [],
     }
 
 
