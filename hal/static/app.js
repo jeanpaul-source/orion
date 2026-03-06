@@ -28,17 +28,9 @@
   let sending  = false;
 
   // ── Marked config ───────────────────────────────────────────────
-  marked.setOptions({
-    highlight: function (code, lang) {
-      if (lang && hljs.getLanguage(lang)) {
-        try { return hljs.highlight(code, { language: lang }).value; }
-        catch (_) { /* fall through */ }
-      }
-      return hljs.highlightAuto(code).value;
-    },
-    breaks: true,
-    gfm: true,
-  });
+  // NOTE: highlight callback was removed in marked v5+. Syntax highlighting
+  // is handled post-render via hljs.highlightElement() in appendMessage().
+  marked.setOptions({ breaks: true, gfm: true });
 
   // ── Session persistence ─────────────────────────────────────────
   function loadSessions() {
