@@ -29,7 +29,7 @@ def _read_threshold() -> int:
 
 def _run_coverage() -> int | None:
     """Run pytest with --cov and parse the TOTAL line for coverage %."""
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603 — args are hardcoded, not user input
         [
             sys.executable,
             "-m",
