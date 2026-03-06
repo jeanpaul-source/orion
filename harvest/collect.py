@@ -5,7 +5,7 @@ Each collector returns a list of Document dicts ready for ingestion.
 
 import json
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -141,7 +141,7 @@ def collect_docker_containers() -> list[dict]:
 def collect_system_state(ollama_host: str = "http://localhost:11434") -> list[dict]:
     """Disk, memory, listening ports, running services."""
     docs = []
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    ts = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M")
 
     # Disk
     disk = _run(

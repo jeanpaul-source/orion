@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -111,7 +111,7 @@ def test_metric_alert_fires_without_cooldown_and_persists_timestamp(
 def test_metric_alert_is_suppressed_during_cooldown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    now = datetime.now().isoformat(timespec="seconds")
+    now = datetime.now(tz=UTC).isoformat(timespec="seconds")
     observed = _patch_common(
         monkeypatch,
         metrics={"cpu_pct": 90.0},
@@ -130,7 +130,7 @@ def test_metric_recovery_clears_cooldown_and_sends_resolved(
     observed = _patch_common(
         monkeypatch,
         metrics={"cpu_pct": 10.0},
-        state={"cpu_pct": datetime.now().isoformat(timespec="seconds")},
+        state={"cpu_pct": datetime.now(tz=UTC).isoformat(timespec="seconds")},
     )
 
     watchdog.run()
@@ -179,7 +179,7 @@ def test_boolean_check_fires_suppresses_then_clears(
     suppress = _patch_common(
         monkeypatch,
         metrics={},
-        state={key: datetime.now().isoformat(timespec="seconds")},
+        state={key: datetime.now(tz=UTC).isoformat(timespec="seconds")},
         checks=checks,
     )
     watchdog.run()
@@ -192,7 +192,7 @@ def test_boolean_check_fires_suppresses_then_clears(
     clear = _patch_common(
         monkeypatch,
         metrics={},
-        state={key: datetime.now().isoformat(timespec="seconds")},
+        state={key: datetime.now(tz=UTC).isoformat(timespec="seconds")},
         checks=clear_checks,
     )
     watchdog.run()
@@ -348,7 +348,7 @@ def test_check_trends_fires_through_run_with_cooldown(
     suppress = _patch_common(
         monkeypatch,
         metrics={},
-        state={"trend": datetime.now().isoformat(timespec="seconds")},
+        state={"trend": datetime.now(tz=UTC).isoformat(timespec="seconds")},
         checks={"trend": trend_msg},
     )
     watchdog.run()
@@ -360,7 +360,7 @@ def test_check_trends_fires_through_run_with_cooldown(
     clear = _patch_common(
         monkeypatch,
         metrics={},
-        state={"trend": datetime.now().isoformat(timespec="seconds")},
+        state={"trend": datetime.now(tz=UTC).isoformat(timespec="seconds")},
         checks={"trend": None},
     )
     watchdog.run()

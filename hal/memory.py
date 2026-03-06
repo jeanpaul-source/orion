@@ -3,7 +3,7 @@
 import logging
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from hal.sanitize import is_tool_call_artifact
@@ -65,7 +65,7 @@ class MemoryStore:
         sid = str(uuid.uuid4())[:8]
         self.conn.execute(
             "INSERT INTO sessions (id, started_at) VALUES (?, ?)",
-            (sid, datetime.now().isoformat()),
+            (sid, datetime.now(tz=UTC).isoformat()),
         )
         self.conn.commit()
         return sid
@@ -74,7 +74,7 @@ class MemoryStore:
         """Create a session with a caller-chosen ID (e.g. ``tg-12345``)."""
         self.conn.execute(
             "INSERT INTO sessions (id, started_at) VALUES (?, ?)",
-            (sid, datetime.now().isoformat()),
+            (sid, datetime.now(tz=UTC).isoformat()),
         )
         self.conn.commit()
         return sid
@@ -93,7 +93,7 @@ class MemoryStore:
             return
         self.conn.execute(
             "INSERT INTO turns (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-            (session_id, role, content, datetime.now().isoformat()),
+            (session_id, role, content, datetime.now(tz=UTC).isoformat()),
         )
         # Auto-label the session with the first user message
         if role == "user":

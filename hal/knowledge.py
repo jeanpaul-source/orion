@@ -1,6 +1,6 @@
 """pgvector knowledge base — semantic search over homelab docs."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 try:
     import numpy as np
@@ -132,7 +132,7 @@ class KnowledgeBase:
         if np is None:
             raise RuntimeError("numpy is required for embeddings")
         embedding = np.array(self.llm.embed(fact))
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        ts = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
         file_path = f"memory://facts/{ts}"
         conn = self._connect()
         try:

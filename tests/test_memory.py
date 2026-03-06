@@ -6,7 +6,7 @@ file in a tmp directory so the path/schema logic is also exercised.
 Run with: pytest tests/test_memory.py -v
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -125,7 +125,7 @@ def test_prune_removes_old_turns(mem):
     """Turns older than the cutoff must be deleted."""
     sid = mem.new_session()
     # Insert a turn with a timestamp 40 days in the past
-    old_ts = (datetime.now() - timedelta(days=40)).isoformat()
+    old_ts = (datetime.now(tz=UTC) - timedelta(days=40)).isoformat()
     mem.conn.execute(
         "INSERT INTO turns (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
         (sid, "user", "old message", old_ts),
@@ -152,7 +152,7 @@ def test_prune_keeps_recent_turns(mem):
 def test_prune_removes_orphaned_sessions(mem):
     """Sessions with no remaining turns must be deleted after pruning."""
     sid = mem.new_session()
-    old_ts = (datetime.now() - timedelta(days=40)).isoformat()
+    old_ts = (datetime.now(tz=UTC) - timedelta(days=40)).isoformat()
     mem.conn.execute(
         "INSERT INTO turns (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
         (sid, "user", "old", old_ts),
@@ -177,7 +177,7 @@ def test_prune_mixed(mem):
     old_sid = mem.new_session()
     new_sid = mem.new_session()
 
-    old_ts = (datetime.now() - timedelta(days=40)).isoformat()
+    old_ts = (datetime.now(tz=UTC) - timedelta(days=40)).isoformat()
     mem.conn.execute(
         "INSERT INTO turns (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
         (old_sid, "user", "ancient history", old_ts),

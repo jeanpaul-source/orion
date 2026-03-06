@@ -13,7 +13,7 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -73,7 +73,7 @@ def _in_cooldown(state: dict, key: str) -> bool:
     if not last:
         return False
     last_dt = datetime.fromisoformat(last)
-    return datetime.now() - last_dt < timedelta(minutes=COOLDOWN_MINUTES)
+    return datetime.now(tz=UTC) - last_dt < timedelta(minutes=COOLDOWN_MINUTES)
 
 
 def _send_ntfy(ntfy_url: str, alerts: list[tuple[str, float, float, str, str]]) -> bool:
@@ -108,7 +108,7 @@ def _send_ntfy(ntfy_url: str, alerts: list[tuple[str, float, float, str, str]]) 
 
 def _log(msg: str) -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().isoformat(timespec="seconds")
+    ts = datetime.now(tz=UTC).isoformat(timespec="seconds")
     with open(LOG_FILE, "a") as f:
         f.write(f"{ts}  {msg}\n")
 
@@ -133,7 +133,7 @@ def _check_harvest(**_kw: object) -> str | None:
     """Returns an alert message if harvest_last_run is missing or stale."""
     try:
         mtime = HARVEST_LAST_RUN.stat().st_mtime
-        age_hours = (datetime.now().timestamp() - mtime) / 3600
+        age_hours = (datetime.now(tz=UTC).timestamp() - mtime) / 3600
         if age_hours > HARVEST_LAG_HOURS:
             return f"Harvest stale: last run {age_hours:.1f}h ago (threshold: {HARVEST_LAG_HOURS}h)"
     except FileNotFoundError:
@@ -465,7 +465,7 @@ def run() -> None:
                 f"ntfy FAILED (url={'set' if config.ntfy_url else 'not set'}): {', '.join(fired)}"
             )
         # Update state with alert timestamps
-        now = datetime.now().isoformat(timespec="seconds")
+        now = datetime.now(tz=UTC).isoformat(timespec="seconds")
         for key in fired:
             state[key] = now
 
@@ -507,7 +507,7 @@ def run() -> None:
             _log(
                 f"ntfy FAILED (url={'set' if config.ntfy_url else 'not set'}): {', '.join(simple_fired)}"
             )
-        now = datetime.now().isoformat(timespec="seconds")
+        now = datetime.now(tz=UTC).isoformat(timespec="seconds")
         for key in simple_fired:
             state[key] = now
 

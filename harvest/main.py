@@ -7,7 +7,7 @@ Dry run:            python -m harvest --dry-run
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import hal.config as cfg
@@ -73,7 +73,7 @@ def main() -> None:
         else:
             stamp = Path.home() / ".orion" / "harvest_last_run"
             stamp.parent.mkdir(parents=True, exist_ok=True)
-            stamp.write_text(datetime.now().isoformat(timespec="seconds"))
+            stamp.write_text(datetime.now(tz=UTC).isoformat(timespec="seconds"))
 
             repo_root = Path(__file__).resolve().parent.parent
             snapshot_path = repo_root / "knowledge" / "harvest_snapshot.json"

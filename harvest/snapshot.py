@@ -9,7 +9,7 @@ to git on each successful harvest run.  Git history becomes the diff layer —
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -26,7 +26,7 @@ def build_snapshot(
     All list fields are sorted for stable diffs.
     """
     snapshot: dict = {
-        "harvested_at": datetime.now().isoformat(timespec="seconds"),
+        "harvested_at": datetime.now(tz=UTC).isoformat(timespec="seconds"),
         "containers": [],
         "services": [],
         "disks": [],
