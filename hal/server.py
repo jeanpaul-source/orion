@@ -33,7 +33,7 @@ from io import StringIO
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -309,6 +309,34 @@ if _STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
+# ---------------------------------------------------------------------------
+# Bearer token authentication
+# ---------------------------------------------------------------------------
+
+
+def _get_web_token() -> str:
+    """Return the configured web token, or empty string if auth is disabled."""
+    config = _state.get("config")
+    if config is None:
+        return ""
+    return getattr(config, "hal_web_token", "") or ""
+
+
+async def require_auth(request: Request) -> None:
+    """FastAPI dependency: reject requests without a valid bearer token.
+
+    Skipped when ``HAL_WEB_TOKEN`` is empty (auth disabled).
+    """
+    token = _get_web_token()
+    if not token:
+        return  # auth disabled
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    if auth[7:] != token:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+
+
 @app.get("/")
 async def root():
     """Serve the web UI."""
@@ -334,7 +362,7 @@ async def health_check() -> dict[str, str | int]:
     return result
 
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_auth)])
 async def chat(req: ChatRequest) -> ChatResponse:
     """Send a message to HAL; returns the assistant response."""
     if "_startup_error" in _state:

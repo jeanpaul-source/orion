@@ -42,6 +42,10 @@ MAX_TG_LEN = 4096  # Telegram message length limit
 
 _SECRETS_RE = re.compile(r"/run/homelab-secrets/\S+")
 
+# Bearer token for authenticating with the HAL HTTP server.
+# Populated in main() after config is loaded.
+_WEB_TOKEN: str = ""
+
 # ---------------------------------------------------------------------------
 # Session tracking
 # ---------------------------------------------------------------------------
@@ -116,10 +120,14 @@ async def handle_message(update: Update, context) -> None:  # noqa: ARG001
     session_id = _get_session_id(update.effective_chat.id)
 
     try:
+        headers = {}
+        if _WEB_TOKEN:
+            headers["Authorization"] = f"Bearer {_WEB_TOKEN}"
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             resp = await client.post(
                 HAL_CHAT_URL,
                 json={"message": update.message.text, "session_id": session_id},
+                headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -162,6 +170,9 @@ def main() -> None:
 
     global ALLOWED_USER_ID  # noqa: PLW0603
     ALLOWED_USER_ID = config.telegram_allowed_user_id
+
+    global _WEB_TOKEN  # noqa: PLW0603
+    _WEB_TOKEN = getattr(config, "hal_web_token", "") or ""
 
     app = Application.builder().token(config.telegram_bot_token).build()
     app.add_handler(CommandHandler("start", cmd_start))

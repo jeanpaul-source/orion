@@ -720,7 +720,7 @@ def test_chat_injects_startup_context_into_system_prompt() -> None:
 
     server._state.update(
         {
-            "config": MagicMock(ntopng_url="", tavily_api_key=""),
+            "config": MagicMock(ntopng_url="", tavily_api_key="", hal_web_token=""),
             "llm": fake_llm,
             "kb": MagicMock(),
             "prom": MagicMock(),
@@ -762,7 +762,7 @@ def test_chat_omits_startup_context_on_clean_start() -> None:
 
     server._state.update(
         {
-            "config": MagicMock(ntopng_url="", tavily_api_key=""),
+            "config": MagicMock(ntopng_url="", tavily_api_key="", hal_web_token=""),
             "llm": fake_llm,
             "kb": MagicMock(),
             "prom": MagicMock(),
