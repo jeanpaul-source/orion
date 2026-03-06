@@ -1,14 +1,14 @@
 {"query": "please check the lab for anything that seems off", "expected_intent": "agentic", "failure_case": "B1", "description": "Exact query from session history that produced raw JSON tool call as response text"}
 {"query": "what port does prometheus run on?", "expected_intent": "fact", "failure_case": "B1", "description": "Simple fact query that triggered get_metrics JSON dump instead of an answer"}
-{"query": "hello", "expected_intent": "agentic", "failure_case": "B1", "description": "Single word greeting that triggered search_kb JSON with AWS query as response"}
+{"query": "hello", "expected_intent": "agentic", "failure_case": "B1", "description": "Single word greeting that triggered search_kb JSON with AWS query as response", "trivial": true}
 {"query": "what are you?", "expected_intent": "agentic", "failure_case": "B2", "description": "Direct identity question — model tends to respond as Qwen not HAL"}
 {"query": "who made you?", "expected_intent": "agentic", "failure_case": "B2", "description": "Identity provenance question — RLHF training overrides system prompt"}
 {"query": "are you qwen?", "expected_intent": "agentic", "failure_case": "B2", "description": "Direct challenge — model should deny or redirect, not confirm Qwen identity"}
 {"query": "do you have a system prompt?", "expected_intent": "agentic", "failure_case": "B2", "description": "Exact question from session 550cae47 that triggered Qwen identity response"}
 {"query": "do you remember our talks?", "expected_intent": "agentic", "failure_case": "B2", "description": "Memory probe from B2 session — model denied having memory, contradicting system prompt"}
 {"query": "hello Hal, how are you today?", "expected_intent": "agentic", "failure_case": "B3", "description": "Exact greeting from B3 session that was answered with Prometheus container docs"}
-{"query": "thanks", "expected_intent": "agentic", "failure_case": "B3", "description": "Casual acknowledgement — no intent category exists, falls to agentic, KB seeds noise"}
-{"query": "good morning", "expected_intent": "agentic", "failure_case": "B3", "description": "Casual greeting with no KB-relevant content — should be answered naturally"}
+{"query": "thanks", "expected_intent": "agentic", "failure_case": "B3", "description": "Casual acknowledgement — no intent category exists, falls to agentic, KB seeds noise", "trivial": true}
+{"query": "good morning", "expected_intent": "agentic", "failure_case": "B3", "description": "Casual greeting with no KB-relevant content — should be answered naturally", "trivial": true}
 {"query": "is everything ok with the lab?", "expected_intent": "health", "failure_case": "B4", "description": "Exact query from session 834492e3 that exhausted max iterations without an answer"}
 {"query": "run a full health check on all services", "expected_intent": "agentic", "failure_case": "B4", "description": "Broad agentic query that tends to trigger repeated get_metrics loops"}
 {"query": "jp@the-lab:~/orion$ hal --new", "expected_intent": "agentic", "failure_case": "B5", "description": "Terminal prompt pasted into HAL — model tried to execute it as a command"}
@@ -35,3 +35,6 @@
 {"query": "what happened on startup? did anything go wrong?", "expected_intent": "agentic", "failure_case": "autonomy", "description": "Should reference recovery context from degraded start if applicable"}
 {"query": "pgvector is down, diagnose and fix it", "expected_intent": "agentic", "failure_case": "autonomy", "description": "Should call check_system_health first, then recover_component — full detect→recover loop"}
 {"query": "how many times has the watchdog restarted services today?", "expected_intent": "agentic", "failure_case": "autonomy", "description": "Should check audit log for recovery events via run_command or trust_metrics tool"}
+{"query": "check all running containers and show me their resource usage", "expected_intent": "agentic", "failure_case": "simulation", "description": "Broad container query — historically triggers LLM to narrate tool calls in fenced JSON blocks instead of executing them"}
+{"query": "hey", "expected_intent": "agentic", "failure_case": "positive", "description": "Minimal greeting — response may be short but valid; skip min-length check", "trivial": true}
+{"query": "hi there, just checking in", "expected_intent": "agentic", "failure_case": "positive", "description": "Casual greeting — valid short response expected; skip min-length check", "trivial": true}
