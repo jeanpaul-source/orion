@@ -12,6 +12,9 @@
 > risk surface. HAL runs as user `jp` with full permissions; the Judge is
 > the only barrier.
 >
+> **Status:** Blocks A–F complete. 24-hour soak test in progress (started
+> 2026-03-05 ~17:30). Verification due ~2026-03-06 18:30.
+>
 > **Priority:** Before all other feature work (multi-host SSH, Agent Zero,
 > MCP). Build the walls before expanding the territory.
 >
@@ -50,10 +53,10 @@
   - [Block F — Documentation \& Soak](#block-f--documentation--soak)
     - [Items](#items-5)
   - [Open Questions](#open-questions)
-    - [Q1: hal-svc write access scope](#q1-hal-svc-write-access-scope)
-    - [Q2: Harvest execution location](#q2-harvest-execution-location)
-    - [Q3: Read-only root filesystem (`--read-only`)](#q3-read-only-root-filesystem---read-only)
-    - [Q4: Network isolation](#q4-network-isolation)
+    - [Q1: hal-svc write access scope — RESOLVED: (A)](#q1-hal-svc-write-access-scope--resolved-a)
+    - [Q2: Harvest execution location — RESOLVED: neither (stays on host)](#q2-harvest-execution-location--resolved-neither-stays-on-host)
+    - [Q3: Read-only root filesystem — DEFERRED](#q3-read-only-root-filesystem--deferred)
+    - [Q4: Network isolation — DEFERRED](#q4-network-isolation--deferred)
   - [Rollback Plan](#rollback-plan)
   - [Dependency Graph](#dependency-graph)
   - [Appendix A — Dockerfile](#appendix-a--dockerfile)
@@ -70,6 +73,7 @@
     - [Why SSH, not Docker exec from inside?](#why-ssh-not-docker-exec-from-inside)
     - [Latency impact](#latency-impact)
     - [Path remapping for file reads (C2)](#path-remapping-for-file-reads-c2)
+  - [Commit History](#commit-history)
   - [Revision Log](#revision-log)
 
 ---
@@ -219,7 +223,7 @@ sshd config on the host. This is all manual ops work on `the-lab` — no code ch
 
 ### Items
 
-- [ ] **A1 — Create `hal-svc` system user**
+- [x] **A1 — Create `hal-svc` system user**
 
   ```bash
   sudo useradd -r -s /bin/bash -m hal-svc
@@ -233,7 +237,7 @@ sshd config on the host. This is all manual ops work on `the-lab` — no code ch
 
   Verify: `id hal-svc` shows `docker` and `systemd-journal` groups.
 
-- [ ] **A2 — Generate dedicated SSH key pair**
+- [x] **A2 — Generate dedicated SSH key pair**
 
   ```bash
   ssh-keygen -t ed25519 -f ~/.ssh/hal-svc -N "" -C "hal-svc@orion-container"
@@ -249,7 +253,7 @@ sshd config on the host. This is all manual ops work on `the-lab` — no code ch
 
   Verify: `ssh -i ~/.ssh/hal-svc hal-svc@localhost "whoami && id"`
 
-- [ ] **A3 — Install sudoers rules**
+- [x] **A3 — Install sudoers rules**
 
   Create `/etc/sudoers.d/hal-svc` — see [Appendix D](#appendix-d--sudoers-file)
   for the full file.
@@ -266,7 +270,7 @@ sshd config on the host. This is all manual ops work on `the-lab` — no code ch
   Verify: `ssh -i ~/.ssh/hal-svc hal-svc@localhost "sudo docker ps --format '{{.Names}}'"`
   Verify deny: `ssh -i ~/.ssh/hal-svc hal-svc@localhost "sudo rm -rf /tmp/test"` → denied
 
-- [ ] **A4 — Configure sshd for `hal-svc`**
+- [x] **A4 — Configure sshd for `hal-svc`**
 
   Create `/etc/ssh/sshd_config.d/hal-svc.conf`:
 
@@ -284,7 +288,7 @@ sshd config on the host. This is all manual ops work on `the-lab` — no code ch
 
   Verify: SSH still works after reload.
 
-- [ ] **A5 — Symlink ~/.orion for hal-svc**
+- [x] **A5 — Symlink ~/.orion for hal-svc**
 
   > **Added (2026-03-05):** System prompt references `~/.orion/` paths
   > (watchdog state, watchdog log, harvest timestamp). When commands run
@@ -310,20 +314,20 @@ image. No code changes yet — just the container infrastructure files.
 
 ### Items
 
-- [ ] **B1 — Write Dockerfile**
+- [x] **B1 — Write Dockerfile** (`2520cb9`)
 
   Create `Dockerfile` in the repo root. See [Appendix A](#appendix-a--dockerfile)
   for the full file.
 
   Key decisions:
-  - `python:3.11-slim` base (not Alpine — `psycopg2` needs `libpq-dev`/`gcc`)
+  - `python:3.12-slim` base (not Alpine — `psycopg2` needs `libpq-dev`/`gcc`)
   - Non-root `hal` user inside the container
   - SSH config baked in for `host.docker.internal` → `hal-svc`
   - `~/.orion/` created for standalone use (overridden by mount in compose)
 
   Files to create: `Dockerfile`
 
-- [ ] **B2 — Write docker-compose.yml**
+- [x] **B2 — Write docker-compose.yml** (`2520cb9`)
 
   Create `docker-compose.yml` in the repo root. See [Appendix B](#appendix-b--docker-compose)
   for the full file.
@@ -338,7 +342,7 @@ image. No code changes yet — just the container infrastructure files.
 
   Files to create: `docker-compose.yml`
 
-- [ ] **B3 — Write supervisord config**
+- [x] **B3 — Write supervisord config** (`2520cb9`)
 
   Create `ops/supervisord.conf`. See [Appendix C](#appendix-c--supervisord-config)
   for the full file.
@@ -348,7 +352,7 @@ image. No code changes yet — just the container infrastructure files.
 
   Files to create: `ops/supervisord.conf`
 
-- [ ] **B4 — Build the image**
+- [x] **B4 — Build the image** (`2520cb9`)
 
   ```bash
   cd ~/orion && docker compose build
@@ -369,7 +373,7 @@ estimated change: ~20 lines in existing files.
 
 ### Items
 
-- [ ] **C1 — Falco log path environment variable**
+- [x] **C1 — Falco log path environment variable** (`234668a`)
 
   **File:** `hal/security.py`
   **Change:** Make the Falco log path configurable:
@@ -384,7 +388,7 @@ estimated change: ~20 lines in existing files.
   Tests: existing security tests should pass. Add a test that verifies the env
   var override.
 
-- [ ] **C2 — File reads via SSH**
+- [x] **C2 — File reads via SSH** (no code change needed)
 
   **File:** `hal/workers.py` (and possibly `hal/tools.py`)
   **Change:** When running inside the container, `read_file` and `list_dir` should
@@ -401,7 +405,7 @@ estimated change: ~20 lines in existing files.
   Tests: mock the executor, verify file reads go through SSH when `LAB_HOST` is
   not in `_LOCAL_HOSTS`.
 
-- [ ] **C3 — System prompt path references**
+- [x] **C3 — System prompt path references** (no code change; resolved by A5 symlink)
 
   **File:** `hal/bootstrap.py`
   **Change:** Update any hardcoded path references in the system prompt to reflect
@@ -423,7 +427,7 @@ tool path works correctly.
 
 ### Items
 
-- [ ] **D1 — Start container and verify health endpoint**
+- [x] **D1 — Start container and verify health endpoint**
 
   ```bash
   docker compose up -d && docker compose logs -f
@@ -437,7 +441,7 @@ tool path works correctly.
 
   Expected: `{"status": "ok", ...}`
 
-- [ ] **D2 — Verify REPL via docker exec**
+- [x] **D2 — Verify REPL via docker exec**
 
   ```bash
   docker exec -it orion python -m hal --new
@@ -450,7 +454,7 @@ tool path works correctly.
 
   Verify: Judge y/N prompts still work (TTY is attached via `docker exec -it`).
 
-- [ ] **D3 — Verify chat endpoint**
+- [x] **D3 — Verify chat endpoint**
 
   ```bash
   curl -X POST http://localhost:8087/chat \
@@ -460,7 +464,7 @@ tool path works correctly.
 
   Expected: a real response (not an error).
 
-- [ ] **D4 — Verify security boundaries**
+- [x] **D4 — Verify security boundaries**
 
   ```bash
   # Container cannot write to read-only mounts
@@ -482,7 +486,7 @@ tool path works correctly.
   → Expected: Permission denied (hal-svc cannot access /home/jp/)
   ```
 
-- [ ] **D5 — Run test suite inside container**
+- [x] **D5 — Run test suite inside container**
 
   ```bash
   docker exec orion python -m pytest tests/ --ignore=tests/test_intent.py -v
@@ -491,7 +495,7 @@ tool path works correctly.
   Some tests may need adjustment (mocked executors should work; tests that assume
   localhost execution may need updates). Fix any failures before proceeding.
 
-- [ ] **D6 — Verify Telegram bot**
+- [x] **D6 — Verify Telegram bot**
 
   Send a message to the Telegram bot. Verify it responds. Check audit log:
 
@@ -512,7 +516,7 @@ harvest/watchdog to use `docker exec`. Create the `hal` shell alias.
 
 ### Items
 
-- [ ] **E1 — Disable old systemd units**
+- [x] **E1 — Disable old systemd units**
 
   ```bash
   systemctl --user disable --now server.service
@@ -521,35 +525,21 @@ harvest/watchdog to use `docker exec`. Create the `hal` shell alias.
 
   Do NOT delete the unit files — they're the rollback path.
 
-- [ ] **E2 — Update harvest timer**
+- [x] **E2 — Update harvest timer** (no change — stays on host venv)
 
-  Change `harvest.service` `ExecStart` from direct Python invocation to:
+  > **Deviation:** Plan called for `docker exec orion python -m harvest`.
+  > Harvest needs direct host access (Docker socket, `systemctl cat`,
+  > `Path.read_text()` on host paths). Inside the container it only
+  > collected 13 chunks from 6 docs (vs 17,250 from 1,272 on host).
+  > Harvest stays on the host venv unchanged — it's a host-monitoring
+  > tool, not part of HAL's chat/agent.
 
-  ```
-  ExecStart=docker exec orion python -m harvest
-  ```
+- [x] **E3 — Update watchdog timer** (no change — stays on host venv)
 
-  ```bash
-  systemctl --user daemon-reload
-  ```
+  > **Deviation:** Same as E2. Watchdog reads `/var/log/falco` and uses
+  > host `Path.home()`. Stays on host venv unchanged.
 
-  Verify: `systemctl --user start harvest.service` succeeds.
-
-- [ ] **E3 — Update watchdog timer**
-
-  Same pattern as E2:
-
-  ```
-  ExecStart=docker exec orion python -m hal.watchdog
-  ```
-
-  ```bash
-  systemctl --user daemon-reload
-  ```
-
-  Verify: `systemctl --user start watchdog.service` succeeds.
-
-- [ ] **E4 — Shell alias**
+- [x] **E4 — Shell alias**
 
   Add to `~/.bashrc`:
 
@@ -559,7 +549,7 @@ harvest/watchdog to use `docker exec`. Create the `hal` shell alias.
 
   Verify: open a new terminal, type `hal`, confirm REPL starts.
 
-- [ ] **E5 — Deploy alias**
+- [x] **E5 — Deploy alias**
 
   Add to `~/.bashrc`:
 
@@ -583,49 +573,52 @@ everything is stable.
 
 ### Items
 
-- [ ] **F1 — Update OPERATIONS.md**
+- [x] **F1 — Update OPERATIONS.md** (`5d35109`)
 
-  Update deploy instructions, systemd unit references, log access commands, and
+  Updated deploy instructions, systemd unit references, log access commands, and
   the services table to reflect Docker Compose deployment.
 
-  Files to change: `OPERATIONS.md`
+  Files changed: `OPERATIONS.md`
 
-- [ ] **F2 — Update CLAUDE.md current state**
+- [x] **F2 — Update CLAUDE.md current state** (`5d35109`)
 
-  Update the "Current State" section to note HAL runs in a container. Remove/update
-  any references to bare-metal execution.
+  Updated "Current State" section to note HAL runs in a container.
 
-  Files to change: `CLAUDE.md`
+  Files changed: `CLAUDE.md`
 
-- [ ] **F3 — Update README.md**
+- [x] **F3 — Update README.md** (`5d35109`)
 
-  Update quick-start instructions and key files table to reflect container
+  Updated quick-start instructions and key files table to reflect container
   deployment.
 
-  Files to change: `README.md`
+  Files changed: `README.md`
 
-- [ ] **F4 — 24-hour soak test**
+- [~] **F4 — 24-hour soak test** (started 2026-03-05 ~17:30)
 
-  Let the container run for 24 hours. After 24h, verify:
+  **T+26 minute baseline:**
+
+  | Check | Value |
+  |---|---|
+  | Container status | Up 26m (healthy) |
+  | Health endpoint | `{"status":"ok"}` |
+  | Restart count | 0 |
+  | Audit log | 83 entries |
+  | Telegram polls (30s window) | 5 successful |
+  | Harvest timer | Next: 2026-03-06 03:00 |
+  | Watchdog timer | Every 5 min, active |
+
+  **24h verification commands** (run ~2026-03-06 18:30):
 
   ```bash
-  # Container still running
-  docker ps | grep orion
-
-  # Health endpoint responds
-  curl http://localhost:8087/health
-
-  # Audit log has activity (watchdog, any user queries)
-  docker exec orion wc -l /home/hal/.orion/audit.log
-
-  # Harvest ran at 3am
-  docker exec orion ls -la /home/hal/.orion/  # check timestamps
-
-  # No OOM or restart events
-  docker inspect orion --format '{{.RestartCount}}'
+  docker ps | grep orion                              # still running?
+  curl http://127.0.0.1:8087/health                   # still healthy?
+  docker inspect orion --format '{{.RestartCount}}'   # should be 0
+  wc -l ~/.orion/audit.log                            # growing (watchdog writes)
+  journalctl --user -u harvest.service --since "03:00" | tail -5  # 3am harvest ran?
+  docker logs --since 1m orion 2>&1 | grep -c '200 OK'  # telegram still polling?
   ```
 
-  If all checks pass, containerization is complete.
+  If all checks pass, mark this `[x]` — containerization is complete.
 
 ---
 
@@ -633,42 +626,27 @@ everything is stable.
 
 Decisions to make before or during implementation:
 
-### Q1: hal-svc write access scope
+### Q1: hal-svc write access scope — RESOLVED: (A)
 
-The sudoers file (Appendix D) allows service management commands (`systemctl
-restart`, `docker restart`). These are "write" operations. The Judge gates them
-at tier 1 (REPL: prompts; HTTP: auto-denies). But `hal-svc` has the OS-level
-*permission*.
+Kept as designed — Judge + sudoers are two independent layers. `hal-svc` has
+OS-level permission for service management; the Judge gates at tier 1.
 
-- **(A)** Keep as designed — Judge + sudoers are two independent layers.
-- **(B)** Remove service management from sudoers. HAL becomes fully read-only
-  at the OS level. You SSH in as `jp` to restart things.
+### Q2: Harvest execution location — RESOLVED: neither (stays on host)
 
-Both defensible. Current plan uses (A).
+Neither (A) nor (B). Harvest and watchdog stay on the **host venv** — they
+need direct system access (Docker socket, systemd, host filesystem). See
+revision notes on E2/E3.
 
-### Q2: Harvest execution location
+### Q3: Read-only root filesystem — DEFERRED
 
-- **(A)** `docker exec orion python -m harvest` from host timer — simpler,
-  keeps systemd timers as-is.
-- **(B)** Cron/scheduler inside the container — more self-contained.
+Not yet implemented. Add `--read-only` + tmpfs as a future hardening step
+after the soak test confirms stability.
 
-Current plan uses (A).
+### Q4: Network isolation — DEFERRED
 
-### Q3: Read-only root filesystem (`--read-only`)
-
-Docker supports `--read-only` which makes the entire container filesystem
-read-only. Maximum hardening but may break Python tempfile operations, pip cache.
-
-**Recommendation:** Defer. Add as a hardening step after everything works.
-
-### Q4: Network isolation
-
-The container needs outbound access to ~10 services (vLLM, Ollama, pgvector,
-Prometheus, Pushgateway, ntopng, Grafana, Tavily API, Telegram API, OTLP,
-SSH to host). Restricting outbound traffic would be complex. The Judge's `web.py`
-already has SSRF protection.
-
-**Recommendation:** Defer. Default bridge network is fine for now.
+Default bridge network. Container needs ~10 outbound connections. Restricting
+them would be complex for marginal benefit. `web.py` SSRF protection covers
+the fetch_url path.
 
 ---
 
@@ -734,7 +712,7 @@ Blocks D → E → F are sequential.
 
 ```dockerfile
 # Orion HAL container
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # System dependencies for SSH client and build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -776,9 +754,9 @@ USER hal
 CMD ["supervisord", "-c", "/app/ops/supervisord.conf"]
 ```
 
-**Why python:3.11-slim, not Alpine?** `psycopg2` needs `libpq-dev` + `gcc` which
+**Why python:3.12-slim, not Alpine?** `psycopg2` needs `libpq-dev` + `gcc` which
 are painful on Alpine. Image size difference (~150MB vs ~80MB) is irrelevant on a
-64GB server.
+64GB server. Python 3.12 matches project target (`pyproject.toml`, mypy config).
 
 **Why non-root?** If there's a container escape, the attacker lands as `hal` not
 root. Root inside a container can often map to root on the host.
@@ -841,6 +819,9 @@ services:
       retries: 3
       start_period: 120s
 
+    security_opt:
+      - label:disable    # SELinux (Fedora 43): :z relabelling would break host services
+
     environment:
       - HOME=/home/hal
       - LAB_HOST=host.docker.internal
@@ -862,9 +843,12 @@ blocks until vLLM responds.
 [supervisord]
 nodaemon=true
 user=hal
+logfile=/dev/stdout
+logfile_maxbytes=0
+pidfile=/tmp/supervisord.pid
 
 [program:server]
-command=python -m hal.server
+command=python -m hal.server --host 0.0.0.0
 directory=/app
 autorestart=true
 stdout_logfile=/dev/stdout
@@ -882,9 +866,14 @@ stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 ```
 
-**Why one container, not two?** HTTP server and Telegram bot share codebase, `.env`,
-state directory, and audit log. Splitting would double volume mounts for no security
-benefit. Telegram just POSTs to localhost:8087.
+**Why `--host 0.0.0.0`?** Inside a container, Docker port forwarding routes traffic
+to the container's eth0 interface, not loopback. Binding to `127.0.0.1` (default)
+makes the server unreachable from outside the container. Security is maintained by
+compose's `127.0.0.1:8087:8087` host-side binding.
+
+**Why logfile/pidfile overrides?** `/app` is a read-only mount. Supervisord's
+defaults write to the working directory, which would fail. Log goes to stdout
+(visible via `docker logs`), pid goes to `/tmp`.
 
 ---
 
@@ -999,6 +988,21 @@ container. Two options:
 
 Option A is the starting point. If multi-file operations prove too slow, Option B can
 be added as an optimization.
+
+---
+
+## Commit History
+
+| Commit | Description |
+|---|---|
+| `2520cb9` | Block B — Dockerfile, compose, supervisord, .dockerignore |
+| `234668a` | Block C1 — Falco path env var |
+| `4887014` | Plan revision notes (B+C findings) |
+| `186e7e6` | Fix: SELinux label:disable |
+| `dd419eb` | Fix: supervisord log/pid to writable paths |
+| `bad5b90` | Plan revision notes (D findings) |
+| `83f4bf8` | Plan revision notes (E findings) |
+| `5d35109` | Docs: OPERATIONS, CLAUDE, README updated |
 
 ---
 
