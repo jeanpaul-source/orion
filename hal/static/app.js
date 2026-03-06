@@ -176,10 +176,44 @@
     var sess = getActive();
     if (!sess) return;
 
-    sess.messages.forEach(function (msg) {
-      appendMessage(msg.role, msg.content, msg.intent, false, msg.steps);
-    });
+    if (sess.messages.length === 0) {
+      showWelcome();
+    } else {
+      sess.messages.forEach(function (msg) {
+        appendMessage(msg.role, msg.content, msg.intent, false, msg.steps);
+      });
+    }
     scrollToBottom();
+  }
+
+  var WELCOME_PROMPTS = [
+    { icon: "\uD83D\uDCCA", text: "how\u2019s the lab?" },
+    { icon: "\uD83D\uDD12", text: "check security events" },
+    { icon: "\uD83D\uDCBE", text: "show disk and memory usage" },
+    { icon: "\uD83D\uDD0D", text: "what services are running?" },
+  ];
+
+  function showWelcome() {
+    var card = document.createElement("div");
+    card.className = "welcome-card";
+    card.innerHTML =
+      '<div class="welcome-logo">HAL</div>' +
+      '<p class="welcome-hint">Homelab AI assistant. Ask anything about your infrastructure.</p>' +
+      '<div class="welcome-prompts"></div>';
+    var grid = card.querySelector(".welcome-prompts");
+    WELCOME_PROMPTS.forEach(function (p) {
+      var btn = document.createElement("button");
+      btn.className = "welcome-prompt-btn";
+      btn.innerHTML = '<span class="welcome-prompt-icon">' + p.icon + '</span> ' + _escapeHtml(p.text);
+      btn.addEventListener("click", function () {
+        $input.value = p.text;
+        $input.focus();
+        sendMessage(p.text);
+        $input.value = "";
+      });
+      grid.appendChild(btn);
+    });
+    $messages.appendChild(card);
   }
 
   function appendMessage(role, content, intent, animate, steps) {
