@@ -469,6 +469,7 @@ class TestServerJudgePropagation:
         config.chat_model = "test-model"
         config.infra_base = "/opt"
         config.tavily_api_key = ""
+        config.hal_web_token = ""
 
         # Pre-populate server state
         _state.clear()
