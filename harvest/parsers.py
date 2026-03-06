@@ -91,7 +91,7 @@ def parse_html(file_path: Path) -> str | None:
         if len(text) >= _MIN_TEXT_LENGTH:
             return text
     except Exception:
-        pass
+        log.debug("HTML regex fallback failed for %s", file_path, exc_info=True)
 
     log.debug("HTML extraction produced too little text: %s", file_path)
     return None

@@ -10,6 +10,7 @@ Usage:
 """
 
 import json
+import logging
 import subprocess
 import sys
 from collections.abc import Callable
@@ -27,6 +28,8 @@ from hal.judge import AUDIT_LOG, Judge
 from hal.notify import send_ntfy_simple as _send_ntfy_simple
 from hal.playbooks import execute_playbook, get_playbook
 from hal.prometheus import METRIC_PROMQL, PrometheusClient
+
+_logger = logging.getLogger(__name__)
 
 STATE_FILE = Path.home() / ".orion" / "watchdog_state.json"
 LOG_FILE = Path.home() / ".orion" / "watchdog.log"
@@ -117,7 +120,7 @@ def _check_ntp(**_kw: object) -> str | None:
     """Returns an alert message if NTP is not synchronized, else None."""
     try:
         out = subprocess.run(
-            ["timedatectl", "show", "--property=NTPSynchronized"],
+            ["timedatectl", "show", "--property=NTPSynchronized"],  # noqa: S607 -- known binary, PATH controlled
             capture_output=True,
             text=True,
             timeout=5,
@@ -125,7 +128,7 @@ def _check_ntp(**_kw: object) -> str | None:
         if out == "NTPSynchronized=no":
             return "NTP not synchronized — clock may drift"
     except Exception:
-        pass
+        _logger.debug("NTP check failed", exc_info=True)
     return None
 
 
@@ -139,7 +142,7 @@ def _check_harvest(**_kw: object) -> str | None:
     except FileNotFoundError:
         return "Harvest has never run (no harvest_last_run file)"
     except Exception:
-        pass
+        _logger.debug("Harvest check failed", exc_info=True)
     return None
 
 
@@ -167,7 +170,7 @@ def _check_containers(**_kw: object) -> str | None:
     """Returns an alert message if any critical container is exited/dead, else None."""
     try:
         out = subprocess.run(
-            [
+            [  # noqa: S607 -- known binary, PATH controlled
                 "docker",
                 "ps",
                 "--filter",
@@ -189,7 +192,7 @@ def _check_containers(**_kw: object) -> str | None:
             names = ", ".join(sorted(down))
             return f"Critical containers down: {names}"
     except Exception:
-        pass
+        _logger.debug("Container check failed", exc_info=True)
     return None
 
 
@@ -210,6 +213,7 @@ def _check_trends(
         try:
             summary = prom.trend(promql, "1h")
         except Exception:
+            _logger.debug("Trend query failed for %s", promql_key, exc_info=True)
             continue
         if summary is None:
             continue
@@ -234,8 +238,8 @@ def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
     if not FALCO_LOG.exists():
         return None
     try:
-        out = subprocess.run(
-            ["tail", "-n", str(FALCO_TAIL), str(FALCO_LOG)],
+        out = subprocess.run(  # noqa: S603 -- hardcoded command with constants only
+            ["tail", "-n", str(FALCO_TAIL), str(FALCO_LOG)],  # noqa: S607
             capture_output=True,
             text=True,
             timeout=10,

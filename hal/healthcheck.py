@@ -170,7 +170,7 @@ def check_containers(
     start = time.monotonic()
     try:
         result = subprocess.run(
-            [
+            [  # noqa: S607 -- known binary, PATH controlled
                 "docker",
                 "ps",
                 "--format",

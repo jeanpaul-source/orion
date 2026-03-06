@@ -12,6 +12,7 @@ No LLM calls are made here.  All I/O errors are caught and produce an
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import UTC, datetime
 
@@ -24,6 +25,8 @@ from hal.security import (
 from hal.trust_metrics import (
     load_audit_log,
 )
+
+_log = logging.getLogger(__name__)
 
 # PromQL expressions for the three trend metrics (mirrors PrometheusClient.health())
 _CPU_PROMQL = '100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
@@ -59,6 +62,9 @@ def _audit_section(window_hours: int) -> str:
             try:
                 ev_ts = ev.ts.timestamp()
             except Exception:
+                _log.debug(
+                    "Skipping audit event with unparseable timestamp", exc_info=True
+                )
                 continue
             if ev_ts < cutoff:
                 continue

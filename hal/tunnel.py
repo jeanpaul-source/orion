@@ -25,8 +25,8 @@ class SSHTunnel:
         self._proc: subprocess.Popen | None = None
 
     def start(self, wait: float = 5.0) -> None:
-        self._proc = subprocess.Popen(
-            [
+        self._proc = subprocess.Popen(  # noqa: S603 -- hardcoded SSH tunnel command, no user input
+            [  # noqa: S607 -- known binary, PATH controlled
                 "ssh",
                 "-N",
                 "-o",

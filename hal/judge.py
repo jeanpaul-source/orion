@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import UTC, datetime
@@ -13,6 +14,8 @@ from rich.console import Console
 
 if TYPE_CHECKING:
     from hal.llm import VLLMClient
+
+_log = logging.getLogger(__name__)
 
 AUDIT_LOG = Path.home() / ".orion" / "audit.log"
 
@@ -920,7 +923,7 @@ class Judge:
             if tid:
                 entry["turn_id"] = tid
         except Exception:
-            pass
+            _log.debug("session context unavailable for audit entry", exc_info=True)
 
         # OTel trace correlation
         try:
@@ -932,7 +935,7 @@ class Judge:
                 entry["trace_id"] = f"{ctx.trace_id:032x}"
                 entry["span_id"] = f"{ctx.span_id:016x}"
         except Exception:
-            pass
+            _log.debug("OTel context unavailable for audit entry", exc_info=True)
 
         with open(self.audit_log, "a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -967,7 +970,7 @@ class Judge:
             if tid:
                 entry["turn_id"] = tid
         except Exception:
-            pass
+            _log.debug("session context unavailable for outcome entry", exc_info=True)
 
         # OTel trace correlation
         try:
@@ -979,7 +982,7 @@ class Judge:
                 entry["trace_id"] = f"{ctx.trace_id:032x}"
                 entry["span_id"] = f"{ctx.span_id:016x}"
         except Exception:
-            pass
+            _log.debug("OTel context unavailable for outcome entry", exc_info=True)
 
         with open(self.audit_log, "a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")

@@ -42,7 +42,9 @@ class JsonFormatter(logging.Formatter):
                 payload["trace_id"] = f"{ctx.trace_id:032x}"
                 payload["span_id"] = f"{ctx.span_id:016x}"
         except Exception:
-            pass
+            # Cannot use our own logger here (we ARE the formatter).
+            # OTel is optional — ImportError is expected when not installed.
+            sys.stderr.write("[logging_utils] OTel trace enrichment failed\n")
         sid = _ctx_session_id.get()
         tid = _ctx_turn_id.get()
         if sid:

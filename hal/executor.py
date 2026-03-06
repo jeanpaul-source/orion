@@ -30,7 +30,7 @@ class SSHExecutor:
     def run(self, command: str, timeout: int = 30) -> dict:
         """Run a shell command on the server. No approval — caller must gate."""
         if self._local:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S602 -- Judge-gated: all commands pass through judge.approve()
                 command,
                 shell=True,
                 capture_output=True,
@@ -38,8 +38,8 @@ class SSHExecutor:
                 timeout=timeout,
             )
         else:
-            result = subprocess.run(
-                ["ssh", *self._SSH_OPTS, f"{self.user}@{self.host}", command],
+            result = subprocess.run(  # noqa: S603 -- Judge-gated
+                ["ssh", *self._SSH_OPTS, f"{self.user}@{self.host}", command],  # noqa: S607 -- known binary, PATH controlled
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -59,8 +59,8 @@ class SSHExecutor:
                 return {"returncode": 0, "stdout": "", "stderr": ""}
             except OSError as e:
                 return {"returncode": 1, "stdout": "", "stderr": str(e)}
-        result = subprocess.run(
-            [
+        result = subprocess.run(  # noqa: S603 -- Judge-gated: write_file passes through judge.approve()
+            [  # noqa: S607 -- known binary, PATH controlled
                 "ssh",
                 *self._SSH_OPTS,
                 f"{self.user}@{self.host}",

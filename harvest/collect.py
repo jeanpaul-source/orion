@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def _run(cmd: str) -> str:
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)  # noqa: S602 -- all callers pass hardcoded command strings, never user input
     return result.stdout.strip()
 
 
@@ -102,8 +102,8 @@ def collect_docker_containers() -> list[dict]:
 
         # Get mount/volume info (never shell=True — name comes from docker ps)
         try:
-            mounts = subprocess.run(
-                [
+            mounts = subprocess.run(  # noqa: S603 -- name comes from docker ps output, not user input
+                [  # noqa: S607 -- known binary, PATH controlled
                     "docker",
                     "inspect",
                     name,
