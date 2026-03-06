@@ -27,7 +27,7 @@ _LIVE_STATE_BOOST = 0.05
 # Fetch this many extra candidates from the DB before applying the boost.
 # Without over-fetch, a ground-truth doc sitting at position top_k+1 by raw
 # cosine would never be fetched and therefore never receive the boost — exactly
-# the case where the boost matters most.  4× is cheap (one ANN index scan).
+# the case where the boost matters most.  4x is cheap (one ANN index scan).
 _BOOST_FETCH_MULTIPLIER = 4
 
 

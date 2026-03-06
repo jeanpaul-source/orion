@@ -281,7 +281,7 @@ def main(argv: list[str] | None = None) -> None:
     console.print(f"\n[bold cyan]── Aggregate scores ({len(rows)} queries) ──[/]")
     agg_table = Table(show_header=True, header_style="bold")
     agg_table.add_column("Metric", style="cyan")
-    agg_table.add_column("Score (0–1)", justify="right")
+    agg_table.add_column("Score (0-1)", justify="right")
     agg_table.add_column("Pass rate", justify="right")
 
     metric_names = [k for k in metrics if not k.endswith("_reason")]

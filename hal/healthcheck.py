@@ -311,7 +311,6 @@ def run_all_checks(
 
     Each check is independent — a failure in one never affects another.
     """
-    results: list[ComponentHealth] = []
     return [check_fn(config, timeout) for _name, check_fn in HEALTH_CHECKS]
 
 

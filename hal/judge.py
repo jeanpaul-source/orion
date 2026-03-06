@@ -618,7 +618,7 @@ def tier_for(action_type: str, detail: str = "") -> int:
 # why: too few samples means a lucky streak can reduce trust prematurely.
 _TRUST_MIN_SAMPLES = 10
 
-# Minimum success rate (0.0–1.0) required to reduce tier 1 → tier 0.
+# Minimum success rate (0.0-1.0) required to reduce tier 1 -> tier 0.
 # why: 90% allows for the occasional transient error without blocking evolution,
 # while still rejecting commands that fail 1-in-5 times.
 _TRUST_MIN_SUCCESS_RATE = 0.90

@@ -1,4 +1,4 @@
-"""Regression tests for Judge safety hardening (Items 1–8).
+"""Regression tests for Judge safety hardening (Items 1-8).
 
 These tests encode security invariants.  Every test here MUST pass for any
 future change to hal/judge.py to be considered safe.  Tests are organized
