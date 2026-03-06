@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ def _probe_endpoint(url: str) -> bool:
         return False
 
 
-def get_tracer():
+def get_tracer() -> Any:
     """Return the configured tracer, or a no-op tracer if setup_tracing() was not called."""
     if _tracer is not None:
         return _tracer
@@ -119,19 +120,19 @@ def get_tracer():
 
 
 class _NoOpSpan:
-    def __enter__(self):
+    def __enter__(self) -> _NoOpSpan:
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, *_: object) -> None:
         pass
 
-    def set_attribute(self, *_):
+    def set_attribute(self, *_: object) -> None:
         pass
 
-    def record_exception(self, *_):
+    def record_exception(self, *_: object) -> None:
         pass
 
 
 class _NoOpTracer:
-    def start_as_current_span(self, *_args, **_kwargs):
+    def start_as_current_span(self, *_args: object, **_kwargs: object) -> _NoOpSpan:
         return _NoOpSpan()
