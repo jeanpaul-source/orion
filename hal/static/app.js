@@ -92,14 +92,24 @@
   }
 
   // ── Rendering ───────────────────────────────────────────────────
+  function sessionLabel(sess, index) {
+    // Show first user message as preview, or fall back to "Session N"
+    var firstMsg = sess.messages.find(function (m) { return m.role === "user"; });
+    if (firstMsg && firstMsg.content) {
+      var preview = firstMsg.content.slice(0, 32);
+      return preview + (firstMsg.content.length > 32 ? "…" : "");
+    }
+    return "Session " + (sessions.length - index);
+  }
+
   function renderSessions() {
     $sessionList.innerHTML = "";
-    sessions.forEach(function (s) {
+    sessions.forEach(function (s, i) {
       var el = document.createElement("div");
       el.className = "session-item" + (s.id === activeId ? " active" : "");
 
       var label = document.createElement("span");
-      label.textContent = s.id;
+      label.textContent = sessionLabel(s, i);
       el.appendChild(label);
 
       var time = document.createElement("span");
