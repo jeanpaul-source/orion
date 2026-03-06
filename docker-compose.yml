@@ -19,7 +19,7 @@ services:
       - "host.docker.internal:host-gateway"
 
     ports:
-      - "127.0.0.1:8087:8087"
+      - "8087:8087"
 
     volumes:
       # HAL's state — the ONLY read-write mount
