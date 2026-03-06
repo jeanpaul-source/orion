@@ -46,3 +46,11 @@ repos:
         always_run: true
         pass_filenames: false
         require_serial: true
+
+      - id: commitlint
+        name: commitlint
+        entry: npx --no -- commitlint --edit
+        language: system
+        stages: [commit-msg]
+        always_run: true
+        pass_filenames: false

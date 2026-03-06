@@ -38,7 +38,9 @@ install-hooks:
 dev-setup: ## Fresh clone → full enforcement in one command
 	python3 -m venv .venv
 	.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+	npm install
 	.venv/bin/pre-commit install --install-hooks --overwrite
+	.venv/bin/pre-commit install --hook-type commit-msg
 	@echo ""
 	@echo "Dev environment ready. Hooks installed."
 	@echo "  Run 'make check' to verify everything passes."

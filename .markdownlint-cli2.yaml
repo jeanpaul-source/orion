@@ -1,8 +1,9 @@
-# Scan all .md files except notes/ (scratch/journal area) and .venv/
+# Scan all .md files except notes/ (scratch/journal area), .venv/, and node_modules/
 globs:
   - "**/*.md"
   - "!notes/**"
   - "!.venv/**"
+  - "!node_modules/**"
 
 config:
   # Relaxations for documentation style
