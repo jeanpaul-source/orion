@@ -24,6 +24,7 @@ from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
+    ContextTypes,
     MessageHandler,
     filters,
 )
@@ -89,7 +90,7 @@ def _authorized(update: Update) -> bool:
     )
 
 
-async def cmd_start(update: Update, context) -> None:
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/start — greeting."""
     if not _authorized(update):
         return
@@ -98,7 +99,7 @@ async def cmd_start(update: Update, context) -> None:
     await update.message.reply_text("HAL online. Send any message.")
 
 
-async def cmd_new(update: Update, context) -> None:
+async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/new — reset session."""
     if not _authorized(update):
         return
@@ -109,7 +110,7 @@ async def cmd_new(update: Update, context) -> None:
     await update.message.reply_text("Session reset.")
 
 
-async def handle_message(update: Update, context) -> None:
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Process a plain-text message: thinking → POST /chat → edit reply."""
     if not _authorized(update):
         return
