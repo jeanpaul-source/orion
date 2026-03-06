@@ -58,7 +58,7 @@ def _init(conn: sqlite3.Connection) -> None:
 
 
 class MemoryStore:
-    def __init__(self):
+    def __init__(self) -> None:
         self.conn = _connect()
 
     def new_session(self) -> str:

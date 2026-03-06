@@ -8,6 +8,7 @@ except ModuleNotFoundError:  # pragma: no cover
     np = None  # type: ignore[assignment]
 
 import psycopg2
+import psycopg2.extensions
 import psycopg2.extras
 from pgvector.psycopg2 import register_vector
 
@@ -36,7 +37,7 @@ class KnowledgeBase:
         self.dsn = dsn
         self.llm = llm
 
-    def _connect(self):
+    def _connect(self) -> psycopg2.extensions.connection:
         conn = psycopg2.connect(self.dsn)
         register_vector(conn)
         return conn
