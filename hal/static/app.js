@@ -7,6 +7,7 @@
   const HEALTH_POLL_MS = 60000;
   const SESSION_KEY = "hal_sessions";
   const ACTIVE_KEY = "hal_active_session";
+  const TOKEN_KEY = "hal_web_token";
   const MAX_SESSIONS = 50;  // prune oldest beyond this limit
 
   // ── DOM refs ────────────────────────────────────────────────────
@@ -22,11 +23,17 @@
   const $overlay     = document.getElementById("sidebar-overlay");
   const $hamburger   = document.getElementById("hamburger");
   const $mobileSess  = document.getElementById("mobile-session");
+  const $loginOverlay = document.getElementById("login-overlay");
+  const $tokenInput  = document.getElementById("token-input");
+  const $loginBtn    = document.getElementById("login-btn");
+  const $loginError  = document.getElementById("login-error");
+  const $signOutBtn  = document.getElementById("sign-out-btn");
 
   // ── State ───────────────────────────────────────────────────────
   let sessions = loadSessions();     // { id, created, messages[] }
   let activeId = localStorage.getItem(ACTIVE_KEY);
   let sending  = false;
+  let _token   = localStorage.getItem(TOKEN_KEY) || "";
 
   // ── Marked config ───────────────────────────────────────────────
   // CDN libraries are optional — UI degrades to plain text if unavailable.
@@ -238,15 +245,27 @@
     showThinking();
 
     try {
+      var fetchHeaders = { "Content-Type": "application/json" };
+      if (_token) { fetchHeaders["Authorization"] = "Bearer " + _token; }
       var res = await fetch(API_BASE + "/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: fetchHeaders,
         body: JSON.stringify({ message: text, session_id: sess.id }),
       });
 
       hideThinking();
 
       if (!res.ok) {
+        if (res.status === 401) {
+          hideThinking();
+          // Remove the optimistic user message
+          sess.messages.pop();
+          saveSessions();
+          showLogin("Token rejected — please re-authenticate.");
+          sending = false;
+          $sendBtn.disabled = false;
+          return;
+        }
         var errText = "";
         try {
           var errBody = await res.json();
@@ -372,6 +391,41 @@
 
   $overlay.addEventListener("click", closeSidebar);
 
+  // ── Login / auth ────────────────────────────────────────────────
+  function showLogin(msg) {
+    $loginOverlay.style.display = "flex";
+    $loginError.textContent = msg || "";
+    $tokenInput.value = "";
+    $tokenInput.focus();
+  }
+
+  function hideLogin() {
+    $loginOverlay.style.display = "none";
+    $loginError.textContent = "";
+  }
+
+  function handleLogin() {
+    var val = $tokenInput.value.trim();
+    if (!val) { $loginError.textContent = "Token cannot be empty."; return; }
+    _token = val;
+    localStorage.setItem(TOKEN_KEY, _token);
+    hideLogin();
+    $input.focus();
+  }
+
+  $loginBtn.addEventListener("click", handleLogin);
+  $tokenInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); handleLogin(); }
+  });
+
+  function signOut() {
+    _token = "";
+    localStorage.removeItem(TOKEN_KEY);
+    showLogin("");
+  }
+
+  $signOutBtn.addEventListener("click", signOut);
+
   // ── Init ────────────────────────────────────────────────────────
   (function init() {
     // Ensure at least one session exists
@@ -382,7 +436,22 @@
     renderMessages();
     checkHealth();
     setInterval(checkHealth, HEALTH_POLL_MS);
-    $input.focus();
+
+    // Probe auth requirement — if /chat returns 401 without a token, show login
+    if (!_token) {
+      fetch(API_BASE + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "ping", session_id: "auth-probe" }),
+      }).then(function (res) {
+        if (res.status === 401) showLogin("");
+        else $input.focus();
+      }).catch(function () {
+        $input.focus();
+      });
+    } else {
+      $input.focus();
+    }
   })();
 
 })();

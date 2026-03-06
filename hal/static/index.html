@@ -27,6 +27,7 @@
     <div id="session-list" class="session-list"></div>
     <div class="sidebar-footer">
       <span id="health-text" class="health-text">checking...</span>
+      <button id="sign-out-btn" class="sign-out-btn" title="Sign out">sign out</button>
     </div>
   </aside>
 
@@ -53,6 +54,17 @@
 
   <!-- Sidebar overlay for mobile -->
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+  <!-- Login overlay -->
+  <div id="login-overlay" class="login-overlay" style="display:none">
+    <div class="login-card">
+      <div class="login-brand">HAL</div>
+      <p class="login-hint">Enter your access token to continue.</p>
+      <input id="token-input" class="login-input" type="password" placeholder="paste token here" autocomplete="off">
+      <button id="login-btn" class="login-btn">Authenticate</button>
+      <p id="login-error" class="login-error"></p>
+    </div>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
