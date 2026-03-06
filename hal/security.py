@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 import os
 import shlex
-import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as ET
 
 from hal.executor import SSHExecutor
 from hal.falco_noise import (
