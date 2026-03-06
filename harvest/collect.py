@@ -29,7 +29,7 @@ def _doc(
     file_name: str,
     category: str,
     content: str,
-    metadata: dict = None,
+    metadata: dict | None = None,
     doc_tier: str = "reference",
 ) -> dict:
     return {

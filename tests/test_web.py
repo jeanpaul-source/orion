@@ -306,13 +306,13 @@ class TestValidateUrl:
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_private)
     def test_dns_rebinding_to_loopback(self, _mock):  # noqa: PT019
         """DNS rebinding: hostname resolves to 127.0.0.1 — must be blocked."""
-        with pytest.raises(ValueError, match="private IP.*rebinding"):
+        with pytest.raises(ValueError, match=r"private IP.*rebinding"):
             _validate_url("https://evil-rebind.example.com/steal")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_rfc1918)
     def test_dns_rebinding_to_rfc1918(self, _mock):  # noqa: PT019
         """DNS rebinding: hostname resolves to 192.168.x — must be blocked."""
-        with pytest.raises(ValueError, match="private IP.*rebinding"):
+        with pytest.raises(ValueError, match=r"private IP.*rebinding"):
             _validate_url("https://rebind.attacker.com/exfil")
 
     @patch(

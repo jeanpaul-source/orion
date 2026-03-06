@@ -160,7 +160,7 @@ def test_json_log_action_class_extraction(tmp_path):
 def test_json_log_reason_preserved(tmp_path):
     p = _write_json_audit(tmp_path)
     events = list(load_audit_log(p))
-    search_ev = [ev for ev in events if ev.action_type == "search_kb"][0]
+    search_ev = next(ev for ev in events if ev.action_type == "search_kb")
     assert search_ev.reason == "quick lookup"
 
 
