@@ -10,6 +10,20 @@
   const TOKEN_KEY = "hal_web_token";
   const MAX_SESSIONS = 50;  // prune oldest beyond this limit
 
+  // ── Slash commands (for autocomplete) ────────────────────────────
+  var SLASH_COMMANDS = [
+    { cmd: "/help", desc: "show available commands" },
+    { cmd: "/health", desc: "live service health check" },
+    { cmd: "/search", desc: "search the knowledge base" },
+    { cmd: "/remember", desc: "save a fact to memory" },
+    { cmd: "/postmortem", desc: "incident post-mortem analysis" },
+    { cmd: "/audit", desc: "show recent audit log" },
+    { cmd: "/kb", desc: "knowledge base stats" },
+    { cmd: "/sessions", desc: "list all sessions" },
+    { cmd: "/new", desc: "start a new session" },
+    { cmd: "/clear", desc: "clear the screen" },
+  ];
+
   // ── DOM refs ────────────────────────────────────────────────────
   const $messages    = document.getElementById("messages");
   const $input       = document.getElementById("message-input");
@@ -510,6 +524,72 @@
     return d + "d ago";
   }
 
+  // ── Slash command autocomplete ──────────────────────────────────
+  var $slashMenu = null;
+  var _slashIndex = -1;
+
+  function buildSlashMenu() {
+    var el = document.createElement("div");
+    el.className = "slash-menu";
+    el.style.display = "none";
+    document.querySelector(".input-wrapper").appendChild(el);
+    return el;
+  }
+
+  function showSlashMenu(filter) {
+    if (!$slashMenu) $slashMenu = buildSlashMenu();
+    var q = filter.toLowerCase();
+    var matches = SLASH_COMMANDS.filter(function (c) {
+      return c.cmd.indexOf(q) === 0;
+    });
+    if (matches.length === 0) { hideSlashMenu(); return; }
+    _slashIndex = 0;
+    $slashMenu.innerHTML = "";
+    matches.forEach(function (c, i) {
+      var row = document.createElement("div");
+      row.className = "slash-menu-item" + (i === 0 ? " active" : "");
+      row.innerHTML = '<span class="slash-cmd">' + _escapeHtml(c.cmd) + '</span> <span class="slash-desc">' + _escapeHtml(c.desc) + '</span>';
+      row.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        pickSlash(c);
+      });
+      $slashMenu.appendChild(row);
+    });
+    $slashMenu.style.display = "block";
+  }
+
+  function hideSlashMenu() {
+    if ($slashMenu) { $slashMenu.style.display = "none"; }
+    _slashIndex = -1;
+  }
+
+  function pickSlash(c) {
+    if (c.cmd === "/new") {
+      createSession();
+      $input.value = "";
+    } else if (c.cmd === "/clear") {
+      var sess = getActive();
+      if (sess) { $messages.innerHTML = ""; }
+      $input.value = "";
+    } else {
+      $input.value = c.cmd + " ";
+    }
+    hideSlashMenu();
+    $input.focus();
+    autoResize();
+  }
+
+  function navigateSlash(dir) {
+    if (!$slashMenu || $slashMenu.style.display === "none") return false;
+    var items = $slashMenu.querySelectorAll(".slash-menu-item");
+    if (items.length === 0) return false;
+    items[_slashIndex].classList.remove("active");
+    _slashIndex = (_slashIndex + dir + items.length) % items.length;
+    items[_slashIndex].classList.add("active");
+    items[_slashIndex].scrollIntoView({ block: "nearest" });
+    return true;
+  }
+
   // ── Auto-resize textarea ───────────────────────────────────────
   function autoResize() {
     $input.style.height = "auto";
@@ -526,16 +606,42 @@
   });
 
   $input.addEventListener("keydown", function (e) {
+    // Slash menu navigation
+    if ($slashMenu && $slashMenu.style.display !== "none") {
+      if (e.key === "ArrowDown") { e.preventDefault(); navigateSlash(1); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); navigateSlash(-1); return; }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        var items = $slashMenu.querySelectorAll(".slash-menu-item");
+        if (_slashIndex >= 0 && items.length > 0) {
+          e.preventDefault();
+          var cmdText = items[_slashIndex].querySelector(".slash-cmd").textContent;
+          var match = SLASH_COMMANDS.find(function (c) { return c.cmd === cmdText; });
+          if (match) pickSlash(match);
+          return;
+        }
+      }
+      if (e.key === "Escape") { e.preventDefault(); hideSlashMenu(); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       var text = $input.value;
       $input.value = "";
       autoResize();
+      hideSlashMenu();
       sendMessage(text);
     }
   });
 
-  $input.addEventListener("input", autoResize);
+  $input.addEventListener("input", function () {
+    autoResize();
+    // Slash autocomplete trigger
+    var val = $input.value;
+    if (val.indexOf("/") === 0 && val.indexOf("\n") === -1) {
+      showSlashMenu(val);
+    } else {
+      hideSlashMenu();
+    }
+  });
 
   $newSession.addEventListener("click", function () {
     createSession();
