@@ -962,3 +962,140 @@ def test_static_js_served() -> None:
     assert resp.status_code == 200
     assert "javascript" in resp.headers.get("content-type", "")
     assert "sendMessage" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Bearer token authentication tests
+# ---------------------------------------------------------------------------
+
+
+def test_chat_returns_401_when_token_set_and_no_header() -> None:
+    """POST /chat returns 401 when HAL_WEB_TOKEN is configured but no header sent."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update({"config": MagicMock(hal_web_token="secret-token-abc")})
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/chat", json={"message": "hello"})
+        assert resp.status_code == 401
+        assert "Missing bearer token" in resp.json()["detail"]
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_chat_returns_401_with_wrong_token() -> None:
+    """POST /chat returns 401 when the bearer token is incorrect."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update({"config": MagicMock(hal_web_token="secret-token-abc")})
+    try:
+        client = TestClient(server.app)
+        resp = client.post(
+            "/chat",
+            json={"message": "hello"},
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        assert resp.status_code == 401
+        assert "Invalid bearer token" in resp.json()["detail"]
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_chat_succeeds_with_correct_token() -> None:
+    """POST /chat returns 200 when the correct bearer token is provided."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = ("conversational", 0.9)
+    fake_llm = MagicMock()
+    fake_llm.chat_with_tools.return_value = {"content": "Hello!"}
+
+    server._state.update(
+        {
+            "config": MagicMock(
+                ntopng_url="", tavily_api_key="", hal_web_token="secret-token-abc"
+            ),
+            "llm": fake_llm,
+            "kb": MagicMock(),
+            "prom": MagicMock(),
+            "executor": MagicMock(),
+            "judge": MagicMock(),
+            "classifier": fake_classifier,
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        with patch("hal.server.get_system_prompt", return_value="Base prompt"):
+            resp = client.post(
+                "/chat",
+                json={"message": "hello"},
+                headers={"Authorization": "Bearer secret-token-abc"},
+            )
+        assert resp.status_code == 200
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_health_unauthenticated_when_token_set() -> None:
+    """GET /health does not require a token even when HAL_WEB_TOKEN is set."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update({"config": MagicMock(hal_web_token="secret-token-abc")})
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/health")
+        # Should not be 401 — health is always open
+        assert resp.status_code != 401
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_root_unauthenticated_when_token_set() -> None:
+    """GET / serves the web UI without requiring a token."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update({"config": MagicMock(hal_web_token="secret-token-abc")})
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers.get("content-type", "")
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_chat_no_auth_required_when_token_empty() -> None:
+    """POST /chat does not require auth when HAL_WEB_TOKEN is empty."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = ("conversational", 0.9)
+    fake_llm = MagicMock()
+    fake_llm.chat_with_tools.return_value = {"content": "Hello!"}
+
+    server._state.update(
+        {
+            "config": MagicMock(ntopng_url="", tavily_api_key="", hal_web_token=""),
+            "llm": fake_llm,
+            "kb": MagicMock(),
+            "prom": MagicMock(),
+            "executor": MagicMock(),
+            "judge": MagicMock(),
+            "classifier": fake_classifier,
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        with patch("hal.server.get_system_prompt", return_value="Base prompt"):
+            resp = client.post("/chat", json={"message": "hello"})
+        assert resp.status_code == 200
+    finally:
+        server._state.clear()
+        server._state.update(old)
