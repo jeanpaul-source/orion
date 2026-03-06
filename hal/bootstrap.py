@@ -87,6 +87,7 @@ IMPORTANT: Ollama is bare-metal. Never use docker commands for Ollama.
   Prometheus :{_prom_port}     — metrics (Docker, compose at {config.infra_base}/monitoring-stack/)
   Grafana :3001        — dashboards (Docker, same compose stack)
   Pushgateway :9092    — HAL's own metrics accumulator (Docker, same compose stack)
+  Tempo :4318/:3200    — OTel trace receiver (OTLP HTTP on 4318, query API on 3200, same compose stack)
   pgvector :5432       — knowledge base (Docker, PostgreSQL+pgvector, DB: knowledge_base)
   Cockpit :9090        — server management UI (systemd) — NOT Prometheus
 

@@ -219,11 +219,20 @@ Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, 
   successful harvest; git history is the diff layer
 - Test count: 552 → 589 (all offline, ruff clean)
 
+### Mar 5, 2026 — Grafana Tempo (OTel trace receiver)
+
+- Grafana Tempo deployed in the monitoring stack — receives OTel traces from HAL via OTLP HTTP on port 4318
+- `ops/tempo.yaml` — single-node config with local storage and 7-day retention
+- `ops/grafana-tempo-datasource.yaml` — Grafana provisioning file, auto-configures Tempo as a datasource
+- `ops/deploy-tempo.sh` — deploy script: copies configs to monitoring stack, prints docker-compose snippet, restarts stack
+- OPERATIONS.md: new "Tracing" section with deploy, config, 4-step verification, span name table; Tempo added to services table; OTLP trap updated
+- System prompt (`hal/bootstrap.py`): Tempo added to Core services so HAL knows it exists
+- `OTLP_ENDPOINT=http://host.docker.internal:4318` — correct value for HAL container → host Tempo
+
 ---
 
 ## Backlog (immediate)
 
-- **Grafana Tempo:** `hal/tracing.py` emits OTel spans but no receiver is deployed — deploy Tempo container in monitoring stack
 - **Web UI:** Lightweight browser interface using the same `/chat` HTTP endpoint
 
 ---

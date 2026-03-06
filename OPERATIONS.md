@@ -21,6 +21,7 @@ Deploy, configure, and run Orion/HAL on the homelab server.
 | Prometheus | Docker | 9091 | **Not 9090** — port 9090 is Cockpit |
 | Grafana | Docker | 3001 | |
 | Pushgateway | Docker | 9092 | HAL metrics target |
+| Grafana Tempo | Docker | 4318 / 3200 | OTel trace receiver (OTLP HTTP) + query API; monitoring-stack compose |
 | Falco | system systemd | — | `falco-modern-bpf.service`; JSON events at `/var/log/falco/events.json` |
 | Osquery | bare metal | — | Version 5.21.0; `/etc/sudoers.d/osquery-hal` scoped to `osqueryi` only |
 | ntopng | Docker Compose | 3000 | `~/ntopng/docker-compose.yml`; login disabled; Community API at `/lua/rest/v2/` |
@@ -267,6 +268,75 @@ systemctl cat ollama | grep OLLAMA_NUM_GPU
 
 ---
 
+## Tracing (OTel → Grafana Tempo)
+
+HAL emits OpenTelemetry traces via `hal/tracing.py`. Grafana Tempo receives them
+over OTLP HTTP on port 4318. Traces are viewable in Grafana.
+
+### Deploy
+
+Run the deploy script from the Orion repo root on the server:
+
+```bash
+bash ops/deploy-tempo.sh
+```
+
+This copies `ops/tempo.yaml` and the Grafana datasource provisioning file to
+the monitoring stack, then restarts it. See the script for the docker-compose
+service snippet to add manually.
+
+### HAL configuration
+
+HAL's container reaches Tempo via `host.docker.internal`:
+
+```bash
+# In ~/orion/.env
+OTLP_ENDPOINT=http://host.docker.internal:4318
+```
+
+Then restart HAL: `docker compose restart` (in `~/orion/`).
+
+### Verify end-to-end trace flow
+
+1. **Tempo is running:**
+
+   ```bash
+   docker ps | grep tempo
+   curl -s http://localhost:3200/ready   # should print "ready"
+   ```
+
+2. **HAL tracing is enabled** — look for this in `docker logs orion`:
+
+   ```text
+   Tracing enabled -> http://host.docker.internal:4318
+   ```
+
+   If you see `OTLP endpoint unreachable` instead, Tempo isn't reachable from
+   the HAL container.
+
+3. **Traces appear in Grafana:**
+   - Open `http://192.168.5.10:3001` → Explore → select **Tempo** datasource
+   - Search tab → Service Name: `hal` → Run query
+   - Traces should appear after any HAL interaction (REPL, HTTP `/chat`, Telegram)
+
+4. **Expected span names** (nested hierarchy):
+
+   | Span | Source | Description |
+   | --- | --- | --- |
+   | `hal.turn` | `hal/main.py` | One full REPL turn |
+   | `hal.run_agent` | `hal/agent.py` | Entire agent loop (up to 8 iterations) |
+   | `hal.intent.classify` | `hal/intent.py` | Embedding-based intent classification |
+   | `hal.tool_call` | `hal/agent.py` | Individual tool execution within the loop |
+   | `hal.llm.chat_with_tools` | `hal/llm.py` | LLM call with tool definitions |
+   | `hal.llm.chat` | `hal/llm.py` | Plain LLM call (no tools) |
+
+### Retention
+
+Tempo is configured with 7-day retention (`ops/tempo.yaml`). Older traces are
+automatically compacted away.
+
+---
+
 ## Known traps
 
 **Prometheus port:** 9091 is Prometheus. 9090 is Cockpit. They are different services.
@@ -293,8 +363,9 @@ filtered by default in `hal/falco_noise.py`. Do not suppress the rule globally i
 (`/home/jp/vllm-env/bin/vllm`). If the venv location changes or the user is different,
 edit the unit file before deploying.
 
-**OTLP tracing probe at startup:** HAL TCP-probes the OTLP endpoint (default
-`http://localhost:4318`) once at startup. If Grafana Tempo is not deployed, the probe
+**OTLP tracing probe at startup:** HAL TCP-probes the OTLP endpoint once at startup.
+With Tempo deployed, set `OTLP_ENDPOINT=http://host.docker.internal:4318` in `.env`
+so the probe succeeds from inside the HAL container. If Tempo goes down, the probe
 fails, tracing is skipped silently (DEBUG log only), and no background exporter thread
 runs. The 1-second timeout adds ~1 second to startup. To skip the probe entirely, set
 `OTEL_SDK_DISABLED=true` in `.env`.
