@@ -91,6 +91,21 @@
     closeSidebar();
   }
 
+  function deleteSession(id) {
+    sessions = sessions.filter(function (s) { return s.id !== id; });
+    if (activeId === id) {
+      activeId = sessions.length ? sessions[0].id : null;
+      if (!activeId) {
+        createSession();
+        return;
+      }
+      localStorage.setItem(ACTIVE_KEY, activeId);
+    }
+    saveSessions();
+    renderSessions();
+    renderMessages();
+  }
+
   // ── Rendering ───────────────────────────────────────────────────
   function sessionLabel(sess, index) {
     // Show first user message as preview, or fall back to "Session N"
@@ -108,9 +123,23 @@
       var el = document.createElement("div");
       el.className = "session-item" + (s.id === activeId ? " active" : "");
 
+      var labelRow = document.createElement("div");
+      labelRow.className = "session-label-row";
+
       var label = document.createElement("span");
       label.textContent = sessionLabel(s, i);
-      el.appendChild(label);
+      labelRow.appendChild(label);
+
+      var delBtn = document.createElement("button");
+      delBtn.className = "session-delete";
+      delBtn.title = "Delete session";
+      delBtn.textContent = "\u00d7";
+      delBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        deleteSession(s.id);
+      });
+      labelRow.appendChild(delBtn);
+      el.appendChild(labelRow);
 
       var time = document.createElement("span");
       time.className = "session-time";
