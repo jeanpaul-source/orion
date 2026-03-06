@@ -58,7 +58,7 @@ class TestEvasionPatternsInvariant:
     ]
 
     @pytest.mark.parametrize(
-        "description,cmd", _TRIGGER_COMMANDS, ids=[t[0] for t in _TRIGGER_COMMANDS]
+        ("description", "cmd"), _TRIGGER_COMMANDS, ids=[t[0] for t in _TRIGGER_COMMANDS]
     )
     def test_evasion_pattern_reaches_tier_3(self, description, cmd):
         assert classify_command(cmd) == 3, (
@@ -101,7 +101,7 @@ class TestCmdRulesInvariant:
         return cases
 
     @pytest.mark.parametrize(
-        "expected_tier,pattern,cmd",
+        ("expected_tier", "pattern", "cmd"),
         _make_test_cases.__func__(),
         ids=[f"tier{t}-{p.strip()}" for t, p, _ in _make_test_cases.__func__()],
     )
@@ -150,7 +150,7 @@ class TestAdversarialEvasion:
     ]
 
     @pytest.mark.parametrize(
-        "desc,cmd", DESTRUCTIVE_ATTACKS, ids=[a[0] for a in DESTRUCTIVE_ATTACKS]
+        ("desc", "cmd"), DESTRUCTIVE_ATTACKS, ids=[a[0] for a in DESTRUCTIVE_ATTACKS]
     )
     def test_destructive_attack_never_auto_approved(self, desc, cmd):
         tier = classify_command(cmd)
@@ -169,7 +169,7 @@ class TestAdversarialEvasion:
     ]
 
     @pytest.mark.parametrize(
-        "desc,cmd",
+        ("desc", "cmd"),
         SENSITIVE_PATH_ATTACKS,
         ids=[a[0] for a in SENSITIVE_PATH_ATTACKS],
     )

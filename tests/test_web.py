@@ -250,12 +250,12 @@ class TestValidateUrl:
     """URL validation blocks SSRF vectors."""
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_valid_https_url(self, _mock):
+    def test_valid_https_url(self, _mock):  # noqa: PT019
         result = _validate_url("https://example.com/page")
         assert result == "https://example.com/page"
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_valid_http_url(self, _mock):
+    def test_valid_http_url(self, _mock):  # noqa: PT019
         result = _validate_url("http://example.com/page")
         assert result == "http://example.com/page"
 
@@ -304,13 +304,13 @@ class TestValidateUrl:
             _validate_url("https:///path-only")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_private)
-    def test_dns_rebinding_to_loopback(self, _mock):
+    def test_dns_rebinding_to_loopback(self, _mock):  # noqa: PT019
         """DNS rebinding: hostname resolves to 127.0.0.1 — must be blocked."""
         with pytest.raises(ValueError, match="private IP.*rebinding"):
             _validate_url("https://evil-rebind.example.com/steal")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_rfc1918)
-    def test_dns_rebinding_to_rfc1918(self, _mock):
+    def test_dns_rebinding_to_rfc1918(self, _mock):  # noqa: PT019
         """DNS rebinding: hostname resolves to 192.168.x — must be blocked."""
         with pytest.raises(ValueError, match="private IP.*rebinding"):
             _validate_url("https://rebind.attacker.com/exfil")
@@ -319,7 +319,7 @@ class TestValidateUrl:
         "hal.web.socket.getaddrinfo",
         side_effect=socket.gaierror("DNS failed"),
     )
-    def test_dns_failure(self, _mock):
+    def test_dns_failure(self, _mock):  # noqa: PT019
         with pytest.raises(ValueError, match="DNS resolution failed"):
             _validate_url("https://nonexistent.invalid/page")
 
@@ -333,7 +333,7 @@ class TestFetchUrl:
     """fetch_url with mocked HTTP and trafilatura."""
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_successful_fetch(self, _mock_dns):
+    def test_successful_fetch(self, _mock_dns):  # noqa: PT019
         """Happy path: fetch + extract article text."""
         mock_resp = MagicMock()
         mock_resp.url = "https://example.com/article"
@@ -344,16 +344,19 @@ class TestFetchUrl:
         )
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("hal.web.requests.get", return_value=mock_resp), patch(
-            "hal.web.trafilatura.extract",
-            return_value="Important article content here.",
+        with (
+            patch("hal.web.requests.get", return_value=mock_resp),
+            patch(
+                "hal.web.trafilatura.extract",
+                return_value="Important article content here.",
+            ),
         ):
             result = fetch_url("https://example.com/article")
 
         assert "Important article content here." in result
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_output_truncation(self, _mock_dns):
+    def test_output_truncation(self, _mock_dns):  # noqa: PT019
         """Output longer than max_chars should be truncated with a marker."""
         long_text = "x" * 20_000
         mock_resp = MagicMock()
@@ -369,7 +372,7 @@ class TestFetchUrl:
         assert "truncated" in result
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_trafilatura_fallback(self, _mock_dns):
+    def test_trafilatura_fallback(self, _mock_dns):  # noqa: PT019
         """When trafilatura returns None, fall back to tag stripping."""
         html = b"<html><body><p>Fallback text for testing.</p></body></html>"
         mock_resp = MagicMock()
@@ -389,7 +392,7 @@ class TestFetchUrl:
             fetch_url("http://192.168.5.10:8000/secret")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_redirect_to_private_blocked(self, _mock_dns):
+    def test_redirect_to_private_blocked(self, _mock_dns):  # noqa: PT019
         """If a redirect lands on a private IP, re-validation must catch it."""
         mock_resp = MagicMock()
         mock_resp.url = "http://127.0.0.1:8000/admin"  # redirect target
@@ -401,7 +404,7 @@ class TestFetchUrl:
                 fetch_url("https://legit-looking.example.com/redirect")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_http_error_raises_runtime(self, _mock_dns):
+    def test_http_error_raises_runtime(self, _mock_dns):  # noqa: PT019
         """HTTP errors should raise RuntimeError, not leak raw exceptions."""
         import requests as req
 
@@ -414,7 +417,7 @@ class TestFetchUrl:
                 fetch_url("https://example.com/404")
 
     @patch("hal.web.socket.getaddrinfo", side_effect=_fake_addrinfo_public)
-    def test_response_size_cap(self, _mock_dns):
+    def test_response_size_cap(self, _mock_dns):  # noqa: PT019
         """Responses larger than 1 MB should be truncated during read."""
         # Simulate large response with multiple chunks
         big_chunk = b"x" * 600_000
