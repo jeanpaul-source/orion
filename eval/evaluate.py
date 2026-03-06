@@ -4,6 +4,9 @@
 Reads:  eval/responses.jsonl      (output of run_eval.py)
 Writes: eval/results/eval_out.json
 
+.. note:: ClassVar annotations on evaluator classes prevent the
+   mutable-default-shared-between-instances bug (ruff RUF012).
+
 Evaluators
 ----------
 no_raw_json       Custom code  — B1: response must not contain raw tool-call JSON
@@ -26,6 +29,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 from rich.console import Console
 from rich.table import Table
@@ -47,7 +51,7 @@ class NoRawJsonEvaluator:
     """
 
     # Patterns that indicate the model printed a tool call schema as text
-    _PATTERNS = [
+    _PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r'\{\s*"name"\s*:'),
         re.compile(r'\{\s*"arguments"\s*:'),
         re.compile(r'"function"\s*:.*?"name"\s*:'),
@@ -69,7 +73,7 @@ class HalIdentityEvaluator:
     A failing response (score=0) contains identity-overriding phrases.
     """
 
-    _BAD_PHRASES = [
+    _BAD_PHRASES: ClassVar[list[str]] = [
         "i'm qwen",
         "i am qwen",
         "my name is qwen",

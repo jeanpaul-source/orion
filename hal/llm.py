@@ -60,7 +60,7 @@ class VLLMClient:
 
     def _messages(self, messages: list[dict], system: str | None) -> list[dict]:
         if system:
-            return [{"role": "system", "content": system}] + messages
+            return [{"role": "system", "content": system}, *messages]
         return messages
 
     def chat_with_tools(

@@ -7,6 +7,7 @@ When host is localhost/127.0.0.1, commands run directly via subprocess (no SSH).
 
 import shlex
 import subprocess
+from typing import ClassVar
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -17,7 +18,7 @@ class SSHExecutor:
         self.user = user
         self._local = host in _LOCAL_HOSTS
 
-    _SSH_OPTS = [
+    _SSH_OPTS: ClassVar[list[str]] = [
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-o",

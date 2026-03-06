@@ -411,7 +411,7 @@ def test_load_trust_overrides_requires_min_samples(tmp_path):
     ]
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
-    overrides, demotions = _load_trust_overrides(log)
+    overrides, _demotions = _load_trust_overrides(log)
     assert "run_command:systemctl" not in overrides
 
 
@@ -440,7 +440,7 @@ def test_load_trust_overrides_requires_success_rate(tmp_path):
     ] * 2
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
-    overrides, demotions = _load_trust_overrides(log)
+    overrides, _demotions = _load_trust_overrides(log)
     assert "run_command:systemctl" not in overrides
 
 
@@ -468,7 +468,7 @@ def test_load_trust_overrides_ignores_approval_entries(tmp_path):
     ] * (_TRUST_MIN_SAMPLES - 1)
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
-    overrides, demotions = _load_trust_overrides(log)
+    overrides, _demotions = _load_trust_overrides(log)
     # why: approval entries must not inflate the outcome count.
     assert "run_command:systemctl" not in overrides
 
@@ -634,7 +634,7 @@ def test_demoted_key_blocks_future_promotion(tmp_path):
     log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
     # First load triggers demotion
-    overrides1, demotions1 = _load_trust_overrides(log)
+    _overrides1, demotions1 = _load_trust_overrides(log)
     assert "run_command:systemctl" in demotions1
 
     # Phase 2: Add 20 more successes → cumulative = 26/30 = 86.7% (still below 90%)

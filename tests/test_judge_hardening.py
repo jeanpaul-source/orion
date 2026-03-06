@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -42,7 +43,7 @@ class TestEvasionPatternsInvariant:
     classify_command (the public API), not just through _detect_evasion."""
 
     # Build a minimal command that triggers each pattern
-    _TRIGGER_COMMANDS = [
+    _TRIGGER_COMMANDS: ClassVar[list[tuple[str, str]]] = [
         ("command substitution $()", "echo $(whoami)"),
         ("backtick command substitution", "echo `whoami`"),
         ("eval keyword", "eval ls"),
@@ -121,7 +122,7 @@ class TestAdversarialEvasion:
     (never auto-approved).  Sensitive-path reads must be at least tier >= 1."""
 
     # Destructive / evasion attacks — must be tier >= 2
-    DESTRUCTIVE_ATTACKS = [
+    DESTRUCTIVE_ATTACKS: ClassVar[list[tuple[str, str]]] = [
         # Nested sudo
         ("nested sudo", "sudo sudo sudo rm -rf /"),
         # Nested bash -c
@@ -160,7 +161,7 @@ class TestAdversarialEvasion:
     # Sensitive-path access attacks — must be at least tier >= 1
     # These are read operations on sensitive paths; tier 1 is correct
     # (requires approval) but not tier 2 (they aren't config changes).
-    SENSITIVE_PATH_ATTACKS = [
+    SENSITIVE_PATH_ATTACKS: ClassVar[list[tuple[str, str]]] = [
         ("path traversal /etc/shadow", "cat /tmp/../../etc/shadow"),
         ("path traversal /root", "cat /var/../root/.bashrc"),
         ("tilde ssh", "cat ~/.ssh/id_rsa"),
@@ -179,7 +180,7 @@ class TestAdversarialEvasion:
         )
 
     # Stricter: known destructive attacks must be tier 3
-    TIER_3_ATTACKS = [
+    TIER_3_ATTACKS: ClassVar[list[str]] = [
         "sudo sudo sudo rm -rf /",
         "ls\nrm -rf /",
         "ls /tmp && rm -rf /",

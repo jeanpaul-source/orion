@@ -232,7 +232,7 @@ class TestHandleMessage:
         assert "starting up" in thinking.edit_text.call_args[0][0].lower()
 
     def test_unauthorized_message_ignored(self):
-        update, thinking = _make_update(user_id=666, text="hello")
+        update, _thinking = _make_update(user_id=666, text="hello")
         asyncio.run(handle_message(update, None))
         # No "thinking..." sent, no edit
         update.message.reply_text.assert_not_called()

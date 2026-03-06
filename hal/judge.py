@@ -572,7 +572,7 @@ def _classify_single_command(command: str) -> int:
     #    e.g. /usr/bin/cat → cat
     if parts:
         base = parts[0].rsplit("/", 1)[-1].lower()
-        parts_copy = [base] + parts[1:]
+        parts_copy = [base, *parts[1:]]
         if _is_safe_command(" ".join(parts_copy)):
             # Re-check sensitive paths even for safe commands
             if _command_touches_sensitive_path(command):
