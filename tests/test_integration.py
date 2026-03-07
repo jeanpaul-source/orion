@@ -493,7 +493,7 @@ class TestServerJudgePropagation:
                 "judge": server_judge,
                 "kb": StubKB(),
                 "prom": StubProm(),
-                "executor": ScriptedExecutor(),
+                "registry": _mock_registry(ScriptedExecutor()),
                 "classifier": FakeClassifier("agentic", 0.90),
             }
         )

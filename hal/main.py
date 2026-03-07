@@ -299,7 +299,7 @@ def main() -> None:
     llm, embed, tunnels = setup_clients(config)
     kb = KnowledgeBase(config.pgvector_dsn, embed)
     prom = PrometheusClient(config.prometheus_url)
-    registry = ExecutorRegistry({config.lab_host: (config.lab_host, config.lab_user)})
+    registry = ExecutorRegistry(config.host_registry)
     executor = registry.default
     judge = Judge(
         llm=llm,

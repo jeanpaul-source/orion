@@ -134,9 +134,7 @@ def _populate_state(
             "tunnels": tunnels,
             "kb": KnowledgeBase(config.pgvector_dsn, embed),
             "prom": PrometheusClient(config.prometheus_url),
-            "executor": ExecutorRegistry(
-                {config.lab_host: (config.lab_host, config.lab_user)}
-            ),
+            "registry": ExecutorRegistry(config.host_registry),
             "judge": ServerJudge(
                 llm=llm,
                 extra_sensitive_paths=tuple(
@@ -502,7 +500,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     llm: VLLMClient = _state["llm"]
     kb: KnowledgeBase = _state["kb"]
     prom: PrometheusClient = _state["prom"]
-    registry: ExecutorRegistry = _state["executor"]
+    registry: ExecutorRegistry = _state["registry"]
     judge: Judge = _state["judge"]
 
     def _run() -> tuple[str, list[dict], str, str]:
