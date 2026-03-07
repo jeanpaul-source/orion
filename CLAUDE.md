@@ -133,6 +133,9 @@ run on the host venv (they need direct host access). Old `server.service` and
 
   health/fact seeding happens inside `run_agent` as context injection, not as hard routing gates.
   7 tools: `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`.
+  `run_command`, `read_file`, `list_dir`, `write_file` accept an optional `target_host` parameter —
+  `ExecutorRegistry` resolves host names to `SSHExecutor` instances; default is `"lab"`.
+  Extra hosts configured via `EXTRA_HOSTS` env var (comma-separated `name:user@ip`).
   LLM errors return early without writing to history (history-poisoning bug fixed).
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log

@@ -80,6 +80,7 @@ uses the server IP and `USE_SSH_TUNNEL=true`.
 | `NTOPNG_URL` | `http://localhost:3000` | ntopng REST API — no auth (login disabled, local only) |
 | `LAB_HOST` | `192.168.5.10` | SSH target for remote commands |
 | `LAB_USER` | `jp` | SSH user on the server |
+| `EXTRA_HOSTS` | *(empty)* | Additional SSH hosts — comma-separated `name:user@ip` entries (e.g. `laptop:jp@192.168.5.20`). Each host must have SSH key-based access from the HAL server. |
 | `USE_SSH_TUNNEL` | `false` | Set `true` when running from a laptop |
 | `NTFY_URL` | *(empty)* | Push alerts via ntfy.sh topic URL — leave empty to disable |
 | `HAL_INSTANCE` | *(hostname)* | Grafana Pushgateway label — set `laptop` or `the-lab` explicitly |
@@ -382,6 +383,12 @@ pressure never occurs. If `swapon -s` shows zram0 near capacity (~8 Gi used), th
 culprit is the vLLM engine process (3–4 Gi RSS) combined with large buff/cache; reducing
 `--gpu-memory-utilization` in `ops/vllm.service` from 0.95 is the correct lever. Do not
 disable zram — removing it would not free RAM.
+
+**EXTRA_HOSTS SSH keys:** Each host in `EXTRA_HOSTS` must have passwordless SSH access
+from the HAL server (or container). Verify with `ssh -o BatchMode=yes user@host hostname`.
+If HAL runs inside Docker, the SSH key must be mounted into the container. An unreachable
+host will raise `ValueError` at tool-call time, not at startup — startup succeeds even if
+a host is temporarily down.
 
 ---
 
