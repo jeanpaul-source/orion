@@ -1224,6 +1224,19 @@
 
   // ── Init ────────────────────────────────────────────────────────
   (function init() {
+    // Auto-authenticate from URL token (e.g. ?token=xxx) — store and strip
+    var _urlParams = new URLSearchParams(window.location.search);
+    var _urlToken = _urlParams.get("token");
+    if (_urlToken) {
+      _token = _urlToken;
+      localStorage.setItem(TOKEN_KEY, _token);
+      // Remove token from the URL so it doesn't leak in history/screenshots
+      _urlParams.delete("token");
+      var _cleanUrl = window.location.pathname;
+      if (_urlParams.toString()) _cleanUrl += "?" + _urlParams.toString();
+      window.history.replaceState({}, "", _cleanUrl);
+    }
+
     // Ensure at least one session exists
     if (sessions.length === 0 || !getActive()) {
       createSession();
