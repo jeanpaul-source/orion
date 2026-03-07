@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from hal.executor import _LOCAL_HOSTS, SSHExecutor
+from hal.executor import _LOCAL_HOSTS, ExecutorRegistry, SSHExecutor
 
 # --------------------------------------------------------------------------- #
 # Proof 1 — Localhost detection
@@ -323,3 +323,67 @@ def test_mock_executor_never_calls_subprocess(monkeypatch):
     with _patch("hal.executor.subprocess.run") as mock_run:
         exe.run("rm -rf /")
         mock_run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# ExecutorRegistry tests
+# ---------------------------------------------------------------------------
+
+
+def _lab_only_registry() -> dict[str, tuple[str, str]]:
+    return {"lab": ("192.168.5.10", "jp")}
+
+
+def test_registry_init_with_lab_only():
+    """Registry with just the lab entry should initialize successfully."""
+    reg = ExecutorRegistry(_lab_only_registry())
+    assert reg.default.host == "192.168.5.10"
+    assert reg.default.user == "jp"
+
+
+def test_registry_init_with_multiple_hosts():
+    """Registry with lab + extras should create an executor per host."""
+    hosts = {
+        "lab": ("192.168.5.10", "jp"),
+        "nas": ("192.168.5.20", "admin"),
+    }
+    reg = ExecutorRegistry(hosts)
+    assert reg.get("lab").host == "192.168.5.10"
+    assert reg.get("nas").host == "192.168.5.20"
+    assert reg.get("nas").user == "admin"
+
+
+def test_registry_get_none_returns_default():
+    """get(None) should return the lab executor."""
+    reg = ExecutorRegistry(_lab_only_registry())
+    assert reg.get(None) is reg.default
+
+
+def test_registry_get_known_host():
+    """get('lab') should return the lab executor."""
+    reg = ExecutorRegistry(_lab_only_registry())
+    assert reg.get("lab") is reg.default
+
+
+def test_registry_get_unknown_host_raises():
+    """get() with an unknown name should raise ValueError with host list."""
+    reg = ExecutorRegistry(_lab_only_registry())
+    with pytest.raises(ValueError, match=r"Unknown host.*'nope'.*lab"):
+        reg.get("nope")
+
+
+def test_registry_requires_lab_entry():
+    """Registry must contain a 'lab' entry — raises ValueError otherwise."""
+    with pytest.raises(ValueError, match="must contain a 'lab' entry"):
+        ExecutorRegistry({"nas": ("192.168.5.20", "admin")})
+
+
+def test_registry_known_hosts_sorted():
+    """known_hosts should return a sorted list of configured host names."""
+    hosts = {
+        "lab": ("192.168.5.10", "jp"),
+        "nas": ("192.168.5.20", "admin"),
+        "backup": ("192.168.5.30", "root"),
+    }
+    reg = ExecutorRegistry(hosts)
+    assert reg.known_hosts == ["backup", "lab", "nas"]
