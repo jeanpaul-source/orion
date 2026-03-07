@@ -1214,3 +1214,257 @@ def test_health_detail_metrics_unavailable() -> None:
     finally:
         server._state.clear()
         server._state.update(old)
+
+
+# ---------------------------------------------------------------------------
+# /kb/categories endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_kb_categories_returns_list() -> None:
+    """GET /kb/categories returns category names with chunk counts."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_kb = MagicMock()
+    fake_kb.categories.return_value = [
+        ("lab-state", 18),
+        ("lab-infrastructure", 35),
+    ]
+
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": fake_kb})
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/kb/categories")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["category"] == "lab-state"
+        assert data[0]["count"] == 18
+        assert data[1]["category"] == "lab-infrastructure"
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_categories_requires_auth() -> None:
+    """GET /kb/categories enforces bearer token."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": MagicMock(hal_web_token="secret"),
+            "kb": MagicMock(),
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/kb/categories")
+        assert resp.status_code == 401
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_categories_503_when_degraded() -> None:
+    """GET /kb/categories returns 503 when server is degraded."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "Services unavailable"
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/kb/categories")
+        assert resp.status_code == 503
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+# ---------------------------------------------------------------------------
+# /kb/search endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_kb_search_returns_results() -> None:
+    """GET /kb/search?q=... returns ranked search results."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_kb = MagicMock()
+    fake_kb.search.return_value = [
+        {
+            "content": "vLLM runs on port 8000",
+            "file": "lab.md",
+            "category": "lab-infrastructure",
+            "score": 0.92,
+            "doc_tier": "ground-truth",
+        },
+    ]
+
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": fake_kb})
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/kb/search", params={"q": "vLLM port"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["score"] == 0.92
+        assert data[0]["category"] == "lab-infrastructure"
+        # Verify the KB was called with correct args
+        fake_kb.search.assert_called_once_with("vLLM port", top_k=5, category=None)
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_search_with_category_filter() -> None:
+    """GET /kb/search respects the optional category parameter."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_kb = MagicMock()
+    fake_kb.search.return_value = []
+
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": fake_kb})
+    try:
+        client = TestClient(server.app)
+        resp = client.get(
+            "/kb/search",
+            params={"q": "docker", "category": "lab-state", "top_k": 3},
+        )
+        assert resp.status_code == 200
+        fake_kb.search.assert_called_once_with("docker", top_k=3, category="lab-state")
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_search_clamps_top_k() -> None:
+    """GET /kb/search clamps top_k to 1..20 range."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_kb = MagicMock()
+    fake_kb.search.return_value = []
+
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": fake_kb})
+    try:
+        client = TestClient(server.app)
+        # top_k=100 should be clamped to 20
+        client.get("/kb/search", params={"q": "test", "top_k": 100})
+        fake_kb.search.assert_called_with("test", top_k=20, category=None)
+
+        # top_k=0 should be clamped to 1
+        client.get("/kb/search", params={"q": "test", "top_k": 0})
+        fake_kb.search.assert_called_with("test", top_k=1, category=None)
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_search_requires_auth() -> None:
+    """GET /kb/search enforces bearer token."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": MagicMock(hal_web_token="secret"),
+            "kb": MagicMock(),
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/kb/search", params={"q": "test"})
+        assert resp.status_code == 401
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_search_requires_query() -> None:
+    """GET /kb/search without q parameter returns 422 (validation error)."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": MagicMock()})
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/kb/search")
+        assert resp.status_code == 422
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+# ---------------------------------------------------------------------------
+# /kb/remember endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_kb_remember_saves_fact() -> None:
+    """POST /kb/remember saves a fact via kb.remember()."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_kb = MagicMock()
+
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": fake_kb})
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/kb/remember", json={"fact": "vLLM uses port 8000"})
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+        fake_kb.remember.assert_called_once_with("vLLM uses port 8000")
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_remember_rejects_empty_fact() -> None:
+    """POST /kb/remember returns 400 when fact is blank."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": MagicMock()})
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/kb/remember", json={"fact": "   "})
+        assert resp.status_code == 400
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_remember_requires_auth() -> None:
+    """POST /kb/remember enforces bearer token."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": MagicMock(hal_web_token="secret"),
+            "kb": MagicMock(),
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/kb/remember", json={"fact": "test fact"})
+        assert resp.status_code == 401
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_kb_remember_strips_whitespace() -> None:
+    """POST /kb/remember strips leading/trailing whitespace from the fact."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_kb = MagicMock()
+
+    server._state.update({"config": MagicMock(hal_web_token=""), "kb": fake_kb})
+    try:
+        client = TestClient(server.app)
+        resp = client.post("/kb/remember", json={"fact": "  trimmed fact  "})
+        assert resp.status_code == 200
+        fake_kb.remember.assert_called_once_with("trimmed fact")
+    finally:
+        server._state.clear()
+        server._state.update(old)
