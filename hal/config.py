@@ -48,6 +48,10 @@ class Config:
     llm_repetition_penalty: float  # default 1.05 (Qwen generation_config)
     # Multi-host inventory — additional SSH targets beyond the primary lab host
     extra_hosts: str  # comma-separated "name:user@host" entries; default ""
+    # Sandbox execution — isolated Docker container for code execution
+    sandbox_enabled: bool  # master kill-switch; default true
+    sandbox_timeout: int  # execution timeout in seconds; default 30
+    sandbox_image: str  # Docker image name; default "orion-sandbox:latest"
     # Watchdog proactive trend thresholds — rate-of-change that triggers an early alert
     watchdog_disk_rate_pct_per_hour: float  # default 5.0
     watchdog_mem_rate_pct_per_hour: float  # default 5.0
@@ -119,6 +123,9 @@ def load() -> Config:
         llm_top_p=float(os.getenv("LLM_TOP_P", "0.8")),
         llm_min_p=float(os.getenv("LLM_MIN_P", "0.05")),
         llm_repetition_penalty=float(os.getenv("LLM_REPETITION_PENALTY", "1.05")),
+        sandbox_enabled=os.getenv("SANDBOX_ENABLED", "true").lower() == "true",
+        sandbox_timeout=int(os.getenv("SANDBOX_TIMEOUT", "30")),
+        sandbox_image=os.getenv("SANDBOX_IMAGE", "orion-sandbox:latest"),
         watchdog_disk_rate_pct_per_hour=float(
             os.getenv("WATCHDOG_DISK_RATE_PCT_PER_HOUR", "5.0")
         ),
