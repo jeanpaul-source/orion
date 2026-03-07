@@ -222,6 +222,58 @@ body {
   color: var(--text-muted);
 }
 
+/* ── Sidebar metrics bars ──────────────────────────────────────── */
+.metrics-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.metric-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.metric-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 28px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-track {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-page);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.metric-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--green);
+  transition: width 0.6s ease, background 0.4s ease;
+  min-width: 0;
+}
+
+.metric-fill.warn { background: var(--amber); }
+.metric-fill.crit { background: var(--red); }
+
+.metric-val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* ── Main area ────────────────────────────────────────────────────── */
 .main {
   flex: 1;

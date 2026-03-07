@@ -628,22 +628,68 @@
     $input.focus();
   }
 
+  function _updateMetricBar(barId, valId, pct) {
+    var bar = document.getElementById(barId);
+    var val = document.getElementById(valId);
+    if (!bar || !val) return;
+    if (pct === null || pct === undefined) {
+      bar.style.width = "0";
+      bar.className = "metric-fill";
+      val.textContent = "—";
+      return;
+    }
+    bar.style.width = Math.min(pct, 100) + "%";
+    bar.className = "metric-fill" + (pct >= 85 ? " crit" : pct >= 60 ? " warn" : "");
+    val.textContent = Math.round(pct) + "%";
+  }
+
   async function checkHealth() {
+    // Try detailed endpoint first (auth required), fall back to basic /health.
+    var detailed = false;
     try {
-      var res = await fetch(API_BASE + "/health");
-      var data = await res.json();
-      var status = data.status || "down";
-      $healthDot.className = "health-dot " + status;
-      $healthDot.title = "Status: " + status;
-      $healthText.textContent = "status: " + status;
-      $healthText.style.color =
-        status === "ok" ? "var(--green)" :
-        status === "degraded" ? "var(--amber)" : "var(--red)";
-    } catch (_) {
-      $healthDot.className = "health-dot down";
-      $healthDot.title = "Unreachable";
-      $healthText.textContent = "status: unreachable";
-      $healthText.style.color = "var(--red)";
+      var headers = {};
+      if (_token) headers["Authorization"] = "Bearer " + _token;
+      var res = await fetch(API_BASE + "/health/detail", { headers: headers });
+      if (res.ok) {
+        var data = await res.json();
+        detailed = true;
+        // Derive overall status from components
+        var statuses = (data.components || []).map(function (c) { return c.status; });
+        var status = "ok";
+        if (statuses.indexOf("down") !== -1) status = "down";
+        else if (statuses.indexOf("degraded") !== -1) status = "degraded";
+        $healthDot.className = "health-dot " + status;
+        $healthDot.title = "Status: " + status;
+        $healthText.textContent = "status: " + status;
+        $healthText.style.color =
+          status === "ok" ? "var(--green)" :
+          status === "degraded" ? "var(--amber)" : "var(--red)";
+        // Update metric bars
+        var m = data.metrics || {};
+        _updateMetricBar("bar-cpu", "val-cpu", m.cpu_pct);
+        _updateMetricBar("bar-mem", "val-mem", m.mem_pct);
+        _updateMetricBar("bar-gpu", "val-gpu", m.gpu_vram_pct);
+        // Stash detail data for the health panel (step 3)
+        window._halHealthDetail = data;
+      }
+    } catch (_) { /* fall through to basic check */ }
+    if (!detailed) {
+      try {
+        var res2 = await fetch(API_BASE + "/health");
+        var data2 = await res2.json();
+        var s = data2.status || "down";
+        $healthDot.className = "health-dot " + s;
+        $healthDot.title = "Status: " + s;
+        $healthText.textContent = "status: " + s;
+        $healthText.style.color =
+          s === "ok" ? "var(--green)" :
+          s === "degraded" ? "var(--amber)" : "var(--red)";
+      } catch (_2) {
+        $healthDot.className = "health-dot down";
+        $healthDot.title = "Unreachable";
+        $healthText.textContent = "status: unreachable";
+        $healthText.style.color = "var(--red)";
+      }
     }
   }
 

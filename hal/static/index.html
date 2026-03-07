@@ -27,6 +27,11 @@
     <input id="session-search" class="session-search" type="text" placeholder="search sessions…">
     <div id="session-list" class="session-list"></div>
     <div class="sidebar-footer">
+      <div id="metrics-bars" class="metrics-bars">
+        <div class="metric-row"><span class="metric-label">CPU</span><div class="metric-track"><div id="bar-cpu" class="metric-fill" style="width:0"></div></div><span id="val-cpu" class="metric-val">—</span></div>
+        <div class="metric-row"><span class="metric-label">MEM</span><div class="metric-track"><div id="bar-mem" class="metric-fill" style="width:0"></div></div><span id="val-mem" class="metric-val">—</span></div>
+        <div class="metric-row"><span class="metric-label">GPU</span><div class="metric-track"><div id="bar-gpu" class="metric-fill" style="width:0"></div></div><span id="val-gpu" class="metric-val">—</span></div>
+      </div>
       <span id="health-text" class="health-text">checking...</span>
       <button id="sign-out-btn" class="sign-out-btn" title="Sign out">sign out</button>
     </div>
