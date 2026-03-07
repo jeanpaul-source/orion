@@ -436,7 +436,7 @@ def test_populate_state_sets_clients_and_clears_error() -> None:
         with (
             patch.object(server, "KnowledgeBase"),
             patch.object(server, "PrometheusClient"),
-            patch.object(server, "SSHExecutor"),
+            patch.object(server, "ExecutorRegistry"),
             patch.object(server, "IntentClassifier"),
         ):
             server._populate_state(config, llm, embed, [])

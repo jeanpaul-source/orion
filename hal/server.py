@@ -46,7 +46,7 @@ import json as _json
 
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
-from hal.executor import SSHExecutor
+from hal.executor import ExecutorRegistry
 from hal.sanitize import strip_cjk_lines, strip_tool_call_artifacts
 from hal.intent import (
     IntentClassifier,
@@ -134,7 +134,9 @@ def _populate_state(
             "tunnels": tunnels,
             "kb": KnowledgeBase(config.pgvector_dsn, embed),
             "prom": PrometheusClient(config.prometheus_url),
-            "executor": SSHExecutor(config.lab_host, config.lab_user),
+            "executor": ExecutorRegistry(
+                {config.lab_host: (config.lab_host, config.lab_user)}
+            ),
             "judge": ServerJudge(
                 llm=llm,
                 extra_sensitive_paths=tuple(
@@ -500,7 +502,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     llm: VLLMClient = _state["llm"]
     kb: KnowledgeBase = _state["kb"]
     prom: PrometheusClient = _state["prom"]
-    executor: SSHExecutor = _state["executor"]
+    registry: ExecutorRegistry = _state["executor"]
     judge: Judge = _state["judge"]
 
     def _run() -> tuple[str, list[dict], str, str]:
@@ -533,7 +535,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
                 llm,
                 prom,
                 kb,
-                executor,
+                registry,
                 judge,
                 mem,
                 session_id,

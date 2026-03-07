@@ -16,7 +16,7 @@ from rich.text import Text
 
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
-from hal.executor import SSHExecutor
+from hal.executor import ExecutorRegistry, SSHExecutor
 from hal.intent import (
     IntentClassifier,  # why: Layer 1 — routes conversational queries away from the tool loop
 )
@@ -299,7 +299,8 @@ def main() -> None:
     llm, embed, tunnels = setup_clients(config)
     kb = KnowledgeBase(config.pgvector_dsn, embed)
     prom = PrometheusClient(config.prometheus_url)
-    executor = SSHExecutor(config.lab_host, config.lab_user)
+    registry = ExecutorRegistry({config.lab_host: (config.lab_host, config.lab_user)})
+    executor = registry.default
     judge = Judge(
         llm=llm,
         extra_sensitive_paths=tuple(
@@ -344,7 +345,7 @@ def main() -> None:
                 llm,
                 prom,
                 kb,
-                executor,
+                registry,
                 judge,
                 mem,
                 session_id,
@@ -434,7 +435,7 @@ def main() -> None:
                         llm,
                         prom,
                         kb,
-                        executor,
+                        registry,
                         judge,
                         mem,
                         session_id,

@@ -19,7 +19,7 @@ from rich.console import Console
 
 import hal.config as cfg
 from hal.agent import AgentResult, run_agent
-from hal.executor import SSHExecutor
+from hal.executor import ExecutorRegistry
 from hal.intent import (
     IntentClassifier,  # why: Layer 1 — needed for conversational routing in dispatch_intent
 )
@@ -317,7 +317,7 @@ def dispatch_intent(
     llm: VLLMClient,
     prom: PrometheusClient,
     kb: KnowledgeBase,
-    executor: SSHExecutor,
+    registry: ExecutorRegistry,
     judge: Judge,
     mem: MemoryStore,
     session_id: str,
@@ -356,7 +356,7 @@ def dispatch_intent(
         llm,
         kb,
         prom,
-        executor,
+        registry,
         judge,
         mem,
         session_id,

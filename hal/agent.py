@@ -9,7 +9,7 @@ from typing import Any
 
 from rich.console import Console
 
-from hal.executor import SSHExecutor
+from hal.executor import ExecutorRegistry
 from hal.judge import Judge
 from hal.knowledge import KnowledgeBase
 from hal.llm import VLLMClient
@@ -91,7 +91,7 @@ def run_agent(
     llm: VLLMClient,
     kb: KnowledgeBase,
     prom: PrometheusClient,
-    executor: SSHExecutor,
+    registry: ExecutorRegistry,
     judge: Judge,
     mem: MemoryStore,
     session_id: str,
@@ -267,7 +267,7 @@ def run_agent(
                             name,
                             raw_args,
                             ToolContext(
-                                executor=executor,
+                                registry=registry,
                                 judge=judge,
                                 kb=kb,
                                 prom=prom,

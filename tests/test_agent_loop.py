@@ -18,6 +18,18 @@ from hal.agent import run_agent
 from hal.sanitize import strip_tool_call_artifacts as _strip_tool_artifacts
 from hal.tools import ToolContext, dispatch_tool
 
+
+def _mock_registry(executor=None):
+    """Build an ExecutorRegistry mock whose .default and .get() return executor."""
+    if executor is None:
+        executor = MagicMock()
+    reg = MagicMock()
+    reg.default = executor
+    reg.get.return_value = executor
+    reg.known_hosts = ["lab"]
+    return reg
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -85,7 +97,7 @@ def _call_run_agent(
         llm=llm,
         kb=kb,
         prom=prom,
-        executor=executor,
+        registry=_mock_registry(executor),
         judge=judge,
         mem=mem,
         session_id="test-sess",
@@ -258,7 +270,7 @@ def test_search_kb_returns_no_results_when_empty():
     result = dispatch_tool(
         "search_kb",
         {"query": "nonexistent thing"},
-        ToolContext(executor=executor, judge=judge, kb=kb, prom=prom),
+        ToolContext(registry=_mock_registry(executor), judge=judge, kb=kb, prom=prom),
     )
     assert "No relevant results" in result
 
@@ -278,7 +290,7 @@ def test_unknown_tool_returns_graceful_error():
     result = dispatch_tool(
         "totally_unknown_tool_xyz",
         {},
-        ToolContext(executor=executor, judge=judge, kb=kb, prom=prom),
+        ToolContext(registry=_mock_registry(executor), judge=judge, kb=kb, prom=prom),
     )
     assert (
         "unknown tool" in result.lower() or result
@@ -301,7 +313,7 @@ def test_get_metrics_prometheus_unavailable():
     result = dispatch_tool(
         "get_metrics",
         {},
-        ToolContext(executor=executor, judge=judge, kb=kb, prom=prom),
+        ToolContext(registry=_mock_registry(executor), judge=judge, kb=kb, prom=prom),
     )
     assert "unavailable" in result.lower() or "error" in result.lower(), (
         f"Expected fallback error message, got: {result!r}"
@@ -330,7 +342,7 @@ def test_kb_context_injected_for_high_score_chunks():
         llm=llm,
         kb=kb,
         prom=prom,
-        executor=executor,
+        registry=_mock_registry(executor),
         judge=judge,
         mem=mem,
         session_id="s1",
@@ -371,7 +383,7 @@ def test_kb_context_not_injected_for_low_score_chunks():
         llm=llm,
         kb=kb,
         prom=prom,
-        executor=executor,
+        registry=_mock_registry(executor),
         judge=judge,
         mem=mem,
         session_id="s2",

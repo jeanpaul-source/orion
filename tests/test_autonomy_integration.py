@@ -19,6 +19,18 @@ from conftest import ScriptedExecutor, ScriptedLLM
 from hal.agent import run_agent
 from hal.healthcheck import ComponentHealth
 
+
+def _mock_registry(executor=None):
+    """Build an ExecutorRegistry mock whose .default and .get() return *executor*."""
+    if executor is None:
+        executor = ScriptedExecutor()
+    reg = MagicMock()
+    reg.default = executor
+    reg.get.return_value = executor
+    reg.known_hosts = ["lab"]
+    return reg
+
+
 # ---------------------------------------------------------------------------
 # Helpers — build LLM response dicts (same pattern as test_integration.py)
 # ---------------------------------------------------------------------------
@@ -120,7 +132,7 @@ class TestHealthCheckThroughAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=ScriptedExecutor(),
+            registry=_mock_registry(),
             judge=auto_approve_judge,
             mem=memory_store,
             session_id="test-health-tool",
@@ -164,7 +176,7 @@ class TestHealthCheckThroughAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=ScriptedExecutor(),
+            registry=_mock_registry(),
             judge=auto_approve_judge,
             mem=memory_store,
             session_id="test-health-down",
@@ -201,7 +213,7 @@ class TestHealthCheckThroughAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=ScriptedExecutor(),
+            registry=_mock_registry(),
             judge=auto_approve_judge,
             mem=memory_store,
             session_id="test-health-noconfig",
@@ -273,7 +285,7 @@ class TestRecoverComponentThroughAgentLoop:
                 llm=llm,
                 kb=stub_kb,
                 prom=stub_prom,
-                executor=executor,
+                registry=_mock_registry(executor),
                 judge=auto_approve_judge,
                 mem=memory_store,
                 session_id="test-recover-ok",
@@ -337,7 +349,7 @@ class TestRecoverComponentThroughAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=real_judge,
             mem=memory_store,
             session_id="test-recover-deny",
@@ -379,7 +391,7 @@ class TestRecoverComponentThroughAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=ScriptedExecutor(),
+            registry=_mock_registry(),
             judge=auto_approve_judge,
             mem=memory_store,
             session_id="test-recover-invalid",
@@ -434,7 +446,7 @@ class TestCircuitBreakerIntegration:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=auto_approve_judge,
             mem=memory_store,
             session_id="test-cb-block",
@@ -525,7 +537,7 @@ class TestDetectDiagnoseRecoverLoop:
                 llm=llm,
                 kb=stub_kb,
                 prom=stub_prom,
-                executor=executor,
+                registry=_mock_registry(executor),
                 judge=auto_approve_judge,
                 mem=memory_store,
                 session_id="test-full-loop",
@@ -590,7 +602,7 @@ class TestDetectDiagnoseRecoverLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=auto_approve_judge,
             mem=memory_store,
             session_id="test-recover-fail-verify",
@@ -698,7 +710,7 @@ class TestTrustEvolutionRecovery:
                 llm=llm,
                 kb=stub_kb,
                 prom=stub_prom,
-                executor=executor,
+                registry=_mock_registry(executor),
                 judge=judge,
                 mem=memory_store,
                 session_id="test-trust-recover",
@@ -768,7 +780,7 @@ class TestRecoveryAuditTrail:
                 llm=llm,
                 kb=stub_kb,
                 prom=stub_prom,
-                executor=executor,
+                registry=_mock_registry(executor),
                 judge=auto_approve_judge,
                 mem=memory_store,
                 session_id="test-audit",
