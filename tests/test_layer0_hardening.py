@@ -65,7 +65,7 @@ def test_llm_error_does_not_write_to_history():
         llm=llm,
         kb=kb,
         prom=MagicMock(),
-        executor=MagicMock(),
+        registry=MagicMock(),
         judge=MagicMock(),
         mem=mem,
         session_id="hardening-test",

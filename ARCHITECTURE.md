@@ -17,8 +17,8 @@ You  (terminal REPL, HTTP server, Telegram bot)
                                         │
                      ┌──────────────────┼──────────────────────┐
                      ▼                  ▼                      ▼
-               VLLMClient          KnowledgeBase           SSHExecutor
-               (chat+tools)        (pgvector)              (runs commands)
+               VLLMClient          KnowledgeBase           ExecutorRegistry
+               (chat+tools)        (pgvector)              (resolves host → SSHExecutor)
                      │                                         │
                      └──────────────── Judge ─────────────────┘
                                   (gates every action)
@@ -28,6 +28,8 @@ Supporting components:
   MemoryStore   — SQLite session turns at ~/.orion/memory.db; loaded into context on start
   PrometheusClient — PromQL queries for live metrics + Pushgateway metric push
   SSHTunnel     — port-forwards lab services when running from a laptop (USE_SSH_TUNNEL=true)
+  ExecutorRegistry — maps host names ("lab", "laptop", …) to SSHExecutor instances;
+                     tools accept an optional target_host parameter; default is "lab"
 
 HTTP layer (hal/server.py):
   FastAPI server — /chat (POST) + /health (GET); ServerJudge auto-denies tier 1+
@@ -161,6 +163,9 @@ Adding 1 to the current tier preserves the relative risk ordering.
   call is skipped and a synthetic message is injected ("you already have this data")
 - Empty tools list on final iteration — forces a text response if 7 iterations elapsed
   without one
+- Multi-host routing — `run_command`, `read_file`, `list_dir`, `write_file` accept an
+  optional `target_host` parameter; `ExecutorRegistry.get(target_host)` resolves the
+  host name to an `SSHExecutor`; default is `"lab"` (the primary server)
 
 **Why not run the LLM in streaming mode for tool calls?**
 

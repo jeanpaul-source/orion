@@ -97,3 +97,63 @@ def test_llm_sampling_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config.llm_top_p == 0.9
     assert config.llm_min_p == 0.10
     assert config.llm_repetition_penalty == 1.2
+
+
+# ---------------------------------------------------------------------------
+# Host registry property tests
+# ---------------------------------------------------------------------------
+
+
+def test_host_registry_default_lab_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty EXTRA_HOSTS → only the 'lab' entry from LAB_HOST/LAB_USER."""
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("EXTRA_HOSTS", raising=False)
+
+    config = cfg.load()
+
+    assert config.host_registry == {"lab": ("192.168.5.10", "jp")}
+
+
+def test_host_registry_with_extra_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Single EXTRA_HOSTS entry adds a second host alongside lab."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("EXTRA_HOSTS", "laptop:jp@192.168.5.20")
+
+    config = cfg.load()
+
+    assert "lab" in config.host_registry
+    assert config.host_registry["laptop"] == ("192.168.5.20", "jp")
+
+
+def test_host_registry_multiple_extras(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Multiple comma-separated EXTRA_HOSTS entries all appear in the registry."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("EXTRA_HOSTS", "laptop:jp@192.168.5.20,nas:admin@192.168.5.30")
+
+    config = cfg.load()
+
+    assert len(config.host_registry) == 3
+    assert config.host_registry["laptop"] == ("192.168.5.20", "jp")
+    assert config.host_registry["nas"] == ("192.168.5.30", "admin")
+
+
+def test_host_registry_skips_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Malformed entries are silently skipped; valid entries still parsed."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("EXTRA_HOSTS", "badentry,also bad,ok:jp@10.0.0.1")
+
+    config = cfg.load()
+
+    assert len(config.host_registry) == 2  # lab + ok
+    assert config.host_registry["ok"] == ("10.0.0.1", "jp")
+    assert "badentry" not in config.host_registry
+
+
+def test_host_registry_strips_whitespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Whitespace around entries and name/user/host is stripped."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("EXTRA_HOSTS", " laptop : jp@192.168.5.20 ")
+
+    config = cfg.load()
+
+    assert config.host_registry["laptop"] == ("192.168.5.20", "jp")

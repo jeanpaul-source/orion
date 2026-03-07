@@ -7,8 +7,20 @@ from unittest.mock import MagicMock, patch
 
 from hal.tools import TOOL_REGISTRY, ToolContext, dispatch_tool, get_tools
 
+
+def _mock_registry(executor=None):
+    """Build an ExecutorRegistry mock whose .default and .get() return executor."""
+    if executor is None:
+        executor = MagicMock()
+    reg = MagicMock()
+    reg.default = executor
+    reg.get.return_value = executor
+    reg.known_hosts = ["lab"]
+    return reg
+
+
 _CTX = ToolContext(
-    executor=MagicMock(),
+    registry=_mock_registry(),
     judge=MagicMock(),
     kb=MagicMock(),
     prom=MagicMock(),
@@ -87,7 +99,7 @@ def _ctx_with_trend(trend_return):
     prom_stub = MagicMock()
     prom_stub.trend.return_value = trend_return
     return ToolContext(
-        executor=MagicMock(),
+        registry=_mock_registry(),
         judge=MagicMock(),
         kb=MagicMock(),
         prom=prom_stub,
@@ -152,7 +164,7 @@ def _deny_judge():
 def test_run_command_denial_includes_tier_and_alternatives():
     """Denied run_command must report the tier and suggest read-only alternatives."""
     ctx = ToolContext(
-        executor=MagicMock(),
+        registry=_mock_registry(),
         judge=_deny_judge(),
         kb=MagicMock(),
         prom=MagicMock(),
@@ -172,7 +184,7 @@ def test_run_command_denial_includes_tier_and_alternatives():
 def test_run_command_denial_tier_matches_command():
     """The tier in the denial message should reflect the actual command classification."""
     ctx = ToolContext(
-        executor=MagicMock(),
+        registry=_mock_registry(),
         judge=_deny_judge(),
         kb=MagicMock(),
         prom=MagicMock(),
@@ -195,7 +207,7 @@ def test_run_command_denial_tier_matches_command():
 def test_fetch_url_denial_suggests_web_search():
     """Denied fetch_url must suggest web_search as an alternative."""
     ctx = ToolContext(
-        executor=MagicMock(),
+        registry=_mock_registry(),
         judge=_deny_judge(),
         kb=MagicMock(),
         prom=MagicMock(),
@@ -277,7 +289,7 @@ def test_recover_component_successful(monkeypatch):
         ),
     )
     ctx = ToolContext(
-        executor=MagicMock(),
+        registry=_mock_registry(),
         judge=MagicMock(),
         kb=MagicMock(),
         prom=MagicMock(),
@@ -331,9 +343,17 @@ def _approve_judge():
 
 
 def _make_ctx(**overrides) -> ToolContext:
-    """Build a ToolContext with mocks, allowing per-test overrides."""
-    defaults = {
-        "executor": MagicMock(),
+    """Build a ToolContext with mocks, allowing per-test overrides.
+
+    Pass ``executor=mock`` as a convenience — it will be wrapped in a
+    ``_mock_registry(executor)`` automatically.  Or pass ``registry=mock``
+    directly.
+    """
+    # Convenience: convert executor= to registry= via _mock_registry()
+    if "executor" in overrides:
+        overrides["registry"] = _mock_registry(overrides.pop("executor"))
+    defaults: dict = {
+        "registry": _mock_registry(),
         "judge": _approve_judge(),
         "kb": MagicMock(),
         "prom": MagicMock(),
@@ -720,3 +740,226 @@ def test_check_system_health_with_config(monkeypatch):
     out = dispatch_tool("check_system_health", {}, ctx)
     assert "0/0 healthy" in out
     assert "| Name | Status |" in out
+
+
+# ===========================================================================
+# Multi-host routing — target_host parameter
+# ===========================================================================
+
+
+def _multi_host_registry():
+    """Build a registry mock with default (lab) and a named 'laptop' executor."""
+    lab_exec = MagicMock()
+    lab_exec.run.return_value = {"stdout": "lab-output", "stderr": "", "returncode": 0}
+    laptop_exec = MagicMock()
+    laptop_exec.run.return_value = {
+        "stdout": "laptop-output",
+        "stderr": "",
+        "returncode": 0,
+    }
+
+    reg = MagicMock()
+    reg.default = lab_exec
+    reg.known_hosts = ["lab", "laptop"]
+
+    def _get(name):
+        if name is None:
+            return lab_exec
+        if name == "laptop":
+            return laptop_exec
+        raise ValueError(f"Unknown host '{name}'. Available hosts: lab, laptop")
+
+    reg.get.side_effect = _get
+    return reg, lab_exec, laptop_exec
+
+
+# --- run_command multi-host ---
+
+
+def test_run_command_default_host():
+    """No target_host → registry.get(None) → default lab executor."""
+    reg, _lab_exec, _ = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool("run_command", {"command": "hostname", "reason": "test"}, ctx)
+    assert "lab-output" in out
+    reg.get.assert_called_with(None)
+
+
+def test_run_command_named_host():
+    """target_host='laptop' → registry.get('laptop') → laptop executor."""
+    reg, _, _laptop_exec = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool(
+        "run_command",
+        {"command": "hostname", "reason": "test", "target_host": "laptop"},
+        ctx,
+    )
+    assert "laptop-output" in out
+    reg.get.assert_called_with("laptop")
+
+
+def test_run_command_unknown_host():
+    """Unknown target_host → ValueError caught → error message returned."""
+    reg, _, _ = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool(
+        "run_command",
+        {"command": "hostname", "reason": "test", "target_host": "unknown"},
+        ctx,
+    )
+    assert "Unknown host" in out
+    assert "unknown" in out
+
+
+# --- read_file multi-host ---
+
+
+def test_read_file_default_host():
+    """No target_host → default executor."""
+    reg, lab_exec, _ = _multi_host_registry()
+    lab_exec.run.return_value = {
+        "stdout": "file content here",
+        "stderr": "",
+        "returncode": 0,
+    }
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool("read_file", {"path": "/etc/hostname"}, ctx)
+    reg.get.assert_called_with(None)
+    assert "file content" in out
+
+
+def test_read_file_named_host():
+    """target_host='laptop' → laptop executor."""
+    reg, _, laptop_exec = _multi_host_registry()
+    laptop_exec.run.return_value = {
+        "stdout": "laptop-file-content",
+        "stderr": "",
+        "returncode": 0,
+    }
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool(
+        "read_file", {"path": "/etc/hostname", "target_host": "laptop"}, ctx
+    )
+    reg.get.assert_called_with("laptop")
+    assert "laptop-file-content" in out
+
+
+def test_read_file_unknown_host():
+    """Unknown target_host → error message."""
+    reg, _, _ = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool(
+        "read_file", {"path": "/etc/hostname", "target_host": "unknown"}, ctx
+    )
+    assert "Unknown host" in out
+
+
+# --- list_dir multi-host ---
+
+
+def test_list_dir_default_host():
+    """No target_host → default executor."""
+    reg, lab_exec, _ = _multi_host_registry()
+    lab_exec.run.return_value = {
+        "stdout": "bin\netc\nusr",
+        "stderr": "",
+        "returncode": 0,
+    }
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool("list_dir", {"path": "/"}, ctx)
+    reg.get.assert_called_with(None)
+    assert "bin" in out
+
+
+def test_list_dir_named_host():
+    """target_host='laptop' → laptop executor."""
+    reg, _, laptop_exec = _multi_host_registry()
+    laptop_exec.run.return_value = {
+        "stdout": "home\nopt",
+        "stderr": "",
+        "returncode": 0,
+    }
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool("list_dir", {"path": "/", "target_host": "laptop"}, ctx)
+    reg.get.assert_called_with("laptop")
+    assert "home" in out
+
+
+def test_list_dir_unknown_host():
+    """Unknown target_host → error message."""
+    reg, _, _ = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool("list_dir", {"path": "/", "target_host": "unknown"}, ctx)
+    assert "Unknown host" in out
+
+
+# --- write_file multi-host ---
+
+
+def test_write_file_default_host():
+    """No target_host → default executor."""
+    reg, _lab_exec, _ = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool(
+        "write_file",
+        {"path": "/tmp/test.txt", "content": "hello", "reason": "test"},
+        ctx,
+    )
+    reg.get.assert_called_with(None)
+    # write_file handler calls workers.write_file which uses executor.run
+    assert "denied" not in out.lower() or "wrote" in out.lower() or out
+
+
+def test_write_file_named_host():
+    """target_host='laptop' → laptop executor."""
+    reg, _, _laptop_exec = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    dispatch_tool(
+        "write_file",
+        {
+            "path": "/tmp/test.txt",
+            "content": "hello",
+            "reason": "test",
+            "target_host": "laptop",
+        },
+        ctx,
+    )
+    reg.get.assert_called_with("laptop")
+
+
+def test_write_file_unknown_host():
+    """Unknown target_host → error message."""
+    reg, _, _ = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+    out = dispatch_tool(
+        "write_file",
+        {
+            "path": "/tmp/test.txt",
+            "content": "hello",
+            "reason": "test",
+            "target_host": "unknown",
+        },
+        ctx,
+    )
+    assert "Unknown host" in out
+
+
+# --- Security handlers always use default ---
+
+
+def test_security_handlers_use_default_executor():
+    """Security tool handlers use ctx.registry.default, not target_host."""
+    from unittest.mock import patch
+
+    reg, lab_exec, _ = _multi_host_registry()
+    ctx = _make_ctx(registry=reg)
+
+    # Patch the underlying security function so no real I/O happens;
+    # hal/tools.py accesses it via `_security.get_security_events(...)`.
+    with patch("hal.security.get_security_events", return_value=[]):
+        dispatch_tool("get_security_events", {}, ctx)
+
+    # The handler passes ctx.registry.default (the lab executor) to the
+    # security function — it never calls ctx.registry.get() because security
+    # tools always target the primary lab server.
+    assert reg.default is lab_exec

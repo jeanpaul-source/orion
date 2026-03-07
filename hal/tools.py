@@ -30,7 +30,7 @@ from typing import NamedTuple, TypedDict
 import hal.security as _security
 import hal.trust_metrics as _trust_metrics
 import hal.web as _web
-from hal.executor import SSHExecutor
+from hal.executor import ExecutorRegistry
 from hal.judge import Judge, tier_for
 from hal.knowledge import KnowledgeBase
 from hal.prometheus import METRIC_PROMQL as _METRIC_PROMQL
@@ -46,7 +46,7 @@ class ToolContext(NamedTuple):
     and its single construction site — not every handler signature.
     """
 
-    executor: SSHExecutor
+    registry: ExecutorRegistry
     judge: Judge
     kb: KnowledgeBase
     prom: PrometheusClient
@@ -68,6 +68,7 @@ def _always_enabled(_: str) -> bool:
 def _handle_run_command(args: dict, ctx: ToolContext) -> str:
     command = args.get("command") or ""
     reason = args.get("reason") or ""
+    target_host = args.get("target_host") or None
     if not ctx.judge.approve("run_command", command, reason=reason):
         tier = tier_for("run_command", command)
         return (
@@ -76,7 +77,11 @@ def _handle_run_command(args: dict, ctx: ToolContext) -> str:
             "systemctl status, systemctl is-active, systemctl list-units, "
             "docker ps, docker logs, journalctl, ls, df, free, nvidia-smi."
         )
-    result = ctx.executor.run(command)
+    try:
+        executor = ctx.registry.get(target_host)
+    except ValueError as e:
+        return str(e)
+    result = executor.run(command)
     parts = []
     if result["stdout"].strip():
         parts.append(result["stdout"].strip())
@@ -90,14 +95,24 @@ def _handle_run_command(args: dict, ctx: ToolContext) -> str:
 def _handle_read_file(args: dict, ctx: ToolContext) -> str:
     path = args.get("path") or ""
     reason = args.get("reason") or ""
-    content = read_file(path, ctx.executor, ctx.judge, reason=reason)
+    target_host = args.get("target_host") or None
+    try:
+        executor = ctx.registry.get(target_host)
+    except ValueError as e:
+        return str(e)
+    content = read_file(path, executor, ctx.judge, reason=reason)
     return content if content is not None else f"Could not read {path}"
 
 
 def _handle_list_dir(args: dict, ctx: ToolContext) -> str:
     path = args.get("path") or ""
     reason = args.get("reason") or ""
-    output = list_dir(path, ctx.executor, ctx.judge, reason=reason)
+    target_host = args.get("target_host") or None
+    try:
+        executor = ctx.registry.get(target_host)
+    except ValueError as e:
+        return str(e)
+    output = list_dir(path, executor, ctx.judge, reason=reason)
     return output if output is not None else f"Could not list {path}"
 
 
@@ -105,7 +120,12 @@ def _handle_write_file(args: dict, ctx: ToolContext) -> str:
     path = args.get("path") or ""
     content = args.get("content") or ""
     reason = args.get("reason") or ""
-    ok = write_file(path, content, ctx.executor, ctx.judge, reason=reason)
+    target_host = args.get("target_host") or None
+    try:
+        executor = ctx.registry.get(target_host)
+    except ValueError as e:
+        return str(e)
+    ok = write_file(path, content, executor, ctx.judge, reason=reason)
     return (
         f"Written {len(content)} bytes to {path}"
         if ok
@@ -216,7 +236,9 @@ def _handle_get_action_stats(args: dict, ctx: ToolContext) -> str:
 def _handle_get_security_events(args: dict, ctx: ToolContext) -> str:
     n = int(args.get("n") or 50)
     reason = args.get("reason") or ""
-    events = _security.get_security_events(ctx.executor, ctx.judge, n=n, reason=reason)
+    events = _security.get_security_events(
+        ctx.registry.default, ctx.judge, n=n, reason=reason
+    )
     if not events:
         return "No security events found (or action denied)."
     import json as _json
@@ -226,7 +248,9 @@ def _handle_get_security_events(args: dict, ctx: ToolContext) -> str:
 
 def _handle_get_host_connections(args: dict, ctx: ToolContext) -> str:
     reason = args.get("reason") or ""
-    result = _security.get_host_connections(ctx.executor, ctx.judge, reason=reason)
+    result = _security.get_host_connections(
+        ctx.registry.default, ctx.judge, reason=reason
+    )
     if not result:
         return "No host connection data returned (or action denied)."
     import json as _json
@@ -237,7 +261,7 @@ def _handle_get_host_connections(args: dict, ctx: ToolContext) -> str:
 def _handle_get_traffic_summary(args: dict, ctx: ToolContext) -> str:
     reason = args.get("reason") or ""
     result = _security.get_traffic_summary(
-        ctx.executor, ctx.judge, ntopng_url=ctx.ntopng_url, reason=reason
+        ctx.registry.default, ctx.judge, ntopng_url=ctx.ntopng_url, reason=reason
     )
     if not result:
         return "No traffic data returned (or action denied)."
@@ -251,7 +275,7 @@ def _handle_scan_lan(args: dict, ctx: ToolContext) -> str:
     reason = args.get("reason") or ""
     if not subnet:
         return "Error: subnet is required."
-    hosts = _security.scan_lan(subnet, ctx.executor, ctx.judge, reason=reason)
+    hosts = _security.scan_lan(subnet, ctx.registry.default, ctx.judge, reason=reason)
     if not hosts:
         return "No hosts found (or action denied)."
     import json as _json
@@ -285,7 +309,7 @@ def _handle_recover_component(args: dict, ctx: ToolContext) -> str:
         )
 
     # Execute the playbook — each step goes through the Judge individually
-    result = execute_playbook(playbook, ctx.executor, ctx.judge)
+    result = execute_playbook(playbook, ctx.registry.default, ctx.judge)
 
     if result.success:
         # Run a follow-up health check to confirm
@@ -431,7 +455,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "function": {
                 "name": "run_command",
                 "description": (
-                    "Run a shell command on the lab server. "
+                    "Run a shell command on the target host (default: lab server). "
                     "Use ONLY for live state: checking processes, service status, logs, "
                     "disk usage, network. Do NOT use for questions answerable from the KB. "
                     "Auto-approved (tier 0) commands: ps, cat, head, tail, grep, ls, df, du, "
@@ -454,6 +478,13 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                             "type": "string",
                             "description": "One sentence explaining why you need to run this command",
                         },
+                        "target_host": {
+                            "type": "string",
+                            "description": (
+                                "Which host to target. Default: lab (the primary server). "
+                                "Use only when explicitly asked to operate on a different host."
+                            ),
+                        },
                     },
                     "required": ["command"],
                 },
@@ -467,7 +498,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read the contents of a file on the lab server.",
+                "description": "Read the contents of a file on the target host (default: lab server).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -478,6 +509,13 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                         "reason": {
                             "type": "string",
                             "description": "One sentence explaining why you need to read this file",
+                        },
+                        "target_host": {
+                            "type": "string",
+                            "description": (
+                                "Which host to target. Default: lab (the primary server). "
+                                "Use only when explicitly asked to operate on a different host."
+                            ),
                         },
                     },
                     "required": ["path"],
@@ -492,7 +530,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "type": "function",
             "function": {
                 "name": "list_dir",
-                "description": "List the contents of a directory on the lab server.",
+                "description": "List the contents of a directory on the target host (default: lab server).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -503,6 +541,13 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                         "reason": {
                             "type": "string",
                             "description": "One sentence explaining why you need to list this directory",
+                        },
+                        "target_host": {
+                            "type": "string",
+                            "description": (
+                                "Which host to target. Default: lab (the primary server). "
+                                "Use only when explicitly asked to operate on a different host."
+                            ),
                         },
                     },
                     "required": ["path"],
@@ -518,7 +563,8 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             "function": {
                 "name": "write_file",
                 "description": (
-                    "Write content to a file on the lab server (creates or overwrites). "
+                    "Write content to a file on the target host (default: lab server; "
+                    "creates or overwrites). "
                     "Requires approval. Use only when explicitly asked to create or modify a file."
                 ),
                 "parameters": {
@@ -535,6 +581,13 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
                         "reason": {
                             "type": "string",
                             "description": "One sentence explaining why you need to write this file",
+                        },
+                        "target_host": {
+                            "type": "string",
+                            "description": (
+                                "Which host to target. Default: lab (the primary server). "
+                                "Use only when explicitly asked to operate on a different host."
+                            ),
                         },
                     },
                     "required": ["path", "content"],

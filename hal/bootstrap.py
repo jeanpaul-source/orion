@@ -19,7 +19,7 @@ from rich.console import Console
 
 import hal.config as cfg
 from hal.agent import AgentResult, run_agent
-from hal.executor import SSHExecutor
+from hal.executor import ExecutorRegistry
 from hal.intent import (
     IntentClassifier,  # why: Layer 1 — needed for conversational routing in dispatch_intent
 )
@@ -56,6 +56,7 @@ def get_system_prompt(config: cfg.Config) -> str:
         if config.lab_hardware_summary
         else ""
     )
+    _hosts_list = ", ".join(sorted(config.host_registry.keys()))
     return f"""\
 You are HAL — the intelligence layer of a personal homelab. \
 You are not Qwen, Claude, or any other model. You are HAL. Never break this identity. \
@@ -161,6 +162,11 @@ Troubleshooting order: metrics → docker ps → journalctl → Falco → KB sea
 Your conversation history from previous sessions is in the context above. \
 When asked what you remember, refer to those messages. Never claim you can't recall past conversations.
 The /remember command stores facts permanently in the KB as memory tier (never cleared by harvest).
+
+── MULTI-HOST ────────────────────────────────────────────────────────
+Available hosts for run_command, read_file, list_dir, write_file: {_hosts_list}
+Default host: lab (the primary server). Only use target_host when the user explicitly \
+asks you to operate on a different machine. Never guess which host — ask if unclear.
 
 ── RULES ─────────────────────────────────────────────────────────────
 • Always respond in English. Never switch to Chinese or any other language, even partially, \
@@ -317,7 +323,7 @@ def dispatch_intent(
     llm: VLLMClient,
     prom: PrometheusClient,
     kb: KnowledgeBase,
-    executor: SSHExecutor,
+    registry: ExecutorRegistry,
     judge: Judge,
     mem: MemoryStore,
     session_id: str,
@@ -356,7 +362,7 @@ def dispatch_intent(
         llm,
         kb,
         prom,
-        executor,
+        registry,
         judge,
         mem,
         session_id,

@@ -155,12 +155,13 @@ def test_chat_happy_path_returns_response_session_and_intent(monkeypatch) -> Non
                 lab_hostname="test-lab",
                 lab_hardware_summary="",
                 lab_host="127.0.0.1",
+                host_registry={"lab": ("127.0.0.1", "jp")},
             ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),
             "prom": object(),
-            "executor": object(),
+            "registry": object(),
             "judge": object(),
         }
     )
@@ -232,12 +233,13 @@ def test_chat_routes_agentic_intent_and_returns_response(monkeypatch) -> None:
                 lab_hostname="test-lab",
                 lab_hardware_summary="",
                 lab_host="127.0.0.1",
+                host_registry={"lab": ("127.0.0.1", "jp")},
             ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),
             "prom": object(),
-            "executor": object(),
+            "registry": object(),
             "judge": object(),
         }
     )
@@ -306,12 +308,13 @@ def test_chat_routes_health_intent_and_returns_response(monkeypatch) -> None:
                 lab_hostname="test-lab",
                 lab_hardware_summary="",
                 lab_host="127.0.0.1",
+                host_registry={"lab": ("127.0.0.1", "jp")},
             ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),
             "prom": object(),
-            "executor": object(),
+            "registry": object(),
             "judge": object(),
         }
     )
@@ -388,12 +391,13 @@ def test_chat_strips_fenced_tool_call_blocks_from_agentic_response(monkeypatch) 
                 lab_hostname="test-lab",
                 lab_hardware_summary="",
                 lab_host="127.0.0.1",
+                host_registry={"lab": ("127.0.0.1", "jp")},
             ),
             "classifier": _Classifier(),
             "llm": object(),
             "kb": object(),
             "prom": object(),
-            "executor": object(),
+            "registry": object(),
             "judge": object(),
         }
     )
@@ -430,13 +434,14 @@ def test_populate_state_sets_clients_and_clears_error() -> None:
             lab_host="127.0.0.1",
             lab_user="jp",
             judge_extra_sensitive_paths="",
+            host_registry={"lab": ("127.0.0.1", "jp")},
         )
         llm = MagicMock()
         embed = MagicMock()
         with (
             patch.object(server, "KnowledgeBase"),
             patch.object(server, "PrometheusClient"),
-            patch.object(server, "SSHExecutor"),
+            patch.object(server, "ExecutorRegistry"),
             patch.object(server, "IntentClassifier"),
         ):
             server._populate_state(config, llm, embed, [])
@@ -725,7 +730,7 @@ def test_chat_injects_startup_context_into_system_prompt() -> None:
             "llm": fake_llm,
             "kb": MagicMock(),
             "prom": MagicMock(),
-            "executor": MagicMock(),
+            "registry": MagicMock(),
             "judge": MagicMock(),
             "classifier": fake_classifier,
             "_startup_context": "Note: recovered from degraded start at 20:15 UTC.",
@@ -767,7 +772,7 @@ def test_chat_omits_startup_context_on_clean_start() -> None:
             "llm": fake_llm,
             "kb": MagicMock(),
             "prom": MagicMock(),
-            "executor": MagicMock(),
+            "registry": MagicMock(),
             "judge": MagicMock(),
             "classifier": fake_classifier,
             # No _startup_context — clean start
@@ -1022,7 +1027,7 @@ def test_chat_succeeds_with_correct_token() -> None:
             "llm": fake_llm,
             "kb": MagicMock(),
             "prom": MagicMock(),
-            "executor": MagicMock(),
+            "registry": MagicMock(),
             "judge": MagicMock(),
             "classifier": fake_classifier,
         }
@@ -1087,7 +1092,7 @@ def test_chat_no_auth_required_when_token_empty() -> None:
             "llm": fake_llm,
             "kb": MagicMock(),
             "prom": MagicMock(),
-            "executor": MagicMock(),
+            "registry": MagicMock(),
             "judge": MagicMock(),
             "classifier": fake_classifier,
         }

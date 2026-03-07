@@ -12,6 +12,7 @@ See notes/integration-test-plan.md for the full design rationale.
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
 
 from conftest import (
     FakeClassifier,
@@ -25,6 +26,18 @@ from hal.agent import run_agent
 from hal.bootstrap import dispatch_intent
 from hal.judge import Judge, tier_for
 from hal.server import ServerJudge
+
+
+def _mock_registry(executor=None):
+    """Build an ExecutorRegistry mock whose .default and .get() return *executor*."""
+    if executor is None:
+        executor = MagicMock()
+    reg = MagicMock()
+    reg.default = executor
+    reg.get.return_value = executor
+    reg.known_hosts = ["lab"]
+    return reg
+
 
 # ---------------------------------------------------------------------------
 # Helpers — build LLM response dicts
@@ -90,7 +103,7 @@ class TestJudgeDenialInAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=scripted_executor,
+            registry=_mock_registry(scripted_executor),
             judge=real_judge,
             mem=memory_store,
             session_id="test-denial",
@@ -140,7 +153,7 @@ class TestJudgeDenialInAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=real_judge,
             mem=memory_store,
             session_id="test-mixed",
@@ -181,7 +194,7 @@ class TestJudgeDenialInAgentLoop:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=scripted_executor,
+            registry=_mock_registry(scripted_executor),
             judge=real_judge,
             mem=memory_store,
             session_id="test-poison",
@@ -228,7 +241,7 @@ class TestDispatchIntentRouting:
             llm=llm,
             prom=stub_prom,
             kb=stub_kb,
-            executor=scripted_executor,
+            registry=_mock_registry(scripted_executor),
             judge=real_judge,
             mem=memory_store,
             session_id="test-conv",
@@ -266,7 +279,7 @@ class TestDispatchIntentRouting:
             llm=llm,
             prom=stub_prom,
             kb=stub_kb,
-            executor=scripted_executor,
+            registry=_mock_registry(scripted_executor),
             judge=real_judge,
             mem=memory_store,
             session_id="test-health",
@@ -301,7 +314,7 @@ class TestDispatchIntentRouting:
             llm=llm,
             prom=stub_prom,
             kb=stub_kb,
-            executor=scripted_executor,
+            registry=_mock_registry(scripted_executor),
             judge=real_judge,
             mem=memory_store,
             session_id="test-no-clf",
@@ -363,7 +376,7 @@ class TestServerJudgePropagation:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=server_judge,
             mem=memory_store,
             session_id="test-server-deny",
@@ -409,7 +422,7 @@ class TestServerJudgePropagation:
             llm=llm,
             kb=kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=server_judge,
             mem=memory_store,
             session_id="test-server-allow",
@@ -480,7 +493,7 @@ class TestServerJudgePropagation:
                 "judge": server_judge,
                 "kb": StubKB(),
                 "prom": StubProm(),
-                "executor": ScriptedExecutor(),
+                "registry": _mock_registry(ScriptedExecutor()),
                 "classifier": FakeClassifier("agentic", 0.90),
             }
         )
@@ -592,7 +605,7 @@ class TestTrustEvolution:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=judge,
             mem=memory_store,
             session_id="test-trust-evo",
@@ -646,7 +659,7 @@ class TestEvalJudge:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=eval_judge,
             mem=memory_store,
             session_id="test-eval",
@@ -691,7 +704,7 @@ class TestEvalJudge:
             llm=llm,
             kb=stub_kb,
             prom=stub_prom,
-            executor=executor,
+            registry=_mock_registry(executor),
             judge=eval_judge,
             mem=memory_store,
             session_id="test-eval-deny",

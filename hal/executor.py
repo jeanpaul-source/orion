@@ -5,6 +5,8 @@ Approval is NOT handled here — call Judge.approve() before calling run().
 When host is localhost/127.0.0.1, commands run directly via subprocess (no SSH).
 """
 
+from __future__ import annotations
+
 import shlex
 import subprocess
 from typing import ClassVar
@@ -76,3 +78,40 @@ class SSHExecutor:
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
+
+
+class ExecutorRegistry:
+    """Manage SSHExecutor instances for multiple configured hosts.
+
+    The "lab" host is always present and is the default when no target_host
+    is specified by the LLM.
+    """
+
+    def __init__(self, host_registry: dict[str, tuple[str, str]]) -> None:
+        self._executors: dict[str, SSHExecutor] = {}
+        for name, (host, user) in host_registry.items():
+            self._executors[name] = SSHExecutor(host, user)
+        if "lab" not in self._executors:
+            raise ValueError("host_registry must contain a 'lab' entry")
+
+    @property
+    def default(self) -> SSHExecutor:
+        """The primary lab executor — used when target_host is None."""
+        return self._executors["lab"]
+
+    def get(self, name: str | None = None) -> SSHExecutor:
+        """Return the executor for the named host, or the default.
+
+        Raises ValueError for unknown host names.
+        """
+        if name is None:
+            return self.default
+        if name not in self._executors:
+            known = ", ".join(sorted(self._executors))
+            raise ValueError(f"Unknown host: '{name}'. Available hosts: {known}")
+        return self._executors[name]
+
+    @property
+    def known_hosts(self) -> list[str]:
+        """Return sorted list of configured host names."""
+        return sorted(self._executors)
