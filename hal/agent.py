@@ -118,7 +118,10 @@ def run_agent(
 
         # Build the active tool set once — only includes tools whose API
         # keys / config are present.  The LLM never sees disabled tools.
-        available_tools = get_tools(tavily_api_key=tavily_api_key)
+        _sandbox = getattr(config, "sandbox_enabled", False) if config else False
+        available_tools = get_tools(
+            tavily_api_key=tavily_api_key, sandbox_enabled=_sandbox
+        )
 
         # Seed the first message with KB context (fast, cheap, often helpful)
         # Threshold 0.75: only inject context that is a strong semantic match.

@@ -17,6 +17,7 @@ Layer 3 tools (graduated — active):
   get_host_connections — Osquery listening ports + established connections + ARP
   get_traffic_summary  — ntopng interface stats + top flows
   scan_lan             — Nmap ping-sweep LAN discovery (Judge tier 1)
+  run_code             — sandboxed Python execution (Docker, Judge tier 2)
 
 Locked tools (still in hal/_unlocked/ — return with their layer):
   Layer 3: patch_file, git_status, git_diff
@@ -25,8 +26,9 @@ Locked tools (still in hal/_unlocked/ — return with their layer):
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import NamedTuple, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
+import hal.sandbox as _sandbox
 import hal.security as _security
 import hal.trust_metrics as _trust_metrics
 import hal.web as _web
@@ -58,10 +60,10 @@ class ToolContext(NamedTuple):
 class ToolSpec(TypedDict):
     schema: dict
     handler: Callable[[dict, ToolContext], str]
-    enabled: Callable[[str], bool]
+    enabled: Callable[..., bool]
 
 
-def _always_enabled(_: str) -> bool:
+def _always_enabled(**_: Any) -> bool:
     return True
 
 
@@ -340,8 +342,57 @@ def _handle_recover_component(args: dict, ctx: ToolContext) -> str:
         )
 
 
-def _web_search_enabled(tavily_api_key: str) -> bool:
+def _web_search_enabled(*, tavily_api_key: str = "", **_: Any) -> bool:
     return bool(tavily_api_key)
+
+
+def _sandbox_enabled(*, sandbox_enabled: bool = False, **_: Any) -> bool:
+    return sandbox_enabled
+
+
+def _handle_run_code(args: dict, ctx: ToolContext) -> str:
+    code = args.get("code") or ""
+    reason = args.get("reason") or ""
+
+    if not code.strip():
+        return "Error: code is required (non-empty Python source)."
+
+    # Judge approval at tier 2 (config change) — the code string is the
+    # detail logged in the audit trail so we can reconstruct what ran.
+    if not ctx.judge.approve("run_code", code, reason=reason):
+        tier = tier_for("run_code", code)
+        return (
+            f"Code execution denied (tier {tier} — requires interactive approval). "
+            "Sandbox execution is not available in HTTP/Telegram mode."
+        )
+
+    # Resolve config — sandbox_image and sandbox_timeout come from Config.
+    # Fallback to safe defaults if config is not available (shouldn't happen
+    # in normal operation, but defensive coding is correct here).
+    image = "orion-sandbox:latest"
+    timeout = 30
+    if ctx.config is not None:
+        image = getattr(ctx.config, "sandbox_image", image)
+        timeout = getattr(ctx.config, "sandbox_timeout", timeout)
+
+    try:
+        executor = ctx.registry.get(None)  # default host (lab)
+        result = _sandbox.execute_code(
+            code,
+            executor,
+            image=image,
+            timeout=timeout,
+        )
+    except Exception as exc:
+        ctx.judge.record_outcome("run_code", code, "error")
+        return f"Sandbox execution failed: {exc}"
+
+    # Record outcome for trust evolution — exit_code 0 is success.
+    ctx.judge.record_outcome(
+        "run_code", code, "success" if result.exit_code == 0 else "error"
+    )
+
+    return _sandbox.format_result(result)
 
 
 TOOL_REGISTRY: dict[str, ToolSpec] = {
@@ -846,15 +897,56 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         "handler": _handle_recover_component,
         "enabled": _always_enabled,
     },
+    "run_code": {
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "run_code",
+                "description": (
+                    "Execute Python code in an isolated sandbox container. "
+                    "Use this for data analysis, calculations, text processing, "
+                    "parsing structured data, or any task that benefits from "
+                    "running real Python code. "
+                    "The sandbox has NO network access, NO filesystem persistence, "
+                    "and a 30-second timeout. Only the Python standard library is "
+                    "available (no pip, no third-party packages). "
+                    "Do NOT use this for system administration — use run_command "
+                    "for checking services, reading logs, or managing infrastructure. "
+                    "Requires interactive approval (tier 2)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "description": (
+                                "Complete Python source code to execute. "
+                                "Use print() for output — stdout is captured and returned."
+                            ),
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining what this code does and why.",
+                        },
+                    },
+                    "required": ["code", "reason"],
+                },
+            },
+        },
+        "handler": _handle_run_code,
+        "enabled": _sandbox_enabled,
+    },
 }
 
 
-def get_tools(*, tavily_api_key: str = "") -> list[dict]:
+def get_tools(*, tavily_api_key: str = "", sandbox_enabled: bool = False) -> list[dict]:
     """Return active tools exposed to the LLM for this request."""
     return [
         spec["schema"]
         for spec in TOOL_REGISTRY.values()
-        if spec["enabled"](tavily_api_key)
+        if spec["enabled"](
+            tavily_api_key=tavily_api_key, sandbox_enabled=sandbox_enabled
+        )
     ]
 
 

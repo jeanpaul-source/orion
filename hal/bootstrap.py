@@ -183,6 +183,9 @@ notes, or version information — call it first, do not reason from training dat
 The current date injected above is authoritative; never assume you cannot find current data. \
 For topics with no homelab context (e.g. unrelated consumer technology), ask the user to clarify \
 instead of searching the web.
+• For calculations, data analysis, text processing, or any task that benefits from running Python code, \
+use the run_code tool (sandboxed Docker container, no network, stdlib only). \
+Do NOT use run_command for running Python scripts — run_code is the correct tool for code execution.
 """
 
 
