@@ -22,6 +22,7 @@
     <div class="sidebar-header">
       <span class="sidebar-brand">HAL</span>
       <span id="health-dot" class="health-dot" title="Checking..."></span>
+      <button id="kb-btn" class="kb-btn" title="Knowledge Base">KB</button>
     </div>
     <button id="new-session-btn" class="new-session-btn">+ New Session</button>
     <input id="session-search" class="session-search" type="text" placeholder="search sessions…">
@@ -60,6 +61,21 @@
 
   <!-- Sidebar overlay for mobile -->
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+  <!-- KB Browser panel -->
+  <aside id="kb-panel" class="kb-panel">
+    <div class="kb-panel-header">
+      <span class="kb-panel-title">Knowledge Base</span>
+      <button id="kb-panel-close" class="kb-panel-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="kb-search-bar">
+      <input id="kb-search-input" class="kb-search-input" type="text" placeholder="semantic search…">
+      <button id="kb-search-btn" class="kb-search-btn" aria-label="Search">&#x279C;</button>
+    </div>
+    <div id="kb-active-filter" class="kb-active-filter" style="display:none"></div>
+    <div id="kb-panel-body" class="kb-panel-body"></div>
+  </aside>
+  <div id="kb-panel-overlay" class="kb-panel-overlay"></div>
 
   <!-- Health detail panel -->
   <aside id="health-panel" class="health-panel">

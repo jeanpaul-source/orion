@@ -47,6 +47,14 @@
   const $healthPanelBody = document.getElementById("health-panel-body");
   const $healthPanelClose = document.getElementById("health-panel-close");
   const $healthPanelOverlay = document.getElementById("health-panel-overlay");
+  const $kbBtn            = document.getElementById("kb-btn");
+  const $kbPanel          = document.getElementById("kb-panel");
+  const $kbPanelBody      = document.getElementById("kb-panel-body");
+  const $kbPanelClose     = document.getElementById("kb-panel-close");
+  const $kbPanelOverlay   = document.getElementById("kb-panel-overlay");
+  const $kbSearchInput    = document.getElementById("kb-search-input");
+  const $kbSearchBtn      = document.getElementById("kb-search-btn");
+  const $kbActiveFilter   = document.getElementById("kb-active-filter");
 
   // ── State ───────────────────────────────────────────────────────
   let sessions = loadSessions();     // { id, created, messages[] }
@@ -799,6 +807,172 @@
   $healthPanelClose.addEventListener("click", closeHealthPanel);
   $healthPanelOverlay.addEventListener("click", closeHealthPanel);
 
+  // ── KB Browser panel (slide-out) ────────────────────────────
+  var _kbActiveCategory = null;
+  var _kbCategoriesLoaded = false;
+
+  function openKbPanel() {
+    closeHealthPanel();
+    $kbPanel.classList.add("open");
+    $kbPanelOverlay.classList.add("visible");
+    if (!_kbCategoriesLoaded) loadKbCategories();
+    $kbSearchInput.focus();
+  }
+
+  function closeKbPanel() {
+    $kbPanel.classList.remove("open");
+    $kbPanelOverlay.classList.remove("visible");
+  }
+
+  function loadKbCategories() {
+    $kbPanelBody.innerHTML = '<div class="kb-loading">Loading categories…</div>';
+    fetch(API_BASE + "/kb/categories", { headers: _authHeaders() })
+      .then(function (res) {
+        if (res.status === 401) { showLogin("Session expired"); throw new Error("auth"); }
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        _kbCategoriesLoaded = true;
+        renderKbCategories(data);
+      })
+      .catch(function (err) {
+        if (err.message === "auth") return;
+        $kbPanelBody.innerHTML = '<div class="kb-empty">Failed to load categories.</div>';
+      });
+  }
+
+  function renderKbCategories(categories) {
+    if (!categories || categories.length === 0) {
+      $kbPanelBody.innerHTML = '<div class="kb-empty">No categories found.</div>';
+      return;
+    }
+    var html = '';
+    categories.forEach(function (cat) {
+      html += '<div class="kb-cat" data-category="' + _escapeHtml(cat.category) + '">' +
+        '<span class="kb-cat-name">' + _escapeHtml(cat.category) + '</span>' +
+        '<span class="kb-cat-count">' + cat.count + '</span>' +
+        '</div>';
+    });
+    $kbPanelBody.innerHTML = html;
+
+    // Attach click handlers for category filtering
+    var catEls = $kbPanelBody.querySelectorAll(".kb-cat");
+    catEls.forEach(function (el) {
+      el.addEventListener("click", function () {
+        setKbCategoryFilter(el.getAttribute("data-category"));
+      });
+    });
+  }
+
+  function setKbCategoryFilter(category) {
+    _kbActiveCategory = category;
+    $kbActiveFilter.style.display = "flex";
+    $kbActiveFilter.innerHTML =
+      '<span>Category:</span>' +
+      '<span class="kb-filter-tag">' + _escapeHtml(category) + '</span>' +
+      '<button class="kb-filter-clear" title="Clear filter">&times;</button>';
+    $kbActiveFilter.querySelector(".kb-filter-clear").addEventListener("click", clearKbCategoryFilter);
+
+    // If there's already search text, re-run search with filter
+    var q = $kbSearchInput.value.trim();
+    if (q) searchKb(q);
+  }
+
+  function clearKbCategoryFilter() {
+    _kbActiveCategory = null;
+    $kbActiveFilter.style.display = "none";
+    $kbActiveFilter.innerHTML = "";
+
+    // If there's search text, re-run search without filter
+    var q = $kbSearchInput.value.trim();
+    if (q) {
+      searchKb(q);
+    } else {
+      // Show categories again
+      loadKbCategories();
+    }
+  }
+
+  function searchKb(query) {
+    $kbPanelBody.innerHTML = '<div class="kb-loading">Searching…</div>';
+    var url = API_BASE + "/kb/search?q=" + encodeURIComponent(query);
+    if (_kbActiveCategory) url += "&category=" + encodeURIComponent(_kbActiveCategory);
+    fetch(url, { headers: _authHeaders() })
+      .then(function (res) {
+        if (res.status === 401) { showLogin("Session expired"); throw new Error("auth"); }
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        renderKbResults(data, query);
+      })
+      .catch(function (err) {
+        if (err.message === "auth") return;
+        $kbPanelBody.innerHTML = '<div class="kb-empty">Search failed.</div>';
+      });
+  }
+
+  function renderKbResults(results, query) {
+    if (!results || results.length === 0) {
+      $kbPanelBody.innerHTML = '<div class="kb-empty">No results for "' + _escapeHtml(query) + '"</div>';
+      return;
+    }
+    var html = '';
+    results.forEach(function (r) {
+      var score = r.score !== null && r.score !== undefined ? r.score.toFixed(3) : "—";
+      var scoreClass = r.score >= 0.85 ? "high" : r.score >= 0.75 ? "mid" : "low";
+      var content = r.content || "";
+      if (content.length > 400) content = content.substring(0, 400) + "…";
+      var file = r.file || "";
+      var category = r.category || "";
+      var tier = r.doc_tier || "";
+
+      html += '<div class="kb-result">' +
+        '<div class="kb-result-header">' +
+          '<span class="kb-result-score ' + scoreClass + '">' + score + '</span>' +
+          (tier ? '<span class="kb-result-tier">' + _escapeHtml(tier) + '</span>' : '') +
+          (file ? '<span class="kb-result-file" title="' + _escapeHtml(file) + '">' + _escapeHtml(file) + '</span>' : '') +
+        '</div>' +
+        '<div class="kb-result-content">' + _escapeHtml(content) + '</div>' +
+        (category ? '<span class="kb-result-category" data-category="' + _escapeHtml(category) + '">' + _escapeHtml(category) + '</span>' : '') +
+        '</div>';
+    });
+    $kbPanelBody.innerHTML = html;
+
+    // Clicking a category badge sets the filter
+    var catBadges = $kbPanelBody.querySelectorAll(".kb-result-category");
+    catBadges.forEach(function (el) {
+      el.addEventListener("click", function () {
+        setKbCategoryFilter(el.getAttribute("data-category"));
+      });
+    });
+  }
+
+  // KB panel event listeners
+  $kbBtn.addEventListener("click", function () {
+    if ($kbPanel.classList.contains("open")) closeKbPanel();
+    else openKbPanel();
+  });
+  $kbPanelClose.addEventListener("click", closeKbPanel);
+  $kbPanelOverlay.addEventListener("click", closeKbPanel);
+  $kbSearchBtn.addEventListener("click", function () {
+    var q = $kbSearchInput.value.trim();
+    if (q) searchKb(q);
+  });
+  $kbSearchInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      var q = $kbSearchInput.value.trim();
+      if (q) searchKb(q);
+      else {
+        // Empty search → show categories
+        clearKbCategoryFilter();
+        loadKbCategories();
+      }
+    }
+  });
+
   // ── Sidebar (mobile) ───────────────────────────────────────────
   function openSidebar() {
     $sidebar.classList.add("open");
@@ -1009,6 +1183,7 @@
     } else if (e.key === "Escape") {
       closeSidebar();
       closeHealthPanel();
+      closeKbPanel();
     }
   });
 
