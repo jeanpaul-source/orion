@@ -37,7 +37,7 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 
 ## Current state (Mar 2026)
 
-915 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
+1176 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
 `hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=100%`, `web_tool_accuracy=100%`.
 
 HAL runs inside a Docker container on the-lab with three defense layers: Judge
@@ -126,6 +126,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/security.py` | Falco, Osquery, ntopng, Nmap workers |
 | `hal/falco_noise.py` | Falco noise filter rules (`NOISE_RULES` + `is_falco_noise()`); no `hal.*` deps |
 | `hal/web.py` | `web_search()` via Tavily; `fetch_url()` with SSRF + DNS-rebinding defence; `sanitize_query()` |
+| `hal/sandbox.py` | Sandboxed Python execution via Docker — `execute_code()`, `format_result()` |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
 | `hal/notify.py` | Shared ntfy push notification helper (`send_ntfy_simple`) |
 | `hal/workers.py` | File operation tools (read, write, patch, git_*) |
@@ -138,7 +139,8 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
 | `eval/` | Evaluation harness — 40 queries, 7 code evaluators, scorer, baselines |
-| `tests/` | 915 offline tests + 35 intent classifier tests (require Ollama) |
+| `tests/` | 1176 offline tests + 35 intent classifier tests (require Ollama) |
 | `ops/` | Systemd unit files (vllm, watchdog, harvest) + supervisord.conf |
 | `Dockerfile` | Container image definition — python:3.12-slim, non-root user |
+| `Dockerfile.sandbox` | Minimal sandbox image for `run_code` — python:3.12-slim, no network, non-root |
 | `docker-compose.yml` | Production deployment — ports, volumes, limits, health check |

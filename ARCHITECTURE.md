@@ -166,6 +166,10 @@ Adding 1 to the current tier preserves the relative risk ordering.
 - Multi-host routing — `run_command`, `read_file`, `list_dir`, `write_file` accept an
   optional `target_host` parameter; `ExecutorRegistry.get(target_host)` resolves the
   host name to an `SSHExecutor`; default is `"lab"` (the primary server)
+- Sandboxed code execution — `run_code` runs Python in a disposable Docker container
+  (`orion-sandbox:latest`) with `--network none --read-only --memory 256m --cpus 1
+  --pids-limit 64`; code is mounted read-only; Judge tier 2 (requires approval in REPL,
+  auto-denied via HTTP/Telegram `ServerJudge`); conditional on `SANDBOX_ENABLED`
 
 **Why not run the LLM in streaming mode for tool calls?**
 
