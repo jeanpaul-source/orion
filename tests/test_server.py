@@ -1100,3 +1100,117 @@ def test_chat_no_auth_required_when_token_empty() -> None:
     finally:
         server._state.clear()
         server._state.update(old)
+
+
+# ---------------------------------------------------------------------------
+# /health/detail endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_health_detail_returns_components_and_metrics() -> None:
+    """GET /health/detail returns structured component health + Prometheus metrics."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_prom = MagicMock()
+    fake_prom.health.return_value = {"cpu_pct": 12.3, "mem_pct": 45.6}
+
+    fake_config = MagicMock(hal_web_token="")
+
+    server._state.update({"config": fake_config, "prom": fake_prom})
+    try:
+        client = TestClient(server.app)
+        mock_checks = MagicMock(
+            return_value=[
+                _ns(name="vLLM", status="ok", detail="loaded", latency_ms=42.1),
+                _ns(
+                    name="Ollama",
+                    status="down",
+                    detail="unreachable",
+                    latency_ms=5001.0,
+                ),
+            ]
+        )
+        with patch("hal.healthcheck.run_all_checks", mock_checks):
+            resp = client.get("/health/detail")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "components" in data
+        assert "metrics" in data
+        assert data["metrics"]["cpu_pct"] == 12.3
+        assert len(data["components"]) == 2
+        assert data["components"][0]["name"] == "vLLM"
+        assert data["components"][0]["status"] == "ok"
+        assert data["components"][1]["status"] == "down"
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_health_detail_503_when_degraded() -> None:
+    """GET /health/detail returns 503 when server is in degraded state."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state["_startup_error"] = "Services unavailable"
+    try:
+        client = TestClient(server.app)
+        resp = client.get("/health/detail")
+        assert resp.status_code == 503
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_health_detail_requires_auth() -> None:
+    """GET /health/detail enforces bearer token when HAL_WEB_TOKEN is set."""
+    old = dict(server._state)
+    server._state.clear()
+    server._state.update(
+        {
+            "config": MagicMock(hal_web_token="secret-token"),
+            "prom": MagicMock(),
+        }
+    )
+    try:
+        client = TestClient(server.app)
+        # No token → 401
+        resp = client.get("/health/detail")
+        assert resp.status_code == 401
+
+        # Wrong token → 401
+        resp = client.get("/health/detail", headers={"Authorization": "Bearer wrong"})
+        assert resp.status_code == 401
+
+        # Correct token → 200
+        with patch("hal.healthcheck.run_all_checks", return_value=[]):
+            resp = client.get(
+                "/health/detail",
+                headers={"Authorization": "Bearer secret-token"},
+            )
+        assert resp.status_code == 200
+    finally:
+        server._state.clear()
+        server._state.update(old)
+
+
+def test_health_detail_metrics_unavailable() -> None:
+    """GET /health/detail returns empty metrics when Prometheus is unreachable."""
+    old = dict(server._state)
+    server._state.clear()
+
+    fake_prom = MagicMock()
+    fake_prom.health.side_effect = Exception("connection refused")
+
+    server._state.update({"config": MagicMock(hal_web_token=""), "prom": fake_prom})
+    try:
+        client = TestClient(server.app)
+        with patch("hal.healthcheck.run_all_checks", return_value=[]):
+            resp = client.get("/health/detail")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metrics"] == {}
+        assert data["components"] == []
+    finally:
+        server._state.clear()
+        server._state.update(old)

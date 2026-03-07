@@ -27,6 +27,7 @@ if _workspace_root not in sys.path:
 
 import argparse
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from datetime import datetime, UTC
 from io import StringIO
@@ -362,6 +363,49 @@ async def health_check() -> dict[str, str | int]:
         result["last_recovery"] = _state["_last_recovery"]
         result["recovery_attempts"] = _state["_recovery_attempts"]
     return result
+
+
+@app.get("/health/detail", dependencies=[Depends(require_auth)])
+async def health_detail() -> dict:
+    """Detailed health: per-component checks + live Prometheus metrics.
+
+    Returns ``{"components": [...], "metrics": {...}}``.
+    Each component entry has ``name``, ``status`` (ok/degraded/down),
+    ``detail``, and ``latency_ms``.  Metrics mirror ``prom.health()``
+    keys (cpu_pct, mem_pct, disk_root_pct, etc.) — ``null`` when
+    temporarily unavailable.
+
+    Requires auth (same bearer token as ``/chat``).
+    """
+    if "_startup_error" in _state:
+        raise HTTPException(status_code=503, detail=_state["_startup_error"])
+
+    config = _state.get("config")
+    prom: PrometheusClient | None = _state.get("prom")
+
+    def _run() -> dict:
+        components: list[dict] = []
+        if config is not None:
+            from hal.healthcheck import run_all_checks
+
+            components.extend(
+                {
+                    "name": c.name,
+                    "status": c.status,
+                    "detail": c.detail,
+                    "latency_ms": round(c.latency_ms, 1),
+                }
+                for c in run_all_checks(config)
+            )
+
+        metrics: dict = {}
+        if prom is not None:
+            with contextlib.suppress(Exception):
+                metrics = prom.health()
+
+        return {"components": components, "metrics": metrics}
+
+    return await asyncio.to_thread(_run)
 
 
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_auth)])
