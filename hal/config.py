@@ -46,11 +46,35 @@ class Config:
     llm_top_p: float  # default 0.8 (Qwen generation_config)
     llm_min_p: float  # default 0.05 (community fix for Chinese token leakage)
     llm_repetition_penalty: float  # default 1.05 (Qwen generation_config)
+    # Multi-host inventory — additional SSH targets beyond the primary lab host
+    extra_hosts: str  # comma-separated "name:user@host" entries; default ""
     # Watchdog proactive trend thresholds — rate-of-change that triggers an early alert
     watchdog_disk_rate_pct_per_hour: float  # default 5.0
     watchdog_mem_rate_pct_per_hour: float  # default 5.0
     watchdog_swap_rate_pct_per_hour: float  # default 10.0
     watchdog_gpu_vram_rate_pct_per_hour: float  # default 5.0
+
+    @property
+    def host_registry(self) -> dict[str, tuple[str, str]]:
+        """Return {name: (host, user)} for all configured hosts.
+
+        The primary lab host is always present as "lab".
+        Additional hosts come from EXTRA_HOSTS (comma-separated "name:user@host").
+        """
+        hosts: dict[str, tuple[str, str]] = {"lab": (self.lab_host, self.lab_user)}
+        for entry in self.extra_hosts.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            # Expected format: "name:user@host"
+            if ":" not in entry or "@" not in entry:
+                continue  # silently skip malformed entries
+            name, userhost = entry.split(":", 1)
+            if "@" not in userhost:
+                continue
+            user, host = userhost.split("@", 1)
+            hosts[name.strip()] = (host.strip(), user.strip())
+        return hosts
 
 
 def _required_env(name: str) -> str:
@@ -90,6 +114,7 @@ def load() -> Config:
         lab_hardware_summary=os.getenv("LAB_HARDWARE_SUMMARY", ""),
         hal_web_token=os.getenv("HAL_WEB_TOKEN", ""),
         judge_extra_sensitive_paths=os.getenv("JUDGE_EXTRA_SENSITIVE_PATHS", ""),
+        extra_hosts=os.getenv("EXTRA_HOSTS", ""),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
         llm_top_p=float(os.getenv("LLM_TOP_P", "0.8")),
         llm_min_p=float(os.getenv("LLM_MIN_P", "0.05")),
