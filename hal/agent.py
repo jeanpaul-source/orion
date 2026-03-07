@@ -16,7 +16,7 @@ from hal.llm import VLLMClient
 from hal.logging_utils import get_logger, set_context
 from hal.memory import MemoryStore
 from hal.prometheus import Counter, Histogram, PrometheusClient, flush_metrics
-from hal.sanitize import strip_tool_call_artifacts
+from hal.sanitize import strip_cjk_lines, strip_tool_call_artifacts
 from hal.tools import ToolContext, dispatch_tool, get_tools
 from hal.tracing import get_tracer
 
@@ -215,8 +215,8 @@ def run_agent(
 
             if not tool_calls:
                 # Text-only response — agent is done
-                response_text = strip_tool_call_artifacts(
-                    (msg.get("content") or "").strip()
+                response_text = strip_cjk_lines(
+                    strip_tool_call_artifacts((msg.get("content") or "").strip())
                 )
                 span.set_attribute("hal.iterations", iteration + 1)
                 span.set_attribute("hal.total_tool_calls", total_calls)

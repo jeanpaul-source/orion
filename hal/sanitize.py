@@ -1,4 +1,4 @@
-"""Sanitise HAL response text — strip tool-call artefacts.
+"""Sanitise HAL response text — strip tool-call artefacts and CJK language leaks.
 
 The LLM occasionally leaks a tool-call into its prose response instead of
 issuing it via the structured ``tool_calls`` field.  Two patterns are caught:
@@ -8,8 +8,12 @@ issuing it via the structured ``tool_calls`` field.  Two patterns are caught:
 2. **Fenced JSON block** — `````json {"name":..., "arguments":...}````` blocks
    hallucinated inside prose.
 
+Qwen-family models also leak Mandarin Chinese mid-response due to their
+multilingual training data.  ``has_excessive_cjk`` and ``strip_cjk_lines``
+handle detection and cleanup.
+
 Single canonical implementations live here; ``agent.py``, ``server.py``,
-and ``memory.py`` all delegate to these two functions.
+and ``memory.py`` all delegate to these functions.
 """
 
 import json
@@ -110,3 +114,55 @@ def strip_tool_call_artifacts(text: str) -> str:
             pos = end
 
     return "".join(out).strip()
+
+
+# ---------------------------------------------------------------------------
+# CJK language-leak detection and cleanup
+# ---------------------------------------------------------------------------
+
+# Unicode ranges for CJK characters and common CJK punctuation.
+# Covers CJK Unified Ideographs, Extension A, Compatibility Ideographs,
+# and fullwidth punctuation (used in Chinese/Japanese/Korean text).
+_CJK_RE = re.compile(
+    r"[\u4e00-\u9fff"  # CJK Unified Ideographs
+    r"\u3400-\u4dbf"  # CJK Unified Ideographs Extension A
+    r"\uf900-\ufaff"  # CJK Compatibility Ideographs
+    r"\u3000-\u303f"  # CJK Symbols and Punctuation
+    r"\uff00-\uffef]"  # Fullwidth Forms (Chinese punctuation)
+)
+
+
+def _cjk_ratio(text: str) -> float:
+    """Return the fraction of non-whitespace characters that are CJK."""
+    chars = text.replace(" ", "").replace("\t", "").replace("\n", "")
+    if not chars:
+        return 0.0
+    cjk_count = len(_CJK_RE.findall(chars))
+    return cjk_count / len(chars)
+
+
+def has_excessive_cjk(text: str, threshold: float = 0.15) -> bool:
+    """Return True if more than *threshold* of the response is CJK characters.
+
+    Default 0.15 (15%) is deliberately generous — a single quoted Chinese term
+    in an otherwise-English response won't trigger it, but a paragraph that
+    switches language will.
+
+    Used by :func:`memory.is_poison_response` to prevent CJK-heavy turns
+    from being saved to session history (which would compound the problem
+    in future sessions).
+    """
+    return _cjk_ratio(text) > threshold
+
+
+def strip_cjk_lines(text: str) -> str:
+    """Remove lines that are majority CJK, keeping English content.
+
+    Splits on newlines, drops any line where >50% of non-whitespace characters
+    are CJK.  Preserves the useful English portion of a mixed response.
+    Returns the surviving text re-joined and stripped of excess blank lines.
+    """
+    kept = [line for line in text.split("\n") if _cjk_ratio(line) <= 0.50]
+    # Collapse runs of blank lines left by removed CJK lines
+    result = re.sub(r"\n{3,}", "\n\n", "\n".join(kept))
+    return result.strip()

@@ -46,7 +46,7 @@ import json as _json
 import hal.config as cfg
 from hal.bootstrap import dispatch_intent, get_system_prompt, setup_clients
 from hal.executor import SSHExecutor
-from hal.sanitize import strip_tool_call_artifacts
+from hal.sanitize import strip_cjk_lines, strip_tool_call_artifacts
 from hal.intent import (
     IntentClassifier,
 )  # why: intent.py graduated to Layer 1 — moved from hal/_unlocked/
@@ -429,7 +429,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             mem.close()
 
     response, steps, session_id, intent = await asyncio.to_thread(_run)
-    response = strip_tool_call_artifacts(response)
+    response = strip_cjk_lines(strip_tool_call_artifacts(response))
     return ChatResponse(
         response=response, session_id=session_id, intent=intent, steps=steps
     )

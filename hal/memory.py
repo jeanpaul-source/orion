@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from hal.sanitize import is_tool_call_artifact
+from hal.sanitize import has_excessive_cjk, is_tool_call_artifact
 
 log = logging.getLogger(__name__)
 
@@ -15,19 +15,21 @@ TURN_WINDOW = 40  # messages loaded into LLM context (20 exchanges)
 
 
 def is_poison_response(text: str) -> bool:
-    """Return True if text looks like a raw tool-call JSON dump, not a real response.
+    """Return True if text is a response that should not be saved to history.
 
-    Catches two patterns:
+    Catches three patterns:
 
     1. The entire response IS a bare JSON object with ``"name"`` and
        ``"arguments"`` keys (legacy Ollama qwen2.5-coder behaviour).
     2. The response contains one or more `````json {…}````` fences whose body
        parses as a tool-call dict (LLM narrating a call in prose).
+    3. The response contains excessive CJK characters (Qwen language leak) —
+       saving it to history would compound the problem in future sessions.
 
-    Neither pattern should ever appear in a legitimate HAL response.
-    Delegates to :func:`hal.sanitize.is_tool_call_artifact`.
+    Delegates to :func:`hal.sanitize.is_tool_call_artifact` for patterns 1-2
+    and :func:`hal.sanitize.has_excessive_cjk` for pattern 3.
     """
-    return is_tool_call_artifact(text)
+    return is_tool_call_artifact(text) or has_excessive_cjk(text)
 
 
 def _connect() -> sqlite3.Connection:
