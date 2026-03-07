@@ -1,0 +1,24 @@
+# Minimal sandbox image for HAL's run_code tool.
+#
+# This image runs untrusted Python code in an isolated, ephemeral container.
+# Security layers (applied at runtime by hal/sandbox.py):
+#   --network none     no network access
+#   --memory 256m      memory cap
+#   --cpus 1           CPU cap
+#   --read-only        immutable root filesystem
+#   --tmpfs /tmp       writable scratch space (64 MB)
+#
+# Build:  docker build -f Dockerfile.sandbox -t orion-sandbox .
+# Test:   echo 'print("hello")' | docker run --rm -i orion-sandbox python3 -
+
+FROM python:3.12-slim
+
+# Non-root user — defense-in-depth alongside container isolation.
+RUN useradd --create-home --shell /bin/bash sandbox
+
+# Suppress .pyc generation — the root filesystem is read-only at runtime
+# and __pycache__ writes would fail.
+ENV PYTHONDONTWRITEBYTECODE=1
+
+USER sandbox
+WORKDIR /tmp
