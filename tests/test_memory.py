@@ -27,6 +27,9 @@ POISON_STRINGS = [
     # through.  Greedy {.*} fixes this.
     '```json\n{"name": "run_command", "arguments": {"command": "ls -la"}}\n```',
     'Here is what I will do:\n```json\n{"name": "read_file", "arguments": {"path": "/etc/hosts", "reason": "check"}}\n```',
+    # CJK language leak — Qwen Chinese token leakage (GitHub QwenLM/Qwen3#302)
+    "这是一段完全中文的文本，用来测试检测功能。",
+    "所有服务都在线运行。CPU使用率为35%。内存使用率为45%，在正常范围内。",
 ]
 
 CLEAN_STRINGS = [

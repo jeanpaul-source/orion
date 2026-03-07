@@ -221,6 +221,98 @@ class TestVLLMPing:
 
 
 # ---------------------------------------------------------------------------
+# VLLMClient — sampling parameters (min_p / temperature / top_p / repetition_penalty)
+# ---------------------------------------------------------------------------
+
+# These params are the primary defence against Qwen's Chinese token leakage.
+# min_p=0.05 filters out low-probability CJK tokens before sampling.
+_SAMPLE_PARAMS = {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "min_p": 0.05,
+    "repetition_penalty": 1.05,
+}
+
+
+class TestVLLMSamplingParams:
+    """Verify sampling parameters reach the HTTP payload sent to vLLM."""
+
+    def test_chat_includes_sampling_params(self):
+        """chat() payload must contain all sampling parameters."""
+        client = VLLMClient(
+            "http://fake:8000", "test-model", sampling_params=_SAMPLE_PARAMS
+        )
+        fake_resp = _mock_response(
+            200,
+            {"choices": [{"message": {"content": "ok"}}]},
+        )
+        with patch("hal.llm.requests.post", return_value=fake_resp) as mock_post:
+            client.chat([{"role": "user", "content": "hi"}])
+        payload = mock_post.call_args[1]["json"]
+        for key, value in _SAMPLE_PARAMS.items():
+            assert key in payload, f"Missing sampling param: {key}"
+            assert payload[key] == value, f"{key}={payload[key]}, expected {value}"
+
+    def test_chat_with_tools_includes_sampling_params(self):
+        """chat_with_tools() payload must contain all sampling parameters."""
+        client = VLLMClient(
+            "http://fake:8000", "test-model", sampling_params=_SAMPLE_PARAMS
+        )
+        fake_resp = _mock_response(
+            200,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "ok",
+                            "tool_calls": None,
+                        }
+                    }
+                ]
+            },
+        )
+        with patch("hal.llm.requests.post", return_value=fake_resp) as mock_post:
+            client.chat_with_tools(
+                [{"role": "user", "content": "check"}],
+                tools=[],
+            )
+        payload = mock_post.call_args[1]["json"]
+        for key, value in _SAMPLE_PARAMS.items():
+            assert key in payload, f"Missing sampling param: {key}"
+            assert payload[key] == value, f"{key}={payload[key]}, expected {value}"
+
+    def test_no_sampling_params_by_default(self):
+        """Without sampling_params, no extra keys appear in the payload."""
+        client = VLLMClient("http://fake:8000", "test-model")
+        fake_resp = _mock_response(
+            200,
+            {"choices": [{"message": {"content": "ok"}}]},
+        )
+        with patch("hal.llm.requests.post", return_value=fake_resp) as mock_post:
+            client.chat([{"role": "user", "content": "hi"}])
+        payload = mock_post.call_args[1]["json"]
+        # Only model + messages should be present — no sampling keys
+        for key in ("temperature", "top_p", "min_p", "repetition_penalty"):
+            assert key not in payload, f"Unexpected sampling param: {key}"
+
+    def test_partial_sampling_params(self):
+        """Only the params explicitly passed should appear in the payload."""
+        client = VLLMClient(
+            "http://fake:8000", "test-model", sampling_params={"min_p": 0.05}
+        )
+        fake_resp = _mock_response(
+            200,
+            {"choices": [{"message": {"content": "ok"}}]},
+        )
+        with patch("hal.llm.requests.post", return_value=fake_resp) as mock_post:
+            client.chat([{"role": "user", "content": "hi"}])
+        payload = mock_post.call_args[1]["json"]
+        assert payload["min_p"] == 0.05
+        assert "temperature" not in payload
+
+
+# ---------------------------------------------------------------------------
 # OllamaClient.embed()
 # ---------------------------------------------------------------------------
 

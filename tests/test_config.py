@@ -61,3 +61,39 @@ def test_load_does_not_raise_when_optional_vars_unset(
     assert config.tavily_api_key == ""
     assert config.telegram_bot_token == ""
     assert config.ntfy_url == ""
+
+
+# ---------------------------------------------------------------------------
+# LLM sampling parameter defaults and overrides
+# ---------------------------------------------------------------------------
+
+
+def test_llm_sampling_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LLM sampling params should use Qwen-recommended defaults when unset."""
+    _set_required_env(monkeypatch)
+    # Explicitly remove LLM env vars so we hit defaults
+    for var in ("LLM_TEMPERATURE", "LLM_TOP_P", "LLM_MIN_P", "LLM_REPETITION_PENALTY"):
+        monkeypatch.delenv(var, raising=False)
+
+    config = cfg.load()
+
+    assert config.llm_temperature == 0.7
+    assert config.llm_top_p == 0.8
+    assert config.llm_min_p == 0.05
+    assert config.llm_repetition_penalty == 1.05
+
+
+def test_llm_sampling_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LLM sampling params should be overridable via env vars."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("LLM_TEMPERATURE", "0.3")
+    monkeypatch.setenv("LLM_TOP_P", "0.9")
+    monkeypatch.setenv("LLM_MIN_P", "0.10")
+    monkeypatch.setenv("LLM_REPETITION_PENALTY", "1.2")
+
+    config = cfg.load()
+
+    assert config.llm_temperature == 0.3
+    assert config.llm_top_p == 0.9
+    assert config.llm_min_p == 0.10
+    assert config.llm_repetition_penalty == 1.2

@@ -47,6 +47,11 @@ ignore = ["S101"]
 # here as defense-in-depth); S108 = mock /tmp paths; S106 = test
 # tokens/passwords; S104 = test assertions about bind addresses.
 "tests/**" = ["S101", "S104", "S106", "S108", "S603", "S607"]
+# CJK test data files contain intentional fullwidth Unicode characters —
+# these ARE the test data, not ambiguous typos.  RUF001 = ambiguous
+# Unicode in strings; RUF002 = ambiguous Unicode in docstrings.
+"tests/test_sanitize.py" = ["RUF001", "RUF002"]
+"tests/test_memory.py" = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.12"
