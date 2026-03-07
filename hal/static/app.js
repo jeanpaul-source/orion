@@ -43,6 +43,10 @@
   const $loginError  = document.getElementById("login-error");
   const $signOutBtn  = document.getElementById("sign-out-btn");
   const $sessionSearch = document.getElementById("session-search");
+  const $healthPanel = document.getElementById("health-panel");
+  const $healthPanelBody = document.getElementById("health-panel-body");
+  const $healthPanelClose = document.getElementById("health-panel-close");
+  const $healthPanelOverlay = document.getElementById("health-panel-overlay");
 
   // ── State ───────────────────────────────────────────────────────
   let sessions = loadSessions();     // { id, created, messages[] }
@@ -693,6 +697,108 @@
     }
   }
 
+  // ── Health panel (slide-out) ────────────────────────────────
+  var _METRIC_LABELS = {
+    cpu_pct: "CPU",
+    mem_pct: "Memory",
+    disk_root_pct: "Disk /",
+    disk_docker_pct: "Disk /docker",
+    disk_data_pct: "Disk /data",
+    swap_pct: "Swap",
+    load1: "Load (1m)",
+    gpu_vram_pct: "GPU VRAM",
+    gpu_temp_c: "GPU Temp",
+  };
+
+  function openHealthPanel() {
+    renderHealthPanel();
+    $healthPanel.classList.add("open");
+    $healthPanelOverlay.classList.add("visible");
+  }
+
+  function closeHealthPanel() {
+    $healthPanel.classList.remove("open");
+    $healthPanelOverlay.classList.remove("visible");
+  }
+
+  function renderHealthPanel() {
+    var data = window._halHealthDetail;
+    if (!data) {
+      $healthPanelBody.innerHTML = '<p style="color:var(--text-muted);font-size:13px">No health data yet. Waiting for next poll…</p>';
+      return;
+    }
+
+    var html = '';
+
+    // Components section
+    if (data.components && data.components.length > 0) {
+      html += '<div class="hp-section"><div class="hp-section-title">Components</div>';
+      data.components.forEach(function (c) {
+        html += '<div class="hp-comp">' +
+          '<span class="hp-status-dot ' + _escapeHtml(c.status) + '"></span>' +
+          '<span class="hp-comp-name">' + _escapeHtml(c.name) + '</span>' +
+          '<span class="hp-comp-detail" title="' + _escapeHtml(c.detail) + '">' + _escapeHtml(c.detail) + '</span>' +
+          '<span class="hp-comp-latency">' + Math.round(c.latency_ms) + 'ms</span>' +
+          '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Metrics section
+    var m = data.metrics || {};
+    var metricKeys = Object.keys(_METRIC_LABELS);
+    var hasMetrics = metricKeys.some(function (k) { return m[k] !== null && m[k] !== undefined; });
+    if (hasMetrics) {
+      html += '<div class="hp-section"><div class="hp-section-title">Resources</div>';
+      metricKeys.forEach(function (key) {
+        var val = m[key];
+        var label = _METRIC_LABELS[key];
+        var isTemp = key === "gpu_temp_c";
+        var isLoad = key === "load1";
+        var displayVal = "—";
+        var pct = 0;
+        var colorClass = "";
+
+        if (val !== null && val !== undefined) {
+          if (isTemp) {
+            displayVal = val + "°C";
+            pct = Math.min((val / 90) * 100, 100);  // 90°C = full bar
+            colorClass = val >= 80 ? "crit" : val >= 65 ? "warn" : "";
+          } else if (isLoad) {
+            displayVal = val.toFixed(2);
+            // Assume 16 threads; load 16 = 100%
+            pct = Math.min((val / 16) * 100, 100);
+            colorClass = val >= 12 ? "crit" : val >= 8 ? "warn" : "";
+          } else {
+            displayVal = Math.round(val) + "%";
+            pct = Math.min(val, 100);
+            colorClass = val >= 85 ? "crit" : val >= 60 ? "warn" : "";
+          }
+        }
+
+        html += '<div class="hp-metric">' +
+          '<span class="hp-metric-label">' + _escapeHtml(label) + '</span>' +
+          '<div class="hp-metric-track"><div class="hp-metric-fill ' + colorClass + '" style="width:' + pct + '%"></div></div>' +
+          '<span class="hp-metric-val">' + displayVal + '</span>' +
+          '</div>';
+      });
+      html += '</div>';
+    }
+
+    if (!html) {
+      html = '<p style="color:var(--text-muted);font-size:13px">Health data unavailable.</p>';
+    }
+    $healthPanelBody.innerHTML = html;
+  }
+
+  $healthDot.addEventListener("click", function () {
+    if ($healthPanel.classList.contains("open")) closeHealthPanel();
+    else openHealthPanel();
+  });
+  $healthDot.style.cursor = "pointer";
+  $healthPanelClose.addEventListener("click", closeHealthPanel);
+  $healthPanelOverlay.addEventListener("click", closeHealthPanel);
+
   // ── Sidebar (mobile) ───────────────────────────────────────────
   function openSidebar() {
     $sidebar.classList.add("open");
@@ -902,6 +1008,7 @@
       $input.focus();
     } else if (e.key === "Escape") {
       closeSidebar();
+      closeHealthPanel();
     }
   });
 
