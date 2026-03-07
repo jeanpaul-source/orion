@@ -408,6 +408,81 @@ async def health_detail() -> dict:
     return await asyncio.to_thread(_run)
 
 
+# ---------------------------------------------------------------------------
+# Knowledge base endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/kb/categories", dependencies=[Depends(require_auth)])
+async def kb_categories() -> list[dict]:
+    """Return KB categories with chunk counts.
+
+    Each entry has ``category`` (str) and ``count`` (int).
+    """
+    if "_startup_error" in _state:
+        raise HTTPException(status_code=503, detail=_state["_startup_error"])
+
+    kb: KnowledgeBase | None = _state.get("kb")
+    if kb is None:
+        raise HTTPException(status_code=503, detail="KB not initialised")
+
+    def _run() -> list[dict]:
+        return [{"category": cat, "count": count} for cat, count in kb.categories()]
+
+    return await asyncio.to_thread(_run)
+
+
+@app.get("/kb/search", dependencies=[Depends(require_auth)])
+async def kb_search(
+    q: str,
+    category: str | None = None,
+    top_k: int = 5,
+) -> list[dict]:
+    """Semantic search over the knowledge base.
+
+    Returns ranked results with ``content``, ``file``, ``category``,
+    ``score``, and ``doc_tier``.
+    """
+    if "_startup_error" in _state:
+        raise HTTPException(status_code=503, detail=_state["_startup_error"])
+
+    kb: KnowledgeBase | None = _state.get("kb")
+    if kb is None:
+        raise HTTPException(status_code=503, detail="KB not initialised")
+
+    # Clamp top_k to a sane range to prevent abuse
+    top_k = max(1, min(top_k, 20))
+
+    def _run() -> list[dict]:
+        return kb.search(q, top_k=top_k, category=category or None)
+
+    return await asyncio.to_thread(_run)
+
+
+class RememberRequest(BaseModel):
+    fact: str
+
+
+@app.post("/kb/remember", dependencies=[Depends(require_auth)])
+async def kb_remember(req: RememberRequest) -> dict:
+    """Save a fact to the knowledge base (category='memory')."""
+    if "_startup_error" in _state:
+        raise HTTPException(status_code=503, detail=_state["_startup_error"])
+
+    kb: KnowledgeBase | None = _state.get("kb")
+    if kb is None:
+        raise HTTPException(status_code=503, detail="KB not initialised")
+
+    if not req.fact.strip():
+        raise HTTPException(status_code=400, detail="Fact cannot be empty")
+
+    def _run() -> dict:
+        kb.remember(req.fact.strip())
+        return {"status": "ok"}
+
+    return await asyncio.to_thread(_run)
+
+
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_auth)])
 async def chat(req: ChatRequest) -> ChatResponse:
     """Send a message to HAL; returns the assistant response."""
