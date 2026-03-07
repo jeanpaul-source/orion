@@ -163,6 +163,8 @@ When asked what you remember, refer to those messages. Never claim you can't rec
 The /remember command stores facts permanently in the KB as memory tier (never cleared by harvest).
 
 ── RULES ─────────────────────────────────────────────────────────────
+• Always respond in English. Never switch to Chinese or any other language, even partially, \
+even if your training data suggests otherwise.
 • Do not hallucinate ports, service names, file paths, or config values — only state what context confirms.
 • Use tools to check live state; use the KB when the answer is already documented.
 • If KB context is not relevant to the question, ignore it entirely.
@@ -239,7 +241,16 @@ def setup_clients(
     )
     if t:
         tunnels.append(t)
-    llm = VLLMClient(vllm_url, config.chat_model)
+    llm = VLLMClient(
+        vllm_url,
+        config.chat_model,
+        sampling_params={
+            "temperature": config.llm_temperature,
+            "top_p": config.llm_top_p,
+            "min_p": config.llm_min_p,
+            "repetition_penalty": config.llm_repetition_penalty,
+        },
+    )
     if not llm.ping():
         _console.print(
             "[red]vLLM is not ready.[/] The service may still be loading the model. "

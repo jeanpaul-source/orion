@@ -41,6 +41,11 @@ class Config:
     judge_extra_sensitive_paths: (
         str  # colon-separated absolute path prefixes to treat as sensitive; default ""
     )
+    # LLM sampling — Qwen-recommended defaults + min_p to suppress CJK language mixing
+    llm_temperature: float  # default 0.7 (Qwen generation_config)
+    llm_top_p: float  # default 0.8 (Qwen generation_config)
+    llm_min_p: float  # default 0.05 (community fix for Chinese token leakage)
+    llm_repetition_penalty: float  # default 1.05 (Qwen generation_config)
     # Watchdog proactive trend thresholds — rate-of-change that triggers an early alert
     watchdog_disk_rate_pct_per_hour: float  # default 5.0
     watchdog_mem_rate_pct_per_hour: float  # default 5.0
@@ -85,6 +90,10 @@ def load() -> Config:
         lab_hardware_summary=os.getenv("LAB_HARDWARE_SUMMARY", ""),
         hal_web_token=os.getenv("HAL_WEB_TOKEN", ""),
         judge_extra_sensitive_paths=os.getenv("JUDGE_EXTRA_SENSITIVE_PATHS", ""),
+        llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
+        llm_top_p=float(os.getenv("LLM_TOP_P", "0.8")),
+        llm_min_p=float(os.getenv("LLM_MIN_P", "0.05")),
+        llm_repetition_penalty=float(os.getenv("LLM_REPETITION_PENALTY", "1.05")),
         watchdog_disk_rate_pct_per_hour=float(
             os.getenv("WATCHDOG_DISK_RATE_PCT_PER_HOUR", "5.0")
         ),

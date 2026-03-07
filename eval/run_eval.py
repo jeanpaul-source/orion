@@ -202,7 +202,16 @@ def main(argv: list[str] | None = None) -> None:
     console.print(f"[dim]vLLM: {config.vllm_url}  Ollama: {config.ollama_host}[/]")
 
     # Build clients
-    llm = VLLMClient(config.vllm_url, config.chat_model)
+    llm = VLLMClient(
+        config.vllm_url,
+        config.chat_model,
+        sampling_params={
+            "temperature": config.llm_temperature,
+            "top_p": config.llm_top_p,
+            "min_p": config.llm_min_p,
+            "repetition_penalty": config.llm_repetition_penalty,
+        },
+    )
     if not llm.ping():
         console.print(
             f"[red]vLLM not responding at {config.vllm_url}. Is it running?[/]"

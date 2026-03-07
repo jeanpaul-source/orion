@@ -40,10 +40,19 @@ class OllamaClient:
 class VLLMClient:
     """Chat client for vLLM's OpenAI-compatible API. No embedding support — use OllamaClient for that."""
 
-    def __init__(self, base_url: str, model: str):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        sampling_params: dict[str, float] | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._headers = {"Authorization": "Bearer not-needed"}
+        # Qwen-recommended defaults + min_p to suppress CJK language mixing.
+        # vLLM also loads generation_config.json from the model repo, but
+        # explicitly passing params makes HAL resilient to upstream changes.
+        self._sampling: dict[str, float] = sampling_params or {}
 
     def ping(self) -> bool:
         """Return True only when vLLM is fully loaded and ready to serve.
@@ -73,10 +82,11 @@ class VLLMClient:
             span.set_attribute("llm.model", self.model)
             span.set_attribute("llm.message_count", len(messages))
             span.set_attribute("llm.tool_count", len(tools))
-            payload = {
+            payload: dict = {
                 "model": self.model,
                 "messages": self._messages(messages, system),
                 "tools": tools,
+                **self._sampling,
             }
             try:
                 r = requests.post(
@@ -131,9 +141,10 @@ class VLLMClient:
         with get_tracer().start_as_current_span("hal.llm.chat") as span:
             span.set_attribute("llm.model", self.model)
             span.set_attribute("llm.message_count", len(messages))
-            payload = {
+            payload: dict = {
                 "model": self.model,
                 "messages": self._messages(messages, system),
+                **self._sampling,
             }
             try:
                 r = requests.post(
