@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -663,3 +665,335 @@ def test_check_component_health_with_recovery(
     assert "1 component" in result
     assert "Recovery actions" in result
     assert "RECOVERED pgvector" in result
+
+
+# =========================================================================
+# Unit tests for functions that existing tests mock away
+# =========================================================================
+
+
+class TestLoadSaveState:
+    """_load_state / _save_state — JSON round-trip through a file."""
+
+    def test_load_returns_empty_dict_when_file_missing(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(watchdog, "STATE_FILE", tmp_path / "nonexistent.json")
+        assert watchdog._load_state() == {}
+
+    def test_load_returns_empty_dict_on_corrupt_json(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        bad_file = tmp_path / "bad.json"
+        bad_file.write_text("NOT JSON {{{")
+        monkeypatch.setattr(watchdog, "STATE_FILE", bad_file)
+        assert watchdog._load_state() == {}
+
+    def test_round_trip_preserves_data(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        state_file = tmp_path / "state.json"
+        monkeypatch.setattr(watchdog, "STATE_FILE", state_file)
+        watchdog._save_state({"cpu_pct": "2026-03-07T00:00:00+00:00", "extra": "val"})
+        loaded = watchdog._load_state()
+        assert loaded["cpu_pct"] == "2026-03-07T00:00:00+00:00"
+        assert loaded["extra"] == "val"
+
+
+class TestSendNtfy:
+    """_send_ntfy — HTTP POST to ntfy with bundled alerts."""
+
+    def test_returns_false_when_no_url(self) -> None:
+        assert watchdog._send_ntfy("", [("CPU", 90.0, 85.0, "high", "%")]) is False
+
+    def test_returns_true_on_successful_post(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        posted: list[dict] = []
+
+        def fake_post(url: str, **kwargs: object) -> SimpleNamespace:
+            posted.append({"url": url, **kwargs})
+            return SimpleNamespace(status_code=200)
+
+        monkeypatch.setattr("hal.watchdog.requests.post", fake_post)
+        result = watchdog._send_ntfy(
+            "http://ntfy.example/topic",
+            [
+                ("CPU usage", 92.1, 85.0, "high", "%"),
+                ("Memory usage", 91.0, 90.0, "high", "%"),
+            ],
+        )
+        assert result is True
+        assert len(posted) == 1
+        body = posted[0]["data"].decode()
+        assert "CPU usage: 92.1%" in body
+        assert "Memory usage: 91.0%" in body
+
+    def test_returns_false_on_request_exception(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import requests as req
+
+        monkeypatch.setattr(
+            "hal.watchdog.requests.post",
+            lambda *a, **kw: (_ for _ in ()).throw(
+                req.exceptions.ConnectionError("timeout")
+            ),
+        )
+        result = watchdog._send_ntfy(
+            "http://ntfy.example/topic", [("CPU", 90.0, 85.0, "default", "%")]
+        )
+        assert result is False
+
+    def test_picks_highest_urgency(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        headers_sent: list[dict] = []
+
+        def fake_post(url: str, **kwargs: object) -> SimpleNamespace:
+            headers_sent.append(kwargs.get("headers", {}))
+            return SimpleNamespace(status_code=200)
+
+        monkeypatch.setattr("hal.watchdog.requests.post", fake_post)
+        watchdog._send_ntfy(
+            "http://ntfy.example/topic",
+            [
+                ("CPU", 90.0, 85.0, "default", "%"),
+                ("Swap", 85.0, 80.0, "urgent", "%"),
+            ],
+        )
+        assert headers_sent[0]["Priority"] == "urgent"
+
+
+class TestCheckNtp:
+    """_check_ntp — timedatectl subprocess check."""
+
+    def test_returns_none_when_synchronized(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout="NTPSynchronized=yes\n"),
+        )
+        assert watchdog._check_ntp() is None
+
+    def test_returns_alert_when_not_synchronized(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout="NTPSynchronized=no"),
+        )
+        result = watchdog._check_ntp()
+        assert result is not None
+        assert "NTP" in result
+
+    def test_returns_none_on_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def raise_oserror(*a: object, **kw: object) -> None:
+            raise OSError("timedatectl not found")
+
+        monkeypatch.setattr("hal.watchdog.subprocess.run", raise_oserror)
+        assert watchdog._check_ntp() is None
+
+
+class TestCheckHarvest:
+    """_check_harvest — harvest_last_run file freshness check."""
+
+    def test_returns_alert_when_file_missing(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(watchdog, "HARVEST_LAST_RUN", tmp_path / "nonexistent")
+        result = watchdog._check_harvest()
+        assert result is not None
+        assert "never run" in result
+
+    def test_returns_alert_when_file_is_stale(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        stamp = tmp_path / "harvest_last_run"
+        stamp.write_text("")
+        import os
+        import time
+
+        # Set mtime to 5 hours ago
+        stale_time = time.time() - (5 * 3600)
+        os.utime(stamp, (stale_time, stale_time))
+        monkeypatch.setattr(watchdog, "HARVEST_LAST_RUN", stamp)
+        result = watchdog._check_harvest()
+        assert result is not None
+        assert "stale" in result.lower()
+
+    def test_returns_none_when_file_is_fresh(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        stamp = tmp_path / "harvest_last_run"
+        stamp.write_text("")
+        # File was just created — mtime is now
+        monkeypatch.setattr(watchdog, "HARVEST_LAST_RUN", stamp)
+        assert watchdog._check_harvest() is None
+
+
+class TestCheckContainers:
+    """_check_containers — docker ps subprocess to find dead critical containers."""
+
+    def test_returns_none_when_no_exited_containers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout=""),
+        )
+        assert watchdog._check_containers() is None
+
+    def test_returns_alert_when_critical_container_is_down(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout="grafana\nsome-other-thing\n"),
+        )
+        result = watchdog._check_containers()
+        assert result is not None
+        assert "grafana" in result
+
+    def test_ignores_non_critical_containers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout="random-service\n"),
+        )
+        assert watchdog._check_containers() is None
+
+    def test_returns_none_on_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def raise_error(*a: object, **kw: object) -> None:
+            raise FileNotFoundError("docker not found")
+
+        monkeypatch.setattr("hal.watchdog.subprocess.run", raise_error)
+        assert watchdog._check_containers() is None
+
+
+class TestCheckFalco:
+    """_check_falco — Falco JSON log parsing with noise filtering."""
+
+    def test_returns_none_when_log_missing(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(watchdog, "FALCO_LOG", tmp_path / "nonexistent.json")
+        assert watchdog._check_falco(state={}) is None
+
+    def test_returns_alert_for_high_priority_events(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        log_file = tmp_path / "events.json"
+        event = {
+            "time": "2026-03-07T10:00:00.000Z",
+            "priority": "Warning",
+            "rule": "Unexpected outbound connection",
+            "output_fields": {"proc.name": "curl"},
+        }
+        log_file.write_text(json.dumps(event) + "\n")
+        monkeypatch.setattr(watchdog, "FALCO_LOG", log_file)
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout=log_file.read_text()),
+        )
+        result = watchdog._check_falco(state={})
+        assert result is not None
+        assert "1 Falco" in result
+        assert "Unexpected outbound" in result
+
+    def test_filters_noise_events(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        log_file = tmp_path / "events.json"
+        noise_event = {
+            "time": "2026-03-07T10:00:00.000Z",
+            "priority": "Warning",
+            "rule": "Read sensitive file untrusted",
+            "output_fields": {
+                "proc.name": "unix_chkpwd",
+                "fd.name": "/etc/shadow",
+            },
+        }
+        log_file.write_text(json.dumps(noise_event) + "\n")
+        monkeypatch.setattr(watchdog, "FALCO_LOG", log_file)
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout=log_file.read_text()),
+        )
+        # is_falco_noise should filter this out
+        result = watchdog._check_falco(state={})
+        assert result is None
+
+    def test_skips_already_seen_events(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        log_file = tmp_path / "events.json"
+        event = {
+            "time": "2026-03-07T09:00:00.000Z",
+            "priority": "Warning",
+            "rule": "Some rule",
+            "output_fields": {"proc.name": "cat"},
+        }
+        log_file.write_text(json.dumps(event) + "\n")
+        monkeypatch.setattr(watchdog, "FALCO_LOG", log_file)
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout=log_file.read_text()),
+        )
+        # falco_last_seen is >= the event time, so it should be skipped
+        state: dict[str, str] = {"falco_last_seen": "2026-03-07T10:00:00.000Z"}
+        result = watchdog._check_falco(state=state)
+        assert result is None
+
+    def test_updates_high_water_mark_in_state(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        log_file = tmp_path / "events.json"
+        event = {
+            "time": "2026-03-07T12:00:00.000Z",
+            "priority": "Error",
+            "rule": "Shell spawned",
+            "output_fields": {"proc.name": "bash"},
+        }
+        log_file.write_text(json.dumps(event) + "\n")
+        monkeypatch.setattr(watchdog, "FALCO_LOG", log_file)
+        monkeypatch.setattr(
+            "hal.watchdog.subprocess.run",
+            lambda *a, **kw: SimpleNamespace(stdout=log_file.read_text()),
+        )
+        state: dict[str, str] = {}
+        watchdog._check_falco(state=state)
+        assert state["falco_last_seen"] == "2026-03-07T12:00:00.000Z"
+
+    def test_returns_none_when_subprocess_fails(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        log_file = tmp_path / "events.json"
+        log_file.write_text("")  # exists but subprocess fails
+        monkeypatch.setattr(watchdog, "FALCO_LOG", log_file)
+
+        def raise_error(*a: object, **kw: object) -> None:
+            raise OSError("tail not found")
+
+        monkeypatch.setattr("hal.watchdog.subprocess.run", raise_error)
+        assert watchdog._check_falco(state={}) is None
+
+
+class TestLog:
+    """_log — appends timestamped line to watchdog.log."""
+
+    def test_appends_to_log_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        log_file = tmp_path / "watchdog.log"
+        monkeypatch.setattr(watchdog, "LOG_FILE", log_file)
+        watchdog._log("test message one")
+        watchdog._log("test message two")
+        content = log_file.read_text()
+        assert "test message one" in content
+        assert "test message two" in content
+        # Each line should have a timestamp
+        lines = [ln for ln in content.splitlines() if ln.strip()]
+        assert len(lines) == 2
+        for line in lines:
+            assert "202" in line  # year prefix in ISO timestamp
