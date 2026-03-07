@@ -132,10 +132,12 @@ run on the host venv (they need direct host access). Old `server.service` and
   - everything else → `run_agent()` — full 8-iteration tool loop, KB + metrics pre-seeded at iteration 0
 
   health/fact seeding happens inside `run_agent` as context injection, not as hard routing gates.
-  7 tools: `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`.
+  8 tools: `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`, `run_code`.
   `run_command`, `read_file`, `list_dir`, `write_file` accept an optional `target_host` parameter —
   `ExecutorRegistry` resolves host names to `SSHExecutor` instances; default is `"lab"`.
   Extra hosts configured via `EXTRA_HOSTS` env var (comma-separated `name:user@ip`).
+  `run_code` executes Python in a sandboxed Docker container (no network, no write, stdlib only); Judge tier 2.
+  Conditional tools: `web_search` (requires `TAVILY_API_KEY`), `run_code` (requires `SANDBOX_ENABLED=true`).
   LLM errors return early without writing to history (history-poisoning bug fixed).
 - **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
   canonicalization, self-edit governance, default-deny; JSON audit log
@@ -144,6 +146,6 @@ run on the host venv (they need direct host access). Old `server.service` and
 - **Observability**: OTel tracing → Grafana Tempo; Pushgateway metrics; Grafana dashboard
 - **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
 - **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 915 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
+- **Test suite**: 1176 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
 
 **Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.

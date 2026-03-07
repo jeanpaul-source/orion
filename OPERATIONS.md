@@ -50,6 +50,12 @@ docker compose build
 docker compose up -d
 ```
 
+Build the sandbox image (required for the `run_code` tool):
+
+```bash
+docker build -f Dockerfile.sandbox -t orion-sandbox .
+```
+
 The server takes ~30 seconds to connect to external services (vLLM, pgvector,
 Ollama). Watch logs with `docker logs -f orion`.
 
@@ -91,6 +97,9 @@ uses the server IP and `USE_SSH_TUNNEL=true`.
 | `TELEGRAM_BOT_TOKEN` | *(empty)* | From @BotFather — leave empty to disable bot |
 | `TELEGRAM_ALLOWED_USER_ID` | `0` | Numeric Telegram user ID — get from @userinfobot |
 | `HAL_WEB_TOKEN` | *(empty)* | Bearer token for `/chat` — generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. **Required** when port is LAN-exposed. |
+| `SANDBOX_ENABLED` | `true` | Enable `run_code` tool — sandboxed Python execution in a Docker container |
+| `SANDBOX_TIMEOUT` | `30` | Max seconds for sandbox code execution (container killed after this) |
+| `SANDBOX_IMAGE` | `orion-sandbox:latest` | Docker image for sandbox — build with `docker build -f Dockerfile.sandbox -t orion-sandbox .` |
 
 ---
 

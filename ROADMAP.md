@@ -243,6 +243,19 @@ Full two-pass review (structural + deep audit). 15 findings resolved (N1–N15, 
 - 3 new tests in `test_server.py` (root HTML, CSS served, JS served)
 - Test count: 784 → 787 (all offline, ruff clean)
 
+### Mar 2026 — Sandboxed code execution
+
+- `run_code` tool — executes Python snippets in a disposable Docker container (`orion-sandbox:latest`)
+- `hal/sandbox.py`: `execute_code()`, `format_result()`, `_build_docker_command()` — domain logic for sandbox lifecycle
+- `Dockerfile.sandbox`: `python:3.12-slim`, non-root `sandbox` user, no pip, no network
+- Security hardening: `--network none`, `--read-only`, `--memory 256m`, `--cpus 1`, `--pids-limit 64`, `--tmpfs /tmp:size=64m`
+- Judge tier 2 (config change level — requires approval in REPL; auto-denied via ServerJudge in HTTP/Telegram)
+- Tool conditionally included via `SANDBOX_ENABLED` env var (default `true`); `SANDBOX_TIMEOUT` (default 30s), `SANDBOX_IMAGE` configurable
+- System prompt guidance: routes `run_code` for computation/analysis, `run_command` for host admin
+- Enabled callback refactored from `Callable[[str], bool]` to `Callable[..., bool]` with `**kwargs` for extensibility
+- 51 new tests in `tests/test_sandbox.py` (truncation, docker command construction, execution, formatting, handler, dispatch, gating, judge tier)
+- Test count: 1125 → 1176 (all offline, ruff clean)
+
 ---
 
 ## Backlog (immediate)

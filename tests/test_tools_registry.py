@@ -28,7 +28,7 @@ _CTX = ToolContext(
 
 
 def test_get_tools_returns_layer0_tool_set():
-    """Active tool set without Tavily key: 15 tools (web_search is key-gated)."""
+    """Active tool set without Tavily key or sandbox: 15 tools."""
     names = [tool["function"]["name"] for tool in get_tools()]
     assert set(names) == {
         "search_kb",
@@ -55,6 +55,17 @@ def test_get_tools_returns_layer0_tool_set():
         tool["function"]["name"] for tool in get_tools(tavily_api_key="k")
     ]
     assert set(names_with_key) == set(names) | {"web_search"}
+    # With sandbox enabled, run_code is also included
+    names_with_sandbox = [
+        tool["function"]["name"] for tool in get_tools(sandbox_enabled=True)
+    ]
+    assert set(names_with_sandbox) == set(names) | {"run_code"}
+    # Both flags together: 17 tools
+    names_all = [
+        tool["function"]["name"]
+        for tool in get_tools(tavily_api_key="k", sandbox_enabled=True)
+    ]
+    assert set(names_all) == set(names) | {"web_search", "run_code"}
 
 
 def test_dispatch_tool_unknown_name_returns_clear_error():

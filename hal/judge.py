@@ -286,6 +286,8 @@ _ACTION_TIERS: dict[str, int] = {
     "fetch_url": 1,
     # Recovery — individual steps go through Judge separately
     "recover_component": 1,
+    # Sandboxed code execution — arbitrary Python in a Docker container
+    "run_code": 2,
 }
 
 # ---------------------------------------------------------------------------

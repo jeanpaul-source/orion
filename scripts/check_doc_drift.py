@@ -69,6 +69,7 @@ DOCUMENTED_HAL_MODULES = {
     "playbooks.py",
     "postmortem.py",
     "prometheus.py",
+    "sandbox.py",
     "sanitize.py",
     "security.py",
     "server.py",
