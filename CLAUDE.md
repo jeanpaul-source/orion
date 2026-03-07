@@ -108,6 +108,7 @@ Read these before working on the relevant area. They are the source of truth —
 | [OPERATIONS.md](OPERATIONS.md) | Lab host details, services table, `.env` reference, systemd units, deploy procedures, known traps, secrets |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev workflow, test commands, linting, eval harness, git conventions, branch policy |
 | [ROADMAP.md](ROADMAP.md) | What's been done (chronological), backlog, architectural backlog, end-state vision |
+| [notes/session-findings-archive.md](notes/session-findings-archive.md) | Historical audit findings (P1–P5) — archived, mostly resolved |
 | [knowledge/LAB_ENVIRONMENT.md](knowledge/LAB_ENVIRONMENT.md) | Ground-truth lab description — hardware, services, network, dev machine |
 | [README.md](README.md) | Project overview, quick start, slash commands, key files table |
 

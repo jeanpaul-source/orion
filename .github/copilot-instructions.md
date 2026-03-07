@@ -33,7 +33,6 @@ explanation-before-action is the catch mechanism.
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Dev workflow, tests, linting, git workflow, eval |
 | [ROADMAP.md](../ROADMAP.md) | What's done, what's next, end-state vision |
 | [CLAUDE.md](../CLAUDE.md) | AI operating contract — required format before every code change |
-| [SESSION_FINDINGS.md](../SESSION_FINDINGS.md) | Ground-truth audit, known failure modes (P1–P5) |
 
 ---
 
