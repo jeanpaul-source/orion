@@ -110,7 +110,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | [ROADMAP.md](ROADMAP.md) | What's done, what's next, end-state vision |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev workflow, tests, eval harness, CLAUDE.md |
 | [CLAUDE.md](CLAUDE.md) | AI operating contract — required reading before any code change |
-| [SESSION_FINDINGS.md](SESSION_FINDINGS.md) | Ground-truth audit of what runs vs. what is documented |
+| [notes/session-findings-archive.md](notes/session-findings-archive.md) | Historical audit findings (P1–P5) — archived, mostly resolved |
 
 ---
 

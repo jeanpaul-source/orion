@@ -67,8 +67,6 @@ existing "Current State" section in place.
 
 ## How I (Claude) Work With the Operator
 
-Observability aid: I will also emit structured logs with session_id and trace correlation for each approved change when running code paths, and I will update README and SESSION_FINDINGS as I go to prevent documentation drift. These logs are JSON by default and can be toggled with HAL_LOG_JSON.
-
 **The reason this section exists:** I drift on long projects. Each individual fix can seem
 logical in isolation, but over many sessions and context resets I lose the thread of what
 we're actually building and start optimising for "make the immediate problem go away" instead
