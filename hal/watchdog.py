@@ -403,7 +403,8 @@ def _check_component_health(config: object | None = None, **_kw: object) -> str 
         count = len(unhealthy)
         header = f"{count} component{'s' if count != 1 else ''} unhealthy"
         return f"{header}:\n" + "\n".join(lines)
-    except Exception:
+    except Exception as exc:
+        _logger.warning("Component health check failed: %s", exc)
         return None
 
 
