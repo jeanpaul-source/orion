@@ -699,7 +699,8 @@ def _load_trust_overrides(
                 key = _trust_key(entry.get("action", ""), entry.get("detail", ""))
                 success = entry.get("outcome") == "success"
                 counts.setdefault(key, []).append(success)
-    except OSError:
+    except OSError as exc:
+        _log.warning("Failed to load trust overrides: %s", exc)
         return {}, frozenset()
 
     overrides: dict[str, int] = {}
