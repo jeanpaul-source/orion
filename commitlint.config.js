@@ -9,7 +9,8 @@ module.exports = {
     'header-max-length': [2, 'always', 72],
     // No period at end (matches CONTRIBUTING.md)
     'subject-full-stop': [2, 'never', '.'],
-    // Lowercase subject (matches CONTRIBUTING.md)
-    'subject-case': [2, 'always', 'lower-case'],
+    // Case check disabled — type-enum enforces lowercase prefix;
+    // subjects legitimately contain uppercase (file names, acronyms)
+    'subject-case': [0],
   },
 };
