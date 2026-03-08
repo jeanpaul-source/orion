@@ -79,10 +79,17 @@ which defeats the purpose of the non-root user in the Dockerfile.
 
 ---
 
-### P0-4: SSRF TOCTOU gap in `fetch_url()`
+### P0-4: SSRF TOCTOU gap in `fetch_url()` — **triaged to P1 urgency**
 
 **File:** [hal/web.py](../hal/web.py#L100-L160)
 **Investigation target:** E.1
+**Tracked in:** [#16](https://github.com/jeanpaul-source/orion/issues/16) (batch D)
+
+**Triage rationale:** `fetch_url` is Judge tier 1 (requires human approval
+in REPL, auto-denied in HTTP/Telegram). The exploit requires controlling DNS
++ timing the rebind to a sub-second window while simultaneously having the
+operator approve the fetch. Practical risk is low. Fix is still worth doing
+(IP pinning) but not P0 urgency.
 
 `_validate_url()` resolves the hostname via `socket.getaddrinfo()` and checks
 that all IPs are public. Then `requests.get()` re-resolves the hostname via
