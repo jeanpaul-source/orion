@@ -16,6 +16,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # commitlint needs full history
 
       - uses: actions/setup-python@v5
         with:
@@ -41,11 +43,15 @@ jobs:
 
       - name: Markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v19
+        # Globs read from .markdownlint-cli2.yaml (single source of truth)
+
+      - name: Commitlint
+        # Validates commit messages match Conventional Commits format.
+        # Uses wagoid/commitlint-github-action which automatically lints
+        # all PR commits or the HEAD commit on direct pushes.
+        uses: wagoid/commitlint-github-action@v6
         with:
-          globs: |
-            **/*.md
-            !notes/**
-            !.venv/**
+          configFile: commitlint.config.js
 
       - name: Tests + Coverage
         run: |
