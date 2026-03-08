@@ -5,9 +5,10 @@ Checks:
 1. Files/symbols referenced in documentation actually exist on disk.
 2. hal/*.py modules match a tracked set (catches add/remove without doc update).
 3. Port numbers in config.py match the OPERATIONS.md services table.
-4. Documented test counts haven't drifted wildly from reality.
+4. Documented test counts haven't drifted wildly from reality (±30%).
 5. Required env vars in config.py all appear in .env.example.
-6. File paths in README.md key-files table exist on disk.
+6. Optional env vars (os.getenv) in config.py all appear in .env.example.
+7. File paths in README.md key-files table exist on disk.
 """
 
 from __future__ import annotations
@@ -91,6 +92,9 @@ PORT_RULES: list[tuple[str, int, str]] = [
     ("OLLAMA_HOST", 11434, "Ollama"),
     ("NTOPNG_URL", 3000, "ntopng"),
     ("PROMETHEUS_URL", 9091, "Prometheus"),
+    ("PROM_PUSHGATEWAY", 9092, "Pushgateway"),
+    ("PGVECTOR_DSN", 5432, "pgvector"),
+    ("OTLP_ENDPOINT", 4318, "Grafana Tempo"),
 ]
 
 
@@ -225,14 +229,16 @@ def check_test_count_sanity() -> list[str]:
         # Skip small numbers about a specific module (e.g. "35 intent tests")
         if documented_count < 50:
             continue
-        # Flag if documented count is less than 50% of actual count.
-        # This catches "558 tests" when reality is 881, without failing every
-        # time someone adds a single test.
-        if documented_count < actual_count * 0.5:
+        # Bidirectional check: flag if documented count differs from actual by
+        # more than 30% in either direction.  Catches both stale-low counts
+        # ("558 tests" when reality is 881) and stale-high counts ("1000 tests"
+        # when tests were deleted down to 600).
+        drift_pct = abs(documented_count - actual_count) / max(actual_count, 1)
+        if drift_pct > 0.30:
             errors.append(
                 f"  CONTRIBUTING.md claims {documented_count} tests but "
                 f"test files contain ~{actual_count} test functions "
-                "— count appears stale"
+                f"({drift_pct:.0%} drift) — update the documented count"
             )
 
     return errors
@@ -271,7 +277,39 @@ def check_required_env_vars() -> list[str]:
     return errors
 
 
-# ── Check 5: README key-files table paths exist ─────────────────────────
+# ── Check 5: env vars from os.getenv() appear in .env.example ───────────
+
+
+def check_optional_env_vars() -> list[str]:
+    """Every os.getenv() variable in config.py should appear in .env.example.
+
+    Unlike _required_env() vars (which cause a RuntimeError if missing),
+    optional vars silently use defaults.  Listing them in .env.example — even
+    commented out — is the only way a new user discovers they exist.
+    """
+    errors = []
+    config_src = (ROOT / "hal" / "config.py").read_text()
+    env_example_src = (ROOT / ".env.example").read_text()
+
+    # Find all os.getenv("VAR_NAME", ...) calls in config.py
+    optional_vars = set(re.findall(r'os\.getenv\(\s*"([A-Z_]+)"', config_src))
+
+    # .env.example vars (active or commented-out)
+    env_example_vars = set(
+        re.findall(r"^#?\s*([A-Z_]+)=", env_example_src, re.MULTILINE)
+    )
+
+    missing = optional_vars - env_example_vars
+    errors.extend(
+        f'  config.py uses os.getenv("{var}") but .env.example '
+        "does not list it — add it (commented out is fine)"
+        for var in sorted(missing)
+    )
+
+    return errors
+
+
+# ── Check 6: README key-files table paths exist ─────────────────────────
 
 
 def check_key_file_table() -> list[str]:
@@ -319,6 +357,7 @@ def main() -> int:
     errors.extend(check_port_consistency())
     errors.extend(check_test_count_sanity())
     errors.extend(check_required_env_vars())
+    errors.extend(check_optional_env_vars())
     errors.extend(check_key_file_table())
 
     if errors:
