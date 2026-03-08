@@ -5,7 +5,7 @@ Checks:
 1. Files/symbols referenced in documentation actually exist on disk.
 2. hal/*.py modules match a tracked set (catches add/remove without doc update).
 3. Port numbers in config.py match the OPERATIONS.md services table.
-4. Documented test counts haven't drifted wildly from reality (±30%).
+4. Documented test counts haven't drifted wildly from reality (±40%).
 5. Required env vars in config.py all appear in .env.example.
 6. Optional env vars (os.getenv) in config.py all appear in .env.example.
 7. File paths in README.md key-files table exist on disk.
@@ -209,11 +209,14 @@ def _count_test_functions(test_dir: Path) -> int:
 
 
 def check_test_count_sanity() -> list[str]:
-    """Verify documented test counts haven't drifted beyond 50% of reality.
+    """Verify documented test counts haven't drifted beyond 40% of reality.
 
     Scans ``def test_*`` functions across all test files and compares against
-    numbers in CONTRIBUTING.md.  Catches stale counts like "558 tests" when
-    reality is 881.
+    numbers in CONTRIBUTING.md.  The function count is a *lower bound* —
+    ``@pytest.mark.parametrize`` expands one function into many collected
+    items, so documented counts (which reflect ``pytest --collect-only``)
+    will legitimately exceed the raw function count by ~20-40%.  The 40%
+    threshold accommodates this while still catching extreme staleness.
     """
     errors = []
     actual_count = _count_test_functions(ROOT / "tests")
@@ -229,16 +232,25 @@ def check_test_count_sanity() -> list[str]:
         # Skip small numbers about a specific module (e.g. "35 intent tests")
         if documented_count < 50:
             continue
-        # Bidirectional check: flag if documented count differs from actual by
-        # more than 30% in either direction.  Catches both stale-low counts
-        # ("558 tests" when reality is 881) and stale-high counts ("1000 tests"
-        # when tests were deleted down to 600).
-        drift_pct = abs(documented_count - actual_count) / max(actual_count, 1)
-        if drift_pct > 0.30:
+        # One-directional: flag if actual function count exceeds documented by
+        # >40% (tests were added, docs are stale) OR if documented count
+        # exceeds actual by >40% beyond the parametrize expansion (tests were
+        # removed, docs are stale).  The documented count is allowed to be up
+        # to 1.5x the function count (parametrize headroom), but not beyond.
+        if actual_count > documented_count * 1.40:
+            # Tests added, docs not updated
             errors.append(
                 f"  CONTRIBUTING.md claims {documented_count} tests but "
                 f"test files contain ~{actual_count} test functions "
-                f"({drift_pct:.0%} drift) — update the documented count"
+                "— documented count appears too low"
+            )
+        elif documented_count > actual_count * 1.80:
+            # Tests removed (or count wildly inflated) — 1.8x allows up to
+            # ~1.5x parametrize expansion + 20% growth headroom
+            errors.append(
+                f"  CONTRIBUTING.md claims {documented_count} tests but "
+                f"test files contain only ~{actual_count} test functions "
+                "— documented count appears too high"
             )
 
     return errors

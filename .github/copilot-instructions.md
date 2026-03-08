@@ -131,7 +131,7 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/judge.py` | Policy gate; tier 0-3; command normalization; evasion detection; git write blocking; path canonicalization; self-edit governance; default-deny; JSON audit with session/trace |
 | `hal/llm.py` | `VLLMClient` (chat) and `OllamaClient` (embeddings only) |
 | `hal/falco_noise.py` | Falco noise rules (`NOISE_RULES` tuples + `is_falco_noise()`); zero `hal.*` deps |
-| `hal/patterns.py` | Shared compiled regexes (`TOOL_CALL_FENCE_RE`) used by `memory.py` + `server.py` |
+| `hal/sanitize.py` | Response sanitiser — strips tool-call artefacts (`TOOL_CALL_FENCE_RE`) + CJK leaks; used by `agent.py`, `memory.py`, `server.py` |
 | `hal/security.py` | Falco, Osquery, ntopng, Nmap workers; noise-filtered via `hal/falco_noise.py` |
 | `hal/web.py` | `web_search()` via Tavily; `fetch_url()` with SSRF protection + DNS rebinding defence; `sanitize_query()` privacy guard |
 | `hal/memory.py` | SQLite session store at `~/.orion/memory.db` |
@@ -142,4 +142,4 @@ ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
 | `hal/config.py` | Dataclass + `.env` loader; all tunable values live here |
 | `harvest/collect.py` | Lab state + static docs collectors |
 | `harvest/ingest.py` | Chunk → embed → upsert; clears stale chunks before re-ingest |
-| `tests/` | 915 offline tests passing; intent tests require reachable Ollama |
+| `tests/` | 1176 offline tests passing; intent tests require reachable Ollama |
