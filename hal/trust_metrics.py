@@ -336,8 +336,7 @@ def get_action_stats(pattern: str, path: Path | str | None = None) -> dict[str, 
             haystacks.append(ev.action_class)
         if use_regex and regex is not None:
             return any(regex.search(h or "") for h in haystacks)
-        else:
-            return any((needle in (h or "").lower()) for h in haystacks)
+        return any((needle in (h or "").lower()) for h in haystacks)
 
     matched = [ev for ev in events if _matches(ev)]
 

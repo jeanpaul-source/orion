@@ -888,12 +888,11 @@ class Judge:
             except (KeyboardInterrupt, EOFError):
                 answer = ""
             return answer == "YES I CONFIRM"
-        else:
-            try:
-                answer = input("  approve? [y/N] ").strip().lower()
-            except (KeyboardInterrupt, EOFError):
-                answer = "n"
-            return answer == "y"
+        try:
+            answer = input("  approve? [y/N] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            answer = "n"
+        return answer == "y"
 
     def _log(
         self,
