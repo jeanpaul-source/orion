@@ -5,6 +5,7 @@ It also provides optional metric helpers (no-op when prom pushgateway is absent)
 """
 
 import contextlib
+import logging
 import os
 import socket
 import threading
@@ -13,6 +14,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests
+
+log = logging.getLogger(__name__)
 
 
 class PrometheusClient:
@@ -29,8 +32,8 @@ class PrometheusClient:
             data = r.json()
             if data.get("status") == "success":
                 return data["data"]["result"]
-        except requests.exceptions.RequestException:
-            pass
+        except requests.exceptions.RequestException as exc:
+            log.warning("Prometheus query failed: %s", exc)
         return []
 
     def scalar(self, promql: str) -> float | None:
@@ -38,8 +41,8 @@ class PrometheusClient:
         if result:
             try:
                 return float(result[0]["value"][1])
-            except (KeyError, IndexError, ValueError):
-                pass
+            except (KeyError, IndexError, ValueError) as exc:
+                log.warning("Prometheus scalar parse failed: %s", exc)
         return None
 
     def health(self) -> dict:
@@ -115,8 +118,8 @@ class PrometheusClient:
             ValueError,
             IndexError,
             TypeError,
-        ):
-            pass
+        ) as exc:
+            log.warning("Prometheus range query failed: %s", exc)
         return []
 
     def trend(
