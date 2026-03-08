@@ -116,8 +116,9 @@ make lint       # ruff check — catch errors and import issues
 make lint-md    # markdownlint-cli2 — markdown formatting
 make format     # ruff format — apply formatting
 make typecheck  # mypy — type check hal/ (0 errors in baseline)
-make coverage   # pytest-cov — show coverage report for hal/ (baseline: 74%)
+make coverage   # pytest-cov — show coverage report for hal/ (baseline: 87%)
 make doc-drift  # check for documentation/code drift
+make ratchet    # update .coverage-threshold to current coverage floor
 make audit      # pip-audit — check for known vulnerabilities in dependencies
 ```
 
@@ -187,6 +188,10 @@ starts with a type prefix:
 | `refactor:` | Code restructure, no behaviour change |
 | `test:` | Adding or fixing tests |
 | `chore:` | Tooling, deps, CI, formatting |
+| `ci:` | CI/CD workflow changes |
+| `perf:` | Performance improvement |
+| `build:` | Build system or external dependencies |
+| `revert:` | Revert a previous commit |
 
 Subject line: imperative, lowercase, no period, ≤ 72 chars.
 Body (optional): explain *why*, not *what*. The diff shows what; the body explains the
