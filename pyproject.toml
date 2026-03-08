@@ -76,6 +76,29 @@ ignore_missing_imports = true
 check_untyped_defs = true
 # Require type annotations on all function definitions
 disallow_untyped_defs = true
+# Require annotations on decorated functions
+disallow_untyped_decorators = true
+# Don't allow partially-annotated function defs
+disallow_incomplete_defs = true
+# Disallow subclassing values of type Any
+disallow_subclassing_any = true
+# Warn when a function returns Any from a typed return
+warn_return_any = true
+# Warn about stale # type: ignore comments
+warn_unused_ignores = true
+# Warn about redundant cast() calls
+warn_redundant_casts = true
+# Require explicit re-export (use __all__ or redundant alias)
+no_implicit_reexport = true
+# Prohibit equality checks on incompatible types
+strict_equality = true
+# Enable additional checks (e.g. missing return, redundant expressions)
+extra_checks = true
+
+# Flag evaluated and intentionally excluded (audited 2026-03-07):
+#   disallow_any_generics — 76 violations; would require replacing all dict[str, Any]
+#   with dict[str, object] or TypedDict; high churn, marginal safety improvement.
+#   This can be revisited when the codebase has fewer Any-typed boundaries.
 
 [tool.coverage.run]
 # Write coverage data to /tmp so the pre-push hook doesn't see "files modified"

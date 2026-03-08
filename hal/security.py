@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+from typing import cast
 
 import defusedxml.ElementTree as ET
 
@@ -126,7 +127,7 @@ def get_host_connections(
         if r["returncode"] != 0:
             return f"query failed: {r.get('stderr', '').strip()}"
         try:
-            return json.loads(r["stdout"])
+            return cast(list[dict], json.loads(r["stdout"]))
         except json.JSONDecodeError as exc:
             return f"json parse error: {exc}"
 
@@ -172,7 +173,7 @@ def get_traffic_summary(
         if r["returncode"] != 0:
             return f"curl failed: {r.get('stderr', '').strip()}"
         try:
-            return json.loads(r["stdout"])
+            return cast(dict | list, json.loads(r["stdout"]))
         except json.JSONDecodeError as exc:
             return f"json parse error: {exc}"
 

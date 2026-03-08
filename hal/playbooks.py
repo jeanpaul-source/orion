@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from hal.executor import SSHExecutor
@@ -77,7 +77,7 @@ def _load_recovery_state() -> dict[str, list[str]]:
     Returns ``{playbook_name: [iso_timestamp, ...]}``.
     """
     try:
-        return json.loads(RECOVERY_STATE_FILE.read_text())
+        return cast(dict[str, list[str]], json.loads(RECOVERY_STATE_FILE.read_text()))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 

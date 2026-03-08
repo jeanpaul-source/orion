@@ -1,6 +1,7 @@
 """pgvector knowledge base — semantic search over homelab docs."""
 
 from datetime import UTC, datetime
+from typing import cast
 
 try:
     import numpy as np
@@ -123,7 +124,7 @@ class KnowledgeBase:
                 cur.execute(
                     "SELECT category, count(*) FROM documents GROUP BY category ORDER BY count DESC"
                 )
-                return cur.fetchall()
+                return cast(list[tuple[str, int]], cur.fetchall())
         finally:
             conn.close()
 

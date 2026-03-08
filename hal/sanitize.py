@@ -78,7 +78,7 @@ def strip_tool_call_artifacts(text: str) -> str:
     text.
     """
 
-    def _strip_fence(m: re.Match) -> str:  # type: ignore[type-arg]
+    def _strip_fence(m: re.Match[str]) -> str:
         try:
             data = json.loads(m.group(1))
         except (json.JSONDecodeError, ValueError):

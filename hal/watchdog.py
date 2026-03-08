@@ -16,6 +16,7 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import requests
 
@@ -59,9 +60,9 @@ THRESHOLDS: dict[str, tuple[float, str, str, str]] = {
 }
 
 
-def _load_state() -> dict:
+def _load_state() -> dict[str, Any]:
     try:
-        return json.loads(STATE_FILE.read_text())
+        return cast(dict[str, Any], json.loads(STATE_FILE.read_text()))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 

@@ -34,7 +34,7 @@ class JsonFormatter(logging.Formatter):
         }
         # Attach tracing/context info if present
         try:
-            from opentelemetry import trace  # type: ignore
+            from opentelemetry import trace
 
             span = trace.get_current_span()
             ctx = span.get_span_context() if span else None

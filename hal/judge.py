@@ -934,7 +934,7 @@ class Judge:
 
         # OTel trace correlation
         try:
-            from opentelemetry import trace  # type: ignore[import-untyped]
+            from opentelemetry import trace
 
             span = trace.get_current_span()
             ctx = span.get_span_context() if span else None
@@ -981,7 +981,7 @@ class Judge:
 
         # OTel trace correlation
         try:
-            from opentelemetry import trace  # type: ignore[import-untyped]
+            from opentelemetry import trace
 
             span = trace.get_current_span()
             ctx = span.get_span_context() if span else None
