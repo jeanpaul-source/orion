@@ -5,7 +5,28 @@ globs:
   - "!.venv/**"
   - "!node_modules/**"
 
+# Single source of truth for markdownlint rules.
+# .markdownlint.jsonc was deleted — all rules live here.
 config:
-  # Relaxations for documentation style
-  MD013: false          # line length — docs have long URLs
-  MD033: false          # inline HTML — needed for some formatting
+  # MD013: line length — disabled; prose and table lines are intentionally
+  #        long throughout this project's documentation.
+  MD013: false
+
+  # MD024: duplicate headings — only flag duplicates among siblings (same parent).
+  #        Different sections may legitimately reuse heading text.
+  MD024:
+    siblings_only: true
+
+  # MD033: inline HTML — disabled; docs use <placeholder> template syntax
+  #        (e.g. <short title>, <server-ip>) that triggers false positives.
+  MD033: false
+
+  # MD046: code block style — fenced (```) required; indented blocks are not
+  #        used anywhere in this project.
+  MD046:
+    style: fenced
+
+  # MD060: table column style — require spaces adjacent to pipes in both
+  #        header and separator rows.
+  MD060:
+    style: spaced
