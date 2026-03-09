@@ -1,0 +1,62 @@
+name: Deploy to the-lab
+
+# Trigger: runs every time a commit lands on main (i.e., every PR merge).
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to the-lab
+    # runs-on: self-hosted means this job runs on OUR server via the self-hosted runner,
+    # not on GitHub's cloud machines. The runner process polls GitHub and picks up the job.
+    runs-on: self-hosted
+
+    steps:
+      # Step 1: Check out the repository with the last 2 commits.
+      # fetch-depth: 2 is required so that git diff HEAD^ HEAD works — without it,
+      # there's only one commit in the workspace and "the previous commit" doesn't exist.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # Step 2: Detect whether any Python files changed in this merge.
+      # We check hal/**/*.py and harvest/**/*.py — these are the files that require
+      # a container restart to take effect.
+      # The result is written to GITHUB_OUTPUT so later steps can read it.
+      - name: Check if Python files changed
+        id: changed
+        run: |
+          if git diff --name-only HEAD^ HEAD | grep -qE '^(hal|harvest)/.*\.py$'; then
+            echo "python=true" >> "$GITHUB_OUTPUT"
+            echo "Python files changed — container restart will run"
+          else
+            echo "python=false" >> "$GITHUB_OUTPUT"
+            echo "No Python files changed — container restart will be skipped"
+          fi
+
+      # Step 3: Pull the latest code into the live ~/orion directory on the server.
+      # This always runs regardless of what changed.
+      - name: Pull latest code
+        run: |
+          cd ~/orion
+          git pull
+
+      # Step 4: Restart the container — only if Python files changed.
+      # Docs-only or config-only merges skip this step entirely.
+      # If docker compose restart fails (non-zero exit), this step is marked failed
+      # and the workflow is red — errors are surfaced, not swallowed.
+      - name: Restart container
+        if: steps.changed.outputs.python == 'true'
+        run: |
+          cd ~/orion
+          docker compose restart
+
+      # Step 5: Show the last 20 lines of container logs.
+      # if: always() means this runs even if a previous step failed,
+      # so you always have visibility into the container's current state.
+      - name: Show container logs
+        if: always()
+        run: |
+          docker logs --tail 20 orion
