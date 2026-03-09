@@ -333,13 +333,12 @@ def _handle_recover_component(args: dict, ctx: ToolContext) -> str:
             f"Steps completed: {result.steps_completed}\n"
             f"Detail: {result.detail}"
         )
-    else:
-        return (
-            f"Recovery FAILED for {component}.\n"
-            f"Playbook: {playbook.name}\n"
-            f"Steps completed: {result.steps_completed}/{len(playbook.steps)}\n"
-            f"Detail: {result.detail}"
-        )
+    return (
+        f"Recovery FAILED for {component}.\n"
+        f"Playbook: {playbook.name}\n"
+        f"Steps completed: {result.steps_completed}/{len(playbook.steps)}\n"
+        f"Detail: {result.detail}"
+    )
 
 
 def _web_search_enabled(*, tavily_api_key: str = "", **_: Any) -> bool:

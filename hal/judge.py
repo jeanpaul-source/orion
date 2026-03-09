@@ -888,12 +888,11 @@ class Judge:
             except (KeyboardInterrupt, EOFError):
                 answer = ""
             return answer == "YES I CONFIRM"
-        else:
-            try:
-                answer = input("  approve? [y/N] ").strip().lower()
-            except (KeyboardInterrupt, EOFError):
-                answer = "n"
-            return answer == "y"
+        try:
+            answer = input("  approve? [y/N] ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            answer = "n"
+        return answer == "y"
 
     def _log(
         self,
@@ -935,7 +934,7 @@ class Judge:
 
         # OTel trace correlation
         try:
-            from opentelemetry import trace  # type: ignore[import-untyped]
+            from opentelemetry import trace
 
             span = trace.get_current_span()
             ctx = span.get_span_context() if span else None
@@ -982,7 +981,7 @@ class Judge:
 
         # OTel trace correlation
         try:
-            from opentelemetry import trace  # type: ignore[import-untyped]
+            from opentelemetry import trace
 
             span = trace.get_current_span()
             ctx = span.get_span_context() if span else None

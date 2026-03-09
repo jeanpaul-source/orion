@@ -16,6 +16,7 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import requests
 
@@ -59,9 +60,9 @@ THRESHOLDS: dict[str, tuple[float, str, str, str]] = {
 }
 
 
-def _load_state() -> dict:
+def _load_state() -> dict[str, Any]:
     try:
-        return json.loads(STATE_FILE.read_text())
+        return cast(dict[str, Any], json.loads(STATE_FILE.read_text()))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -350,20 +351,19 @@ def _attempt_recovery(
             tags="white_check_mark,server",
         )
         return f"RECOVERED {component_name}: {result.detail}"
-    else:
-        _log(f"RECOVER FAILED {playbook.name}: {result.detail}")
-        _send_ntfy_simple(
-            config.ntfy_url,
-            [
-                f"Auto-recovery FAILED: {component_name}",
-                f"Playbook: {playbook.name}",
-                f"Detail: {result.detail}",
-            ],
-            urgency="urgent",
-            title="Orion RECOVERY FAILED — the-lab",
-            tags="x,server",
-        )
-        return f"RECOVERY FAILED {component_name}: {result.detail}"
+    _log(f"RECOVER FAILED {playbook.name}: {result.detail}")
+    _send_ntfy_simple(
+        config.ntfy_url,
+        [
+            f"Auto-recovery FAILED: {component_name}",
+            f"Playbook: {playbook.name}",
+            f"Detail: {result.detail}",
+        ],
+        urgency="urgent",
+        title="Orion RECOVERY FAILED — the-lab",
+        tags="x,server",
+    )
+    return f"RECOVERY FAILED {component_name}: {result.detail}"
 
 
 def _check_component_health(config: object | None = None, **_kw: object) -> str | None:

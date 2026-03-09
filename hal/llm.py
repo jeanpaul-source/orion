@@ -1,6 +1,7 @@
 """LLM clients — OllamaClient (embeddings only) and VLLMClient (chat via OpenAI-compatible API)."""
 
 import time
+from typing import Any, cast
 
 import requests
 
@@ -34,7 +35,7 @@ class OllamaClient:
             timeout=30,
         )
         r.raise_for_status()
-        return r.json()["embedding"]
+        return cast(list[float], r.json()["embedding"])
 
 
 class VLLMClient:
@@ -130,7 +131,7 @@ class VLLMClient:
             LLM_REQ_LATENCY.observe(
                 time.perf_counter() - t0, endpoint="chat_with_tools"
             )
-            return result
+            return cast(dict[str, Any], result)
 
     def chat(
         self, messages: list[dict], system: str | None = None, timeout: int = 120
@@ -176,4 +177,4 @@ class VLLMClient:
                 )
             LLM_REQ_TOTAL.inc(endpoint="chat", outcome=outcome)
             LLM_REQ_LATENCY.observe(time.perf_counter() - t0, endpoint="chat")
-            return content
+            return cast(str, content)

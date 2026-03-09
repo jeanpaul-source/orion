@@ -10,7 +10,7 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import requests
 
@@ -28,7 +28,7 @@ class PrometheusClient:
             )
             data = r.json()
             if data.get("status") == "success":
-                return data["data"]["result"]
+                return cast(list[Any], data["data"]["result"])
         except requests.exceptions.RequestException:
             pass
         return []

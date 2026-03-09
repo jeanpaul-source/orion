@@ -4,28 +4,43 @@ target-version = "py312"
 [tool.ruff.lint]
 # Rule sets — each group serves a specific purpose:
 #   E4/E7/E9 — pycodestyle errors (syntax, indentation, runtime)
+#   W        — pycodestyle warnings (trailing whitespace, blank lines)
 #   F        — pyflakes (unused imports, undefined names)
 #   I        — isort (import ordering)
+#   A        — flake8-builtins (catches shadowing of Python builtins like id, type, list)
 #   B        — bugbear (common Python gotchas: mutable defaults, assert in except, etc.)
 #   UP       — pyupgrade (modernize to Python 3.12 idioms)
 #   SIM      — simplify (collapse redundant if/with/try patterns)
 #   RUF      — ruff-specific (unused noqa, mutable class attrs, ambiguous unicode)
 #   C4       — comprehensions (simplify list/dict/set construction)
 #   DTZ      — datetime timezone safety (no naive datetimes)
+#   ISC      — implicit string concat (catches accidental "a" "b" → "ab")
 #   PIE      — misc code quality (no unnecessary pass, deduplicate isinstance)
+#   PLE      — pylint errors (actual code errors: bad super calls, invalid exceptions)
 #   PERF     — performance (avoid unnecessary copies, use comprehensions)
 #   PT       — pytest best practices (fixture style, parametrize format)
+#   RET      — return statements (unnecessary else after return)
 #   S        — bandit security (subprocess, SQL injection, XML, silent exceptions)
 #   T20      — print statements (enforce structured logging in production code)
 select = [
-    "E4", "E7", "E9", "F", "I",
-    "B", "UP", "SIM", "RUF", "C4",
-    "DTZ", "PIE", "PERF", "PT", "S", "T20",
+    "E4", "E7", "E9", "W", "F", "I",
+    "A", "B", "UP", "SIM", "RUF", "C4",
+    "DTZ", "ISC", "PIE", "PLE", "PERF",
+    "PT", "RET", "S", "T20",
 ]
 
-# Rules that are intentionally disabled project-wide:
-#   S101 — assert: used correctly in test files; production code does not assert
-ignore = ["S101"]
+# Rule groups evaluated and intentionally excluded (audited 2026-03-07):
+#   TCH  — type-checking imports: moves imports into TYPE_CHECKING blocks;
+#          fragile (can break runtime), marginal benefit for this project size (31 hits)
+#   ARG  — unused arguments: 273 hits, overwhelmingly test mocks/fixture lambdas
+#   ERA  — commented-out code: 35 hits, high false-positive rate on structured comments
+#   FBT  — boolean trap: 16 hits, stylistic preference not a correctness issue
+#   N    — naming conventions: 7 hits, all import alias conventions (e.g. camelCase libs)
+#   PLC  — pylint convention: 123 hits, all import-outside-top-level (deferred imports
+#          are intentional throughout this project for startup performance)
+#   PLR  — pylint refactor: 240 hits, 192 are magic-value-comparison; rest is function
+#          complexity thresholds that don't map to real problems here
+#   PLW  — pylint warning: 19 hits, subprocess-run-without-check already covered by S rules
 
 [tool.ruff.format]
 # Defaults match black: double quotes, 88-char line length, trailing commas.
@@ -42,10 +57,10 @@ ignore = ["S101"]
 "eval/**" = ["T20"]
 "scripts/**" = ["T20"]
 # Test files: pytest fixtures and parametrize have their own conventions;
-# subprocess calls in tests are mocked, not real security concerns;
-# S101 = assert is how pytest works (also globally suppressed above, kept
-# here as defense-in-depth); S108 = mock /tmp paths; S106 = test
-# tokens/passwords; S104 = test assertions about bind addresses.
+# subprocess calls in tests are mocked, not real security concerns.
+# S101 = assert is how pytest works — ONLY allowed here, not in production code.
+# S108 = mock /tmp paths; S106 = test tokens/passwords;
+# S104 = test assertions about bind addresses.
 "tests/**" = ["S101", "S104", "S106", "S108", "S603", "S607"]
 # CJK test data files contain intentional fullwidth Unicode characters —
 # these ARE the test data, not ambiguous typos.  RUF001 = ambiguous
@@ -61,6 +76,29 @@ ignore_missing_imports = true
 check_untyped_defs = true
 # Require type annotations on all function definitions
 disallow_untyped_defs = true
+# Require annotations on decorated functions
+disallow_untyped_decorators = true
+# Don't allow partially-annotated function defs
+disallow_incomplete_defs = true
+# Disallow subclassing values of type Any
+disallow_subclassing_any = true
+# Warn when a function returns Any from a typed return
+warn_return_any = true
+# Warn about stale # type: ignore comments
+warn_unused_ignores = true
+# Warn about redundant cast() calls
+warn_redundant_casts = true
+# Require explicit re-export (use __all__ or redundant alias)
+no_implicit_reexport = true
+# Prohibit equality checks on incompatible types
+strict_equality = true
+# Enable additional checks (e.g. missing return, redundant expressions)
+extra_checks = true
+
+# Flag evaluated and intentionally excluded (audited 2026-03-07):
+#   disallow_any_generics — 76 violations; would require replacing all dict[str, Any]
+#   with dict[str, object] or TypedDict; high churn, marginal safety improvement.
+#   This can be revisited when the codebase has fewer Any-typed boundaries.
 
 [tool.coverage.run]
 # Write coverage data to /tmp so the pre-push hook doesn't see "files modified"

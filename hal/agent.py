@@ -63,7 +63,7 @@ class AgentResult:
     def __hash__(self) -> int:
         return hash(self.response)
 
-    def __contains__(self, item: str) -> bool:  # type: ignore[override]
+    def __contains__(self, item: str) -> bool:
         return item in self.response
 
     def __str__(self) -> str:

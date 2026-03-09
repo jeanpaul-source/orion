@@ -2,6 +2,7 @@
 
 import difflib
 import shlex
+from typing import cast
 
 from hal.executor import SSHExecutor
 from hal.judge import Judge
@@ -16,7 +17,7 @@ def read_file(
     result = executor.run(f"cat {shlex.quote(path)}")
     if result["returncode"] != 0:
         return None
-    return result["stdout"]
+    return cast(str, result["stdout"])
 
 
 def list_dir(
@@ -28,7 +29,7 @@ def list_dir(
     result = executor.run(f"ls -la {shlex.quote(path)}")
     if result["returncode"] != 0:
         return None
-    return result["stdout"]
+    return cast(str, result["stdout"])
 
 
 def write_file(
@@ -44,7 +45,7 @@ def write_file(
     if not judge.approve("write_file", detail, reason=reason):
         return False
     result = executor.write(path, content)
-    return result["returncode"] == 0
+    return cast(bool, result["returncode"] == 0)
 
 
 def patch_file(
