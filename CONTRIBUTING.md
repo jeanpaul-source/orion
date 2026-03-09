@@ -280,10 +280,17 @@ git push origin main
 
 # On server — pull from GitHub
 cd ~/orion && git pull    # alias: orion-update
+
+# Restart the container to load the new code — required after any Python file change
+docker compose restart    # skip this for docs-only or config-only changes
 ```
 
 **Rule: laptop pushes only. Server pulls only.** The server never has push credentials.
 The deploy key at `~/.ssh/orion_deploy` is read-only.
+
+**When to restart:** `docker compose restart` is required after any change to Python files
+(`hal/*.py`, `harvest/*.py`, etc.) — the running container does not reload code automatically.
+It is **not** needed for documentation-only or `.env`-variable-only changes.
 
 ---
 
