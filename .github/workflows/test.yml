@@ -51,7 +51,7 @@ jobs:
         # all PR commits or the HEAD commit on direct pushes.
         uses: wagoid/commitlint-github-action@v6
         with:
-          configFile: commitlint.config.js
+          configFile: commitlint.config.mjs
 
       - name: Tests + Coverage
         run: |
