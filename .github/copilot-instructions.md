@@ -114,9 +114,9 @@ python -m eval.run_eval && python -m eval.evaluate --skip-llm-eval
 python -m harvest --dry-run   # preview
 python -m harvest             # live run
 
-# Deploy: laptop pushes → server pulls
-git push origin main
-ssh jp@192.168.5.10 'cd ~/orion && git pull'   # alias: orion-update
+# Deploy: push from server (VS Code Remote SSH), CD runner auto-deploys on merge
+git push origin <feature-branch>              # open PR → CI → merge → auto-deploy
+ssh jp@192.168.5.10 'cd ~/orion && git pull'  # manual fallback after merge
 ```
 
 ---

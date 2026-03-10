@@ -275,18 +275,29 @@ something and need HAL to know about it now.
 ## Deploy
 
 ```bash
-# On laptop — push to GitHub
-git push origin main
+# On the server (via VS Code Remote SSH or direct SSH) — push to GitHub
+git push origin <feature-branch>
 
-# On server — pull from GitHub
+# After PR merge — CD pipeline auto-deploys via self-hosted runner
+# Manual fallback:
 cd ~/orion && git pull    # alias: orion-update
 
 # Restart the container to load the new code — required after any Python file change
 docker compose restart    # skip this for docs-only or config-only changes
 ```
 
-**Rule: laptop pushes only. Server pulls only.** The server never has push credentials.
-The deploy key at `~/.ssh/orion_deploy` is read-only.
+**Dev environment:** Code is written and pushed from the-lab (192.168.5.10) via VS Code
+Remote SSH. The server holds a fine-grained GitHub PAT scoped to `jeanpaul-source/orion`,
+permission `contents: write` only — no access to any other repo or account setting.
+
+**Tradeoff accepted:** The dev environment and the HAL runtime share a host. A host-level
+compromise would be a full compromise of both. This is deliberate for a personal homelab
+where the server is LAN-only and not internet-exposed. Branch protection on `main` still
+requires CI to pass before any merge.
+
+**Credential path hardened:** `~/.config/git/credentials`, `~/.git-credentials`, and
+`~/.netrc` are in the Judge's `_SENSITIVE_PATHS` — any HAL tool call targeting them
+escalates by +1 tier (same treatment as `~/.ssh`).
 
 **When to restart:** `docker compose restart` is required after any change to Python files
 (`hal/*.py`, `harvest/*.py`, etc.) — the running container does not reload code automatically.

@@ -226,7 +226,7 @@ The HTTP server and Telegram bot run inside the `orion` container via
 supervisord (`ops/supervisord.conf`). Both auto-restart on failure.
 
 ```bash
-# Deploy / update
+# Deploy / update (CD pipeline runs this automatically after a PR merges to main)
 orion-deploy    # alias: cd ~/orion && git pull && docker compose build && docker compose up -d
 
 # Logs
