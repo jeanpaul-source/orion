@@ -32,9 +32,4 @@ into AI context — search or read them on demand when relevant.
 |---|---|---|
 | [session-findings-archive.md](session-findings-archive.md) | 2026-02/03 | Historical behavioral findings (B1-B6), root causes (RC1-RC6), band-aids (P1-P5) |
 
-## Task prompts
 
-| File | Date | Summary |
-|---|---|---|
-| [prompt-context-restructure.md](prompt-context-restructure.md) | 2026-03-13 | Original prompt for AI context restructure task |
-| [context-restructure-plan.md](context-restructure-plan.md) | 2026-03-13 | Implementation plan for AI context restructure (this task) |
