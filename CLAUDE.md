@@ -67,8 +67,6 @@ existing "Current State" section in place.
 
 ## How I (Claude) Work With the Operator
 
-Observability aid: I will also emit structured logs with session_id and trace correlation for each approved change when running code paths, and I will update README and SESSION_FINDINGS as I go to prevent documentation drift. These logs are JSON by default and can be toggled with HAL_LOG_JSON.
-
 **The reason this section exists:** I drift on long projects. Each individual fix can seem
 logical in isolation, but over many sessions and context resets I lose the thread of what
 we're actually building and start optimising for "make the immediate problem go away" instead
@@ -100,53 +98,21 @@ I'm drifting the explanation will sound wrong or thin. That is the catch mechani
 
 ## Documentation
 
-Read these before working on the relevant area. They are the source of truth — not this file.
-
-| Doc | What it covers |
-| --- | --- |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Component map, data flow, design rationale (intent routing, Judge, agent loop, LLM backend split, memory, observability, KB pipeline, security stack) |
-| [OPERATIONS.md](OPERATIONS.md) | Lab host details, services table, `.env` reference, systemd units, deploy procedures, known traps, secrets |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev workflow, test commands, linting, eval harness, git conventions, branch policy |
-| [ROADMAP.md](ROADMAP.md) | What's been done (chronological), backlog, architectural backlog, end-state vision |
-| [notes/session-findings-archive.md](notes/session-findings-archive.md) | Historical audit findings (P1–P5) — archived, mostly resolved |
-| [knowledge/LAB_ENVIRONMENT.md](knowledge/LAB_ENVIRONMENT.md) | Ground-truth lab description — hardware, services, network, dev machine |
-| [README.md](README.md) | Project overview, quick start, slash commands, key files table |
+See [README.md](README.md) for the full documentation index. Key references:
+ARCHITECTURE.md (design), OPERATIONS.md (deploy/ops), CONTRIBUTING.md (dev workflow).
 
 ---
 
-## Current State
+## Memory Protocol
 
-Active branch: `main`. Layers 0–4 complete — all modules active; nothing remains in `hal/_unlocked/` except the empty `__init__.py`.
+At session start, read `memory/SUMMARY.md` for current project state.
 
-**Deployment:** HAL runs inside a Docker container (`orion`) on the-lab via
-Docker Compose. The HTTP server and Telegram bot run under supervisord inside
-the container. Three defense layers: Judge (software) → hal-svc SSH service
-account (OS permissions) → container boundary (isolation). Harvest and watchdog
-run on the host venv (they need direct host access). Old `server.service` and
-`telegram.service` are disabled but kept as rollback path.
+At session end, if any of these happened, propose an update to `memory/SUMMARY.md`:
 
-**Layers 0–4 (all active):**
+- Code was merged or committed
+- An architectural decision was made
+- An issue was discovered or resolved
+- Project state changed meaningfully
 
-- **LLM**: vLLM serving Qwen2.5-32B-Instruct-AWQ (port 8000); Ollama embeddings-only on CPU
-- **Agent loop**: `dispatch_intent()` classifies each query via `IntentClassifier`; two routes:
-  - `conversational` → `_handle_conversational()` — single LLM call, `tools=[]`, no KB, no Prometheus
-  - everything else → `run_agent()` — full 8-iteration tool loop, KB + metrics pre-seeded at iteration 0
-
-  health/fact seeding happens inside `run_agent` as context injection, not as hard routing gates.
-  8 tools: `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`, `list_dir`, `write_file`, `run_code`.
-  `run_command`, `read_file`, `list_dir`, `write_file` accept an optional `target_host` parameter —
-  `ExecutorRegistry` resolves host names to `SSHExecutor` instances; default is `"lab"`.
-  Extra hosts configured via `EXTRA_HOSTS` env var (comma-separated `name:user@ip`).
-  `run_code` executes Python in a sandboxed Docker container (no network, no write, stdlib only); Judge tier 2.
-  Conditional tools: `web_search` (requires `TAVILY_API_KEY`), `run_code` (requires `SANDBOX_ENABLED=true`).
-  LLM errors return early without writing to history (history-poisoning bug fixed).
-- **Judge**: tier 0-3 policy gate with evasion detection, git write blocking, path
-  canonicalization, self-edit governance, default-deny; JSON audit log
-- **Knowledge base**: ~19,900 chunks in pgvector; three-layer model; nightly harvest at 3am; each successful harvest writes `knowledge/harvest_snapshot.json` (git-tracked) for temporal diff queries
-- **Interface**: terminal REPL (all slash commands including `/postmortem`); HTTP + Telegram interfaces active; Web UI at `GET /` (vanilla JS, dark theme, session sidebar, markdown + syntax highlighting)
-- **Observability**: OTel tracing → Grafana Tempo; Pushgateway metrics; Grafana dashboard
-- **Memory**: SQLite sessions with poison-turn filter and 30-day pruning; `/remember` facts in pgvector
-- **Configuration safety**: `OLLAMA_HOST`, `PGVECTOR_DSN`, and `PROMETHEUS_URL` are required at startup; missing values raise a clear `.env.example` RuntimeError
-- **Test suite**: 1176 offline tests passing (`pytest tests/ --ignore=tests/test_intent.py`); intent tests require reachable Ollama
-
-**Known issues:** See [ROADMAP.md](ROADMAP.md) backlog section.
+Updates follow the standard edit workflow — propose the change, human reviews
+via git diff. If `Last updated` is more than 7 days old, flag this to the user.
