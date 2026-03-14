@@ -10,8 +10,8 @@ step-by-step implementation plans, and a sequenced session schedule.
 
 **How to use this document:** Work through the sessions in order. Each session
 is self-contained and ends with verification. The AI implementer reads the
-relevant section, proposes changes per CLAUDE.md rules (one change at a time,
-explain before acting, wait for approval), and you approve or reject.
+relevant section, makes changes which you review as diffs in the editor. Each
+finding gets its own commit.
 
 ---
 
@@ -23,7 +23,7 @@ explain before acting, wait for approval), and you approve or reject.
 - [Batch 2 — Git Config & Local Hooks (F-02, F-03, F-04, F-05, F-18)](#batch-2--git-config--local-hooks)
 - [Batch 3 — CD Architecture Fix (F-21)](#batch-3--cd-architecture-fix)
 - [Batch 4 — CD Hardening (F-06, F-07, F-08, F-09)](#batch-4--cd-hardening)
-- [Batch 5 — Documentation Fixes (F-13, F-14, F-15, F-16, F-17)](#batch-5--documentation-fixes)
+- [Batch 5 — Documentation Fixes (F-13, F-14, F-15, F-16, F-17, F-22)](#batch-5--documentation-fixes)
 - [Batch 6 — Dependencies & Nice-to-haves (F-10, F-11, F-19, F-20)](#batch-6--dependencies--nice-to-haves)
 - [Session Schedule](#session-schedule)
 
@@ -57,6 +57,7 @@ the status of each:
 | F-19 Doc/Makefile/CI install inconsistency | **Confirmed** | CONTRIBUTING.md step-by-step says `pip-sync` with lock files. Makefile `dev-setup` uses `pip install -r`. CI uses `pip install -r`. Three different stories. |
 | F-20 No shared VS Code settings.json | **Confirmed** | `.vscode/settings.json` is in `.gitignore` (line 36). Only `launch.json` and `tasks.json` are committed. |
 | F-21 Dev workspace = deploy target | **Confirmed** | `deploy.yml` does `cd ~/orion && git pull`. `~/orion` is the dev workspace. 7 remote branches exist — confirms active branching workflow that triggers this bug. |
+| F-22 CLAUDE.md assumes Claude Code, not Copilot | **Confirmed** | CLAUDE.md's stop-and-wait proposal format, one-change-per-commit cycle, and plan doc intro all assume Claude Code terminal sessions. In VS Code Copilot, these rules fight the tool — the user reviews diffs directly in the editor, not proposal blocks. |
 
 **Additional observation:** 7 remote branches currently exist on origin:
 `chore/lint-hardening-and-docs`, `chore/vram-optimization`,
@@ -85,6 +86,10 @@ F-21 (separate deploy directory)  ← P0, do this first among CD changes
 
 F-10 (lock file decision)
   └─→ F-19 (install method consistency — same decision)
+
+F-22 (CLAUDE.md workflow update)
+  └─→ No dependencies, but doing this early makes all other sessions smoother
+      since it removes instructions that fight the VS Code Copilot workflow.
 
 All others: no dependencies, can be done in any order.
 
@@ -712,7 +717,8 @@ jobs:
 
 #### Problem
 
-Five documentation inaccuracies that mislead developers or break links:
+Five documentation inaccuracies that mislead developers or break links, plus
+one workflow instruction file that conflicts with the current dev tooling:
 
 1. **F-13 (P1):** CONTRIBUTING.md line 253 claims "The repository admin bypass
    actor allows emergency direct pushes" — but `bypass_actors: []` in the
@@ -733,6 +739,12 @@ Five documentation inaccuracies that mislead developers or break links:
 5. **F-17 (P3):** "1176" is hardcoded in README.md (lines 40, 142) and
    CONTRIBUTING.md (lines 81, 95, 99, 215). This count drifts every time tests
    are added. Currently accurate (1176 collected) but will be wrong soon.
+
+6. **F-22 (P1):** CLAUDE.md's "stop and wait" proposal format and one-change-
+   per-commit cycle were written for Claude Code terminal sessions. In VS Code
+   with Copilot, these rules fight the tool — the user reviews actual diffs in
+   the editor, not markdown proposal blocks. The plan doc intro also references
+   the old workflow. Update CLAUDE.md to be tool-agnostic.
 
 #### Evidence
 
@@ -936,13 +948,39 @@ CONTRIBUTING.md line 215:
 
 - These are all safe text changes. Rollback: `git checkout -- <file>`.
 
+**F-22 — Update CLAUDE.md for tool-agnostic workflow:**
+
+The current CLAUDE.md has two sections that assume Claude Code terminal sessions:
+
+1. The `⛔ REQUIRED FORMAT — Before Every Code Change` section mandates a
+   `### Item N` proposal block that the AI must emit and then stop. In VS Code
+   Copilot, this is counterproductive — the user sees actual file diffs instead.
+
+2. The `How I (Claude) Work With the Operator` section's rules ("explain before
+   acting", "one change at a time", "say I'm guessing") are good principles but
+   are framed as Claude Code-specific rituals.
+
+Rewrite these sections to be tool-agnostic:
+
+- **Keep the principles:** root-cause analysis, one logical change per commit,
+  transparency about uncertainty, no bandaids.
+- **Remove the ritual:** no mandatory proposal block format, no "stop and wait"
+  instruction. Instead: "explain what you're changing and why in your commit
+  message and PR description."
+- **Add Copilot-aware guidance:** "In VS Code, the user reviews diffs directly.
+  Make changes that are easy to review — small, focused, well-commented."
+
+Also update the `.github/copilot-instructions.md` reference to CLAUDE.md so it
+doesn't point users at stale workflow rules.
+
 #### Dependencies
 
-None.
+None. Can be done at any point, but doing it early improves every subsequent
+session since the AI implementer won't fight against conflicting instructions.
 
 #### Estimated Time
 
-20-30 minutes (text edits across 3 files + verification).
+30-40 minutes (text edits across 3-4 files + verification).
 
 ---
 
@@ -1182,22 +1220,26 @@ None.
 Each session is designed to be completable in one sitting, self-contained (no
 half-done states), and ordered by dependency chain.
 
-### Session 1 — GitHub Settings + Git Config (~30 min)
+### Session 1 — GitHub Settings + Git Config (~40 min)
 
-**What:** Batch 1 + Batch 2
+**What:** F-22 + Batch 1 + Batch 2
 
-1. **You (GitHub UI):** Enable auto-delete merged branches (F-01)
-2. **You (GitHub UI):** Enable strict status checks (F-12)
-3. **Terminal:** Delete stale remote branches
-4. **AI + you:** Fix Makefile `install-hooks` target (F-18)
-5. **Terminal:** Install commit-msg hook (F-02)
-6. **Terminal:** Set git config (F-03, F-04, F-05)
-7. **Terminal:** `git fetch --prune`
-8. **Verify:** `make check` passes
-9. **Commit + push + PR**
+1. **AI + you:** Update CLAUDE.md to tool-agnostic workflow (F-22) — do first
+   so the AI implementer isn't fighting conflicting instructions for the rest
+   of the plan
+2. **You (GitHub UI):** Enable auto-delete merged branches (F-01)
+3. **You (GitHub UI):** Enable strict status checks (F-12)
+4. **Terminal:** Delete stale remote branches
+5. **AI + you:** Fix Makefile `install-hooks` target (F-18)
+6. **Terminal:** Install commit-msg hook (F-02)
+7. **Terminal:** Set git config (F-03, F-04, F-05)
+8. **Terminal:** `git fetch --prune`
+9. **Verify:** `make check` passes
+10. **Commit + push + PR**
 
-**Ends with:** All local dev tooling working correctly. Commit messages enforced
-locally. Git config optimized. Stale branches cleaned up.
+**Ends with:** CLAUDE.md updated for Copilot workflow. All local dev tooling
+working correctly. Commit messages enforced locally. Git config optimized.
+Stale branches cleaned up.
 
 ---
 
@@ -1247,6 +1289,9 @@ checks the container, and notifies on failure.
 
 **What:** Batch 5 (F-13, F-14, F-15, F-16, F-17)
 
+**Note:** F-22 (CLAUDE.md update) was moved to Session 1 so all sessions
+benefit from the corrected workflow instructions.
+
 1. **AI + you:** Fix CONTRIBUTING.md bypass claim (F-13)
 2. **AI + you:** Fix README.md Web UI status (F-14)
 3. **AI + you:** Fix README.md SESSION_FINDINGS link (F-15)
@@ -1283,7 +1328,7 @@ non-major bumps. VS Code settings shared.
 
 | Session | Time | Priority |
 |---------|------|----------|
-| Session 1 — GitHub + Git Config | ~30 min | P1 |
+| Session 1 — GitHub + Git Config | ~40 min | P1 |
 | Session 2 — Deploy Directory | ~60 min | P0 |
 | Session 3 — CD Hardening | ~45 min | P1 |
 | Session 4 — Documentation | ~30 min | P1 |
