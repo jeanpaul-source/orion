@@ -41,7 +41,7 @@ install-hooks:
 
 lock: ## Recompile lock files from requirements.txt
 	.venv/bin/pip-compile requirements.txt --generate-hashes --allow-unsafe -o requirements.lock
-	.venv/bin/pip-compile requirements-dev.txt --generate-hashes --allow-unsafe -o requirements-dev.lock
+	.venv/bin/pip-compile requirements-dev.txt --generate-hashes --allow-unsafe -c requirements.lock -o requirements-dev.lock
 
 dev-setup: ## Fresh clone → full enforcement in one command
 	python3 -m venv .venv
