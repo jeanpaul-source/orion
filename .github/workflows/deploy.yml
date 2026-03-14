@@ -32,10 +32,43 @@ jobs:
           cd ~/orion
           docker compose up -d
 
-      # Step 3: Show the last 20 lines of container logs.
+      # Step 3: Wait for Docker's built-in healthcheck to report "healthy".
+      # The container has start_period: 120s + 3 retries × 30s = up to ~210s
+      # before Docker marks it healthy. We poll for 250s (50 × 5s) to give
+      # headroom. If it never becomes healthy, we dump logs and fail the run.
+      - name: Wait for healthy container
+        run: |
+          echo "Waiting for container to become healthy..."
+          for i in $(seq 1 50); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' orion 2>/dev/null || echo "unknown")
+            echo "  Attempt $i/50: $STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Container is healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Container did not become healthy within 250 seconds"
+          docker logs --tail 50 orion
+          exit 1
+
+      # Step 4: Show the last 20 lines of container logs.
       # if: always() means this runs even if a previous step failed,
       # so you always have visibility into the container's current state.
       - name: Show container logs
         if: always()
         run: |
           docker logs --tail 20 orion
+
+      # Step 5: Send a push notification via ntfy if anything failed.
+      # The || true at the end prevents a notification failure from masking
+      # the real deploy failure. NTFY_URL is a GitHub repository secret.
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s \
+            -H "Title: Orion deploy failed" \
+            -H "Priority: high" \
+            -H "Tags: rotating_light" \
+            -d "Deploy of ${{ github.event.workflow_run.head_sha }} failed. Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "${{ secrets.NTFY_URL }}" || true

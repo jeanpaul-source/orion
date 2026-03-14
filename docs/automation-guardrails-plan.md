@@ -2,7 +2,7 @@
 
 > Created: 2026-03-13
 > Branch: `docs/automation-guardrails-plan`
-> Status: Planning — nothing implemented yet
+> Status: Sessions 1-2 complete. Session 3 next (`fix/cd-hardening`).
 
 This document contains the complete validated audit of Orion's automation gaps,
 missing guardrails, and documentation inaccuracies — plus GitHub issue bodies,
@@ -1227,62 +1227,24 @@ None.
 Each session is designed to be completable in one sitting, self-contained (no
 half-done states), and ordered by dependency chain.
 
-### Session 1 — GitHub Settings + Git Config (~40 min)
+### Session 1 — GitHub Settings + Git Config (~40 min) ✅
 
-**What:** F-22 + Batch 1 + Batch 2
+**Completed:** 2026-03-13. PR #32 merged.
 
-1. **AI + you:** Update CLAUDE.md to tool-agnostic workflow (F-22) — do first
-   so the AI implementer isn't fighting conflicting instructions for the rest
-   of the plan
-2. **You (GitHub UI):** Enable auto-delete merged branches (F-01)
-3. **You (GitHub UI):** Enable strict status checks (F-12)
-4. **Terminal:** Delete stale remote branches
-5. **AI + you:** Fix Makefile `install-hooks` target (F-18)
-6. **Terminal:** Install commit-msg hook (F-02)
-7. **Terminal:** Set git config (F-03, F-04, F-05)
-8. **Terminal:** `git fetch --prune`
-9. **Verify:** `make check` passes
-10. **Commit + push + PR**
-
-**Ends with:** CLAUDE.md updated for Copilot workflow. All local dev tooling
-working correctly. Commit messages enforced locally. Git config optimized.
-Stale branches cleaned up.
+F-22, F-01, F-12, F-02, F-03, F-04, F-05, F-18 all resolved.
+CLAUDE.md updated for tool-agnostic workflow. Stale branches cleaned.
+Local git config set. Commit-msg hook installed.
 
 ---
 
-### Session 2 — Image-Based Deploy (~90 min)
+### Session 2 — Image-Based Deploy (~90 min) ✅
 
-**What:** Batch 3 (F-21 + F-08 + F-09)
+**Completed:** 2026-03-14. PR #33 (build workflow) + PR #34 (deploy switch) merged.
 
-This is a two-PR session to avoid a chicken-and-egg problem: the deploy
-workflow can't pull an image that doesn't exist yet.
-
-**PR 1 — Add build workflow:**
-
-1. **AI + you:** Create `.github/workflows/build.yml` (build + push to GHCR)
-2. **Verify:** `make check` passes
-3. **Commit + push + PR + merge**
-4. **Wait:** Watch the build workflow run — confirm image appears on GHCR
-
-**PR 2 — Switch to image-based deploy:**
-
-1. **AI + you:** Edit `docker-compose.yml` — add `image:`, remove `build:` block,
-   remove source code bind mount
-2. **AI + you:** Rewrite `deploy.yml` — `docker pull` + `docker compose up -d`,
-   trigger on `workflow_run` instead of `push`
-3. **AI + you:** Update OPERATIONS.md and CONTRIBUTING.md
-4. **Verify:** `make check` passes
-5. **Commit + push + PR + merge**
-6. **Observe:** Deploy workflow triggers → pulls image → restarts container
-7. **Verify:** `curl http://localhost:8087/health` returns 200
-8. **Terminal:** Update `~/.bashrc` aliases
-
-**Ends with:** Container running from GHCR image. No `git pull` in deploys.
-No source code bind mount. Dev workspace completely decoupled from production.
-F-08 (rebuild detection) and F-09 (SHA verification) are solved for free.
-
-**Risk window:** ~2-3 minutes of container downtime when the new compose config
-is applied (step 10). Do this when you're not actively using HAL.
+F-21, F-08, F-09 all resolved. Container running from
+`ghcr.io/jeanpaul-source/orion:latest`. No source bind mount.
+Deploy triggers via `workflow_run` after build succeeds.
+OPERATIONS.md and CONTRIBUTING.md updated.
 
 ---
 

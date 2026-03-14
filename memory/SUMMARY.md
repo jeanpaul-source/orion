@@ -1,12 +1,13 @@
 # Project Summary
 
-> Last updated: 2026-03-13 by AI (initial creation from CLAUDE.md "Current State")
+> Last updated: 2026-03-14 by AI
 
 ## Status
 
 Active branch: `main`. All layers operational.
 
-HAL runs in Docker container (`orion`) on the-lab (192.168.5.10).
+HAL runs in Docker container (`orion`) on the-lab (192.168.5.10),
+using a pre-built image from `ghcr.io/jeanpaul-source/orion:latest`.
 HTTP server + Telegram bot via supervisord inside container.
 Harvest + watchdog run on host venv (need direct host access).
 
@@ -49,17 +50,17 @@ SQLite sessions at `~/.orion/memory.db` with poison-turn filter and
 
 ## Recent changes
 
+- 2026-03-14: Image-based deploys via GHCR (PRs #33, #34) — build workflow + deploy switch
 - 2026-03-13: AI context restructure — slimmed instruction files, created memory/SUMMARY.md
 - 2026-03-11: Instruction audit completed (notes/2026-03-11-instruction-audit.md)
 - 2026-03-08: CD workflow added — auto-deploy to lab on main merge
-- 2026-03-07: Docker container deployment finalized with supervisord
-- 2026-03-05: Autonomous remediation + trust evolution delivered
 
 ## Known issues
 
 - Production code audit findings (P0-P2) tracked in notes/audit-findings.md — not yet fixed
 - System prompt contains hardcoded hardware specs (ROADMAP.md Path C item 1)
 - Judge patterns are Python literals, not externalized (ROADMAP.md Path C item 2)
+- F-21, F-08, F-09 resolved by image-based deploys (PR #34)
 
 ## Active decisions
 
