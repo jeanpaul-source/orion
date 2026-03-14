@@ -43,10 +43,9 @@ Fill in `PGVECTOR_DSN` password from the server:
 cat /run/homelab-secrets/pgvector-kb.env
 ```
 
-Build and start the container:
+Start the container (pulls the pre-built image from GHCR):
 
 ```bash
-docker compose build
 docker compose up -d
 ```
 
@@ -225,9 +224,15 @@ The `--delete` flag + orphan cleanup ensures removed files don't leave stale KB 
 The HTTP server and Telegram bot run inside the `orion` container via
 supervisord (`ops/supervisord.conf`). Both auto-restart on failure.
 
+**Image-based deploys:** CI builds the Docker image on every merge to `main`
+and pushes it to `ghcr.io/jeanpaul-source/orion`. The deploy workflow then
+pulls the new image and recreates the container. Source code lives inside the
+image — there is no source code bind mount.
+
 ```bash
-# Deploy / update (CD pipeline runs this automatically after a PR merges to main)
-orion-deploy    # alias: cd ~/orion && git pull && docker compose build && docker compose up -d
+# Pull latest image and restart (CD pipeline does this automatically)
+docker pull ghcr.io/jeanpaul-source/orion:latest
+cd ~/orion && docker compose up -d
 
 # Logs
 docker logs -f orion
@@ -235,8 +240,10 @@ docker logs -f orion
 # Health check
 curl http://127.0.0.1:8087/health
 
-# Restart
-docker compose restart
+# Rollback to a specific commit's image
+docker pull ghcr.io/jeanpaul-source/orion:<git-sha>
+docker tag ghcr.io/jeanpaul-source/orion:<git-sha> ghcr.io/jeanpaul-source/orion:latest
+cd ~/orion && docker compose up -d
 ```
 
 The container binds to `0.0.0.0:8087` (LAN-accessible). The `/chat` endpoint
