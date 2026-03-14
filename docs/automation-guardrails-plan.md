@@ -711,7 +711,7 @@ jobs:
 
 ### Issue: Fix documentation inaccuracies across README, CONTRIBUTING, and ARCHITECTURE
 
-**Title:** `docs: fix 5 documentation inaccuracies`
+**Title:** `docs: fix 5 documentation inaccuracies + update CLAUDE.md workflow`
 
 **Labels:** `docs`
 
