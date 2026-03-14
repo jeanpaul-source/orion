@@ -37,7 +37,7 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 
 ## Current state (Mar 2026)
 
-1176 offline tests (35 intent classifier tests additionally require Ollama). Eval baselines:
+~1200 offline tests (35+ intent classifier tests additionally require Ollama). Eval baselines:
 `hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=100%`, `web_tool_accuracy=100%`.
 
 HAL runs inside a Docker container on the-lab with three defense layers: Judge
@@ -57,7 +57,8 @@ boundary (namespace/cgroup isolation, read-only codebase mount).
 | HTTP server (`/chat`, `/health`) | Working (inside container) |
 | Telegram bot (polling, single-user auth) | Working (inside container) |
 | Autonomous remediation | Not yet built |
-| Web UI / Voice interfaces | Not yet built |
+| Web UI (browser chat) | Working |
+| Voice interfaces | Not yet built |
 | Trust evolution (earned/revoked tiers) | Not yet built |
 
 ---
@@ -110,7 +111,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | [ROADMAP.md](ROADMAP.md) | What's done, what's next, end-state vision |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev workflow, tests, eval harness, CLAUDE.md |
 | [CLAUDE.md](CLAUDE.md) | AI operating contract — required reading before any code change |
-| [SESSION_FINDINGS.md](SESSION_FINDINGS.md) | Ground-truth audit of what runs vs. what is documented |
+| [notes/session-findings-archive.md](notes/session-findings-archive.md) | Session findings archive — ground-truth audits |
 
 ---
 
@@ -134,12 +135,13 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | `hal/prometheus.py` | PromQL client + Pushgateway metrics |
 | `hal/knowledge.py` | pgvector KB search client |
 | `hal/server.py` | FastAPI HTTP server — `/chat` + `/health` |
+| `hal/static/` | Web UI — vanilla JS chat interface served by FastAPI at `/` |
 | `hal/telegram.py` | Telegram bot — polls API, POSTs to `/chat`, single-user auth |
 | `hal/trust_metrics.py` | Audit log parser + `get_action_stats` tool |
 | `hal/watchdog.py` | Standalone health monitor (runs as systemd timer) |
 | `harvest/` | KB harvest pipeline — scrape, chunk, embed, upsert |
 | `eval/` | Evaluation harness — 40 queries, 7 code evaluators, scorer, baselines |
-| `tests/` | 1176 offline tests + 35 intent classifier tests (require Ollama) |
+| `tests/` | Offline test suite + intent classifier tests (require Ollama) |
 | `ops/` | Systemd unit files (vllm, watchdog, harvest) + supervisord.conf |
 | `Dockerfile` | Container image definition — python:3.12-slim, non-root user |
 | `Dockerfile.sandbox` | Minimal sandbox image for `run_code` — python:3.12-slim, no network, non-root |
