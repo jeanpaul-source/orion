@@ -33,5 +33,4 @@ htmlcov/
 *.swp
 *.swo
 .idea/
-.vscode/settings.json
 .hypothesis/
