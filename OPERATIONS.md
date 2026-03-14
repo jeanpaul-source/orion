@@ -229,6 +229,11 @@ and pushes it to `ghcr.io/jeanpaul-source/orion`. The deploy workflow then
 pulls the new image and recreates the container. Source code lives inside the
 image — there is no source code bind mount.
 
+After restarting, the deploy workflow polls Docker's healthcheck for up to 250
+seconds. If the container never becomes healthy, the workflow fails and sends a
+push notification via [ntfy](https://ntfy.sh) (configured by the `NTFY_URL`
+GitHub repository secret).
+
 ```bash
 # Pull latest image and restart (CD pipeline does this automatically)
 docker pull ghcr.io/jeanpaul-source/orion:latest
