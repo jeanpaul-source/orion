@@ -12,6 +12,11 @@ export default {
     'header-max-length': [2, 'always', 72],
     // No period at end (matches CONTRIBUTING.md)
     'subject-full-stop': [2, 'never', '.'],
+    // Disable body/footer line-length limits. Dependabot generates commit
+    // bodies with long URLs and release notes we can't control. The header
+    // limit (72 chars) still enforces readable subject lines.
+    'body-max-line-length': [0, 'always'],
+    'footer-max-line-length': [0, 'always'],
     // Use config-conventional default: reject sentence-case, start-case,
     // pascal-case, and upper-case subjects. This enforces lowercase-first
     // subjects while allowing uppercase mid-subject (filenames, acronyms,

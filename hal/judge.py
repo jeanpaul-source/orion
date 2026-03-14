@@ -118,6 +118,9 @@ _CMD_RULES: list[tuple[int, list[str]]] = [
 _SENSITIVE_PATHS: list[str] = [
     "/run/homelab-secrets",
     os.path.expanduser("~/.ssh"),  # e.g. /home/jp/.ssh
+    os.path.expanduser("~/.config/git/credentials"),  # XDG git credential store
+    os.path.expanduser("~/.git-credentials"),  # legacy git credential store fallback
+    os.path.expanduser("~/.netrc"),  # used by curl, older git setups, pip
     "/etc/shadow",
     "/etc/gshadow",
     "/etc/sudoers",
