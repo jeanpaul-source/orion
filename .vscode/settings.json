@@ -1,0 +1,17 @@
+{
+  "python.defaultInterpreterPath": "/home/jp/orion/.venv/bin/python",
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "[markdown]": {
+    "editor.formatOnSave": false
+  },
+  "python.analysis.typeCheckingMode": "basic",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true
+}
