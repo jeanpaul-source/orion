@@ -42,7 +42,7 @@ jobs:
         run: mypy hal/
 
       - name: Markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v19
+        uses: DavidAnson/markdownlint-cli2-action@v22
         # Globs read from .markdownlint-cli2.yaml (single source of truth)
 
       - name: Commitlint
