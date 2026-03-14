@@ -21,8 +21,8 @@ finding gets its own commit.
 - [Dependency Map](#dependency-map)
 - [Batch 1 — GitHub Settings (F-01, F-12)](#batch-1--github-settings)
 - [Batch 2 — Git Config & Local Hooks (F-02, F-03, F-04, F-05, F-18)](#batch-2--git-config--local-hooks)
-- [Batch 3 — CD Architecture Fix (F-21)](#batch-3--cd-architecture-fix)
-- [Batch 4 — CD Hardening (F-06, F-07, F-08, F-09)](#batch-4--cd-hardening)
+- [Batch 3 — Image-Based Deploy (F-21, F-08, F-09)](#batch-3--image-based-deploy)
+- [Batch 4 — CD Hardening (F-06, F-07)](#batch-4--cd-hardening)
 - [Batch 5 — Documentation Fixes (F-13, F-14, F-15, F-16, F-17, F-22)](#batch-5--documentation-fixes)
 - [Batch 6 — Dependencies & Nice-to-haves (F-10, F-11, F-19, F-20)](#batch-6--dependencies--nice-to-haves)
 - [Session Schedule](#session-schedule)
@@ -78,11 +78,11 @@ the status of each:
 F-01 (auto-delete branches)
   └─→ F-03 (fetch.prune — more effective when branches auto-delete)
 
-F-21 (separate deploy directory)  ← P0, do this first among CD changes
+F-21 (image-based deploy)  ← P0, do this first among CD changes
   ├─→ F-06 (deploy health check — modifies deploy.yml)
   │     └─→ F-07 (deploy failure notification — needs health check to be meaningful)
-  ├─→ F-08 (CD rebuild detection — modifies deploy.yml)
-  └─→ F-09 (deployed-commit verification — modifies deploy.yml)
+  ├── F-08 (CD rebuild detection — solved by image build; every merge builds a fresh image)
+  └── F-09 (deployed-commit verification — solved by image tag = git SHA)
 
 F-10 (lock file decision)
   └─→ F-19 (install method consistency — same decision)
@@ -317,207 +317,290 @@ a hard blocker.
 
 ---
 
-## Batch 3 — CD Architecture Fix
+## Batch 3 — Image-Based Deploy
 
-### Issue: Separate dev workspace from deploy target
+### Issue: Switch to image-based deploys — eliminate git-pull-on-server pattern
 
-**Title:** `fix: separate deploy clone from dev workspace`
+**Title:** `fix: image-based deploy via GHCR — remove source bind mount`
 
 **Labels:** `ci-cd`, `guardrails`
 
 #### Problem
 
-`deploy.yml` does `cd ~/orion && git pull`. `~/orion` is also the dev workspace.
-When a PR merges while the dev workspace is on a feature branch, `git pull` fails
-with: *"Your configuration specifies to merge with the ref 'refs/heads/\<branch\>'
-from the remote, but no such ref was fetched."*
+Two related bugs with the current deploy model:
 
-This is **P0** — it breaks every deploy that happens while you're on a feature
-branch, which is the normal workflow. The container continues running old code
-until you manually intervene.
+1. **F-21 (P0):** `deploy.yml` does `cd ~/orion && git pull`. `~/orion` is the
+   dev workspace. When you're on a feature branch, `git pull` fails. This broke
+   deploy on PR #28.
+
+2. **The bind mount problem:** `docker-compose.yml` mounts
+   `/home/jp/orion:/app:ro`. This means the production container runs whatever
+   code is in the dev workspace — including half-finished feature branches.
+
+The `git pull` failure is a symptom. The root cause is that the deploy model
+couples the production container to the local filesystem state.
 
 #### Evidence
 
 - `deploy.yml` step 3: `cd ~/orion && git pull`
+- `docker-compose.yml`: `/home/jp/orion:/app:ro` bind mount
 - 7 remote branches exist — confirms active feature branch workflow
-- This failure already occurred on PR #28
+- Already broke on PR #28
 
-#### Solution
+#### Solution — Image-based deploy via GHCR
 
-Create a dedicated `~/orion-deploy` directory that always stays on `main`.
-The dev workspace (`~/orion`) remains untouched.
+Instead of bind-mounting source code, **bake it into the Docker image** and
+publish to GitHub Container Registry (GHCR). The Dockerfile already does
+`COPY . .` — it's just overridden by the bind mount at runtime.
 
-**Step 1 — Clone the deploy copy:**
+This eliminates:
 
-```bash
-# On the-lab as user jp
-git clone https://github.com/jeanpaul-source/orion ~/orion-deploy
-cd ~/orion-deploy
-git checkout main
+- `git pull` on the server (no local clone needed for deploys)
+- Source code bind mount (code is inside the image)
+- Dev/deploy coupling (image is built from `main`, not the local workspace)
+- F-08 (rebuild detection) — every merge builds a fresh image automatically
+- F-09 (SHA verification) — the image tag IS the git SHA
 
-```
-
-**Step 2 — Copy secrets:**
-
-```bash
-cp ~/orion/.env ~/orion-deploy/.env
-
-```
-
-**Step 3 — Update docker-compose.yml bind mounts:**
-
-File: `docker-compose.yml`
-
-Change the three `~/orion` volume mounts to `~/orion-deploy`:
+**Step 1 — Create CI build workflow (`.github/workflows/build.yml`):**
 
 ```yaml
+name: Build and push image
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Build and push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+```
+
+Every push to `main` builds and pushes two tags: `latest` (for convenience)
+and the full SHA (for rollback and verification).
+
+**Step 2 — Update `docker-compose.yml`:**
+
+Remove the source code bind mount and point `image:` at GHCR:
+
+```yaml
+services:
+  hal:
+    image: ghcr.io/jeanpaul-source/orion:latest
+    container_name: orion
+    restart: unless-stopped
+    # ... (security_opt, extra_hosts, ports unchanged)
+
     volumes:
       # HAL's state — the ONLY read-write mount
-
       - /home/jp/.orion:/home/hal/.orion:rw
 
-      # Codebase — read-only (LLM cannot modify its own code)
-
-      - /home/jp/orion-deploy:/app:ro
+      # REMOVED: /home/jp/orion:/app:ro  (code is now inside the image)
 
       # Config (secrets) — read-only single file
+      - /home/jp/orion/.env:/app/.env:ro
 
-      - /home/jp/orion-deploy/.env:/app/.env:ro
+      # Infrastructure configs — read-only
+      - /opt/homelab-infrastructure:/mnt/infra:ro
 
+      # Reference documents — read-only
+      - /data/orion:/mnt/data:ro
+
+      # Falco logs — read-only
+      - /var/log/falco:/mnt/falco:ro
+
+      # Host system configs — read-only
+      - /etc:/mnt/host-etc:ro
+
+      # SSH key for service account — read-only
+      - /home/jp/.ssh/hal-svc:/home/hal/.ssh/id_ed25519:ro
 ```
 
-Note: Only the `/app:ro` and `.env:ro` mounts change. The `.orion` state mount
-stays as-is (it's the state directory, not the codebase).
+Changes:
 
-**Step 4 — Update deploy.yml:**
+- Added `image: ghcr.io/jeanpaul-source/orion:latest`
+- Removed `build:` block (image comes from GHCR, not local build)
+- Removed `/home/jp/orion:/app:ro` bind mount (code is inside the image)
+- `.env` mount stays — secrets must not be baked into images
 
-File: `.github/workflows/deploy.yml`
-
-Replace the "Pull latest code" step:
-
-```yaml
-
-      - name: Pull latest code
-        run: |
-          cd ~/orion-deploy
-          git checkout main
-          git pull origin main
-
-```
-
-Replace the "Restart container" step's `cd` target:
+**Step 3 — Rewrite `deploy.yml`:**
 
 ```yaml
+name: Deploy to the-lab
+
+on:
+  workflow_run:
+    workflows: ["Build and push image"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to the-lab
+    runs-on: self-hosted
+    if: github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Pull latest image
+        run: docker pull ghcr.io/jeanpaul-source/orion:latest
 
       - name: Restart container
-        if: steps.changed.outputs.python == 'true'
         run: |
-          cd ~/orion-deploy
-          docker compose restart
+          cd ~/orion
+          docker compose up -d
 
+      - name: Show container logs
+        if: always()
+        run: docker logs --tail 20 orion
 ```
 
-Replace the "Show container logs" step (no `cd` needed — `docker logs` doesn't
-depend on cwd, but add for clarity if desired).
+Changes:
 
-**Step 5 — Update shell aliases in `~/.bashrc`:**
+- Triggers on `workflow_run` (after build succeeds), not on push directly
+- No `git pull` — the image has the code
+- No change detection — every deploy pulls the latest image and restarts
+- `cd ~/orion` stays because that's where `docker-compose.yml` lives
+  (the dev workspace). This is fine because compose only reads the YAML,
+  it doesn't use the source code.
+
+**Step 4 — Authenticate Docker on the server for GHCR pulls:**
 
 ```bash
-# Find and update these aliases:
-alias orion-update="cd ~/orion-deploy && git pull origin main && echo done"
-alias orion-deploy="cd ~/orion-deploy && git pull origin main && docker compose build && docker compose up -d"
-# The 'hal' alias stays the same — container name 'orion' doesn't change
-
+# On the-lab, one-time setup
+echo "$GITHUB_PAT" | docker login ghcr.io -u jeanpaul-source --password-stdin
 ```
 
-**Step 6 — Migrate the running container:**
+The self-hosted runner needs to pull from GHCR. For a public repo the images
+are public, so this step may not be needed. Test first without auth.
+
+**Step 5 — Migrate the running container:**
 
 ```bash
-# Stop container from dev workspace
+# Pull the first image (CI must have run at least once first)
+docker pull ghcr.io/jeanpaul-source/orion:latest
+
+# Restart with the new compose config
 cd ~/orion
-docker compose down
-
-# Start from deploy workspace
-cd ~/orion-deploy
 docker compose up -d
+# Docker will recreate the container using the GHCR image
 
 # Verify
-docker ps | grep orion
 curl http://localhost:8087/health
-
 ```
 
-**Step 7 — Update OPERATIONS.md:**
+Note: `docker compose up -d` detects that the image/config changed and
+recreates the container automatically. No need for `docker compose down` first.
 
-Add a section explaining the dev vs. deploy split:
+**Step 6 — Update shell aliases in `~/.bashrc`:**
 
-> **Two directories, two purposes:**
->
-> | Directory | Purpose | Branch |
-> |-----------|---------|--------|
-> | `~/orion` | Dev workspace (VS Code) | Any feature branch |
-> | `~/orion-deploy` | Deploy target (CD pipeline) | Always `main` |
->
-> The CD pipeline (`deploy.yml`) pulls into `~/orion-deploy`. The Docker
-> container bind-mounts `~/orion-deploy:/app:ro`. Your dev workspace at
-> `~/orion` is never touched by the deploy process.
+```bash
+alias orion-update="docker pull ghcr.io/jeanpaul-source/orion:latest && cd ~/orion && docker compose up -d"
+alias orion-rollback='f() { docker pull ghcr.io/jeanpaul-source/orion:"$1" && cd ~/orion && IMAGE_TAG="$1" docker compose up -d; }; f'
+```
 
-Update the "Deploy" section in CONTRIBUTING.md similarly.
+**Step 7 — Update OPERATIONS.md and CONTRIBUTING.md:**
+
+Document the image-based deploy model:
+
+- CI builds and pushes to GHCR on every merge to `main`
+- The server pulls the image and restarts the container
+- `~/orion` is the dev workspace AND where `docker-compose.yml` lives
+- The source code is inside the image, not bind-mounted
+- Rollback: `docker pull ghcr.io/jeanpaul-source/orion:<sha> && docker compose up -d`
+
+Remove the old "update code + restart" deploy instructions.
 
 #### Acceptance Criteria
 
-- [ ] `~/orion-deploy` exists and is on `main`
-- [ ] `~/orion-deploy/.env` exists with correct secrets
-- [ ] `docker inspect orion` shows `/home/jp/orion-deploy:/app:ro` bind mount
+- [ ] `.github/workflows/build.yml` exists and runs on push to `main`
+- [ ] GHCR shows `ghcr.io/jeanpaul-source/orion:latest` image
+- [ ] `docker-compose.yml` uses `image:` instead of `build:`, no source bind mount
+- [ ] `deploy.yml` does `docker pull` + `docker compose up -d`, no `git pull`
 - [ ] `curl http://localhost:8087/health` returns 200
-- [ ] Switch dev workspace to a feature branch: `cd ~/orion && git checkout -b test-deploy`
-- [ ] Trigger a deploy (merge a trivial PR) — deploy succeeds
-- [ ] Container serves new code (verify via git SHA or a test endpoint)
-- [ ] `deploy.yml` references `~/orion-deploy`, not `~/orion`
-- [ ] OPERATIONS.md documents the two-directory setup
+- [ ] Switch to a feature branch in `~/orion` — deploy still works (image is independent)
+- [ ] OPERATIONS.md documents image-based deploy model
 - [ ] CONTRIBUTING.md deploy section updated
+- [ ] `make check` passes
 
 #### What Could Go Wrong
 
-- **Container downtime during migration** — the `docker compose down` → `up -d`
-  transition takes ~30 seconds. The 120s `start_period` means the container may
-  take up to 2 minutes to report healthy. Plan for 2-3 minutes of downtime.
+- **GHCR auth on self-hosted runner:** If the repo is public, images are public
+  too — no auth needed for pulls. If private, the runner needs a PAT with
+  `read:packages` scope stored in `~/.docker/config.json`.
 
-- **Forgotten .env sync** — if `.env` changes in the future, it must be copied
-  to both locations. Consider symlinking: `ln -sf ~/orion/.env ~/orion-deploy/.env`
-  (but note: the dev workspace `.env` must stay correct for this to work).
+- **First deploy chicken-and-egg:** The build workflow must run once before the
+  deploy workflow can pull an image. Merge the build workflow first, let it run,
+  then merge the deploy + compose changes.
 
-- **Rollback:** If something goes wrong, reverse the migration:
+- **Container downtime:** `docker compose up -d` with a changed image recreates
+  the container. Expect ~30 seconds of downtime plus up to 120 seconds for the
+  health check `start_period`. Plan for 2-3 minutes total.
+
+- **Rollback:** Pull a previous image by SHA tag:
 
   ```bash
-  cd ~/orion-deploy && docker compose down
-  cd ~/orion && git checkout main
-  # Revert docker-compose.yml to use /home/jp/orion
-  docker compose up -d
-
+  docker pull ghcr.io/jeanpaul-source/orion:<previous-sha>
+  # Edit docker-compose.yml to pin the tag, or:
+  docker tag ghcr.io/jeanpaul-source/orion:<sha> ghcr.io/jeanpaul-source/orion:latest
+  cd ~/orion && docker compose up -d
   ```
+
+- **Dockerfile changes:** Since the image is built in CI (on `ubuntu-latest`),
+  not on the server, multi-arch issues could arise. The server is x86_64 and
+  `ubuntu-latest` is also x86_64, so this is fine.
 
 #### Dependencies
 
-None — but this must be done BEFORE Batch 4 (all deploy.yml changes).
+None — but this must be done BEFORE Batch 4 (health check + notification).
 
 #### Estimated Time
 
-45-60 minutes (code changes + live migration + verification).
+60-90 minutes (new workflow + compose/deploy edits + migration + docs).
+There is a two-commit strategy to avoid the chicken-and-egg problem:
+
+- Commit 1: Add `build.yml` → merge → wait for image to build
+- Commit 2: Update `docker-compose.yml` + `deploy.yml` + docs → merge
 
 ---
 
 ## Batch 4 — CD Hardening
 
-### Issue: Add health check, failure notification, rebuild detection, and SHA verification to deploy pipeline
+### Issue: Add health check and failure notification to deploy pipeline
 
-**Title:** `fix: harden CD pipeline — health check, notifications, rebuild, SHA verify`
+**Title:** `fix: deploy health check + ntfy failure notification`
 
 **Labels:** `ci-cd`, `guardrails`
 
 #### Problem
 
-Four gaps in `deploy.yml`:
+Two remaining gaps in `deploy.yml` (after Batch 3 moves to image-based deploys):
 
 1. **F-06 (P1):** Deploy "succeeds" (green workflow) even if the container is
    crash-looping. The container has a healthcheck (`curl /health`) but deploy.yml
@@ -526,115 +609,51 @@ Four gaps in `deploy.yml`:
 2. **F-07 (P2):** Failed deploys are only visible in the GitHub Actions UI. No
    push notification. A broken deploy can sit unnoticed for hours.
 
-3. **F-08 (P2):** The pipeline only detects Python file changes and runs
-   `docker compose restart`. Changes to `Dockerfile`, `requirements.txt`,
-   `docker-compose.yml`, or `ops/supervisord.conf` need a full `docker compose
-   build && docker compose up -d` but the pipeline never does this. Adding a
-   pip dependency and merging leaves the container with old packages.
-
-4. **F-09 (P1):** After `git pull`, deploy.yml never verifies that HEAD matches
-   the expected commit. If pull fails silently or leaves the repo in a bad
-   state, the deploy proceeds with old code.
+**Note:** F-08 (rebuild detection) and F-09 (SHA verification) are solved by
+Batch 3's image-based deploy — every merge builds a fresh image, and the image
+tag is the git SHA. No additional work needed.
 
 #### Evidence
 
 ```yaml
-# deploy.yml — current state
-# Step 3: git pull with no verification
-# Step 4: docker compose restart (never build)
-# Step 5: docker logs (no health check)
+# deploy.yml — after Batch 3
+# docker pull + docker compose up -d
+# docker logs (no health check)
 # No failure notification step exists
-
 ```
 
 #### Solution
 
-Complete rewrite of `deploy.yml`. This goes on top of the F-21 changes (which
-moved the target to `~/orion-deploy`).
-
-New `deploy.yml`:
+Add health check and notification steps to `deploy.yml`:
 
 ```yaml
 name: Deploy to the-lab
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Build and push image"]
+    types: [completed]
     branches: [main]
 
 jobs:
   deploy:
     name: Deploy to the-lab
     runs-on: self-hosted
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
-
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 2
-
-      # Detect what changed to decide: restart vs. rebuild vs. skip
-
-      - name: Detect changed files
-        id: changed
-        run: |
-          # Python files → at minimum a restart
-          if git diff --name-only HEAD^ HEAD | grep -qE '^(hal|harvest)/.*\.py$'; then
-            echo "python=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "python=false" >> "$GITHUB_OUTPUT"
-          fi
-
-          # Infrastructure files → full rebuild required
-          if git diff --name-only HEAD^ HEAD | grep -qE '^(Dockerfile|requirements\.txt|docker-compose\.yml|ops/supervisord\.conf)$'; then
-            echo "infra=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "infra=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Pull latest code into the deploy directory
-
-      - name: Pull latest code
-        run: |
-          cd ~/orion-deploy
-          git checkout main
-          git pull origin main
-
-      # Verify the deploy directory has the correct commit
-
-      - name: Verify deployed commit
-        run: |
-          DEPLOYED_SHA=$(cd ~/orion-deploy && git rev-parse HEAD)
-          EXPECTED_SHA="${{ github.sha }}"
-          echo "Deployed: $DEPLOYED_SHA"
-          echo "Expected: $EXPECTED_SHA"
-          if [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then
-            echo "::error::Commit mismatch — deploy directory has wrong code"
-            exit 1
-          fi
-
-      # Full rebuild if infrastructure files changed
-
-      - name: Rebuild container
-        if: steps.changed.outputs.infra == 'true'
-        run: |
-          cd ~/orion-deploy
-          docker compose build
-          docker compose up -d
-
-      # Restart only if Python files changed (but no infra changes)
+      - name: Pull latest image
+        run: docker pull ghcr.io/jeanpaul-source/orion:latest
 
       - name: Restart container
-        if: steps.changed.outputs.python == 'true' && steps.changed.outputs.infra == 'false'
         run: |
-          cd ~/orion-deploy
-          docker compose restart
+          cd ~/orion
+          docker compose up -d
 
       # Wait for container to be healthy
       # The container has start_period: 120s, so we allow up to 150s
 
       - name: Wait for healthy container
-        if: steps.changed.outputs.python == 'true' || steps.changed.outputs.infra == 'true'
         run: |
           echo "Waiting for container to become healthy..."
           for i in $(seq 1 30); do
@@ -665,45 +684,33 @@ jobs:
             -H "Title: Orion deploy failed" \
             -H "Priority: high" \
             -H "Tags: rotating_light" \
-            -d "Deploy of ${{ github.sha }} failed. Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -d "Deploy of ${{ github.event.workflow_run.head_sha }} failed. Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             "${{ secrets.NTFY_URL }}" || true
-
 ```
 
-**GitHub Secret needed:** Add `NTFY_URL` as a repository secret:
-
-1. GitHub repo > Settings > Secrets and variables > Actions
-2. New repository secret: `NTFY_URL` = the ntfy topic URL (same value as in `.env`)
+**GitHub Secret needed:** Add `NTFY_URL` as a repository secret.
 
 #### Acceptance Criteria
 
-- [ ] Deploy with Python-only changes → `docker compose restart` → health check passes → green
-- [ ] Deploy with Dockerfile change → `docker compose build && up -d` → health check passes → green
-- [ ] Deploy with docs-only change → no restart, no build → green
-- [ ] Intentionally break the container (e.g., bad import) → health check fails → workflow red → ntfy notification received
-- [ ] Commit SHA mismatch (simulated) → workflow fails at verify step
+- [ ] Deploy with working code → health check passes → green
+- [ ] Intentionally break the container → health check fails → workflow red → ntfy notification received
 - [ ] `NTFY_URL` secret exists in GitHub repo settings
 
 #### What Could Go Wrong
 
-- **Health check timeout:** The 150-second timeout (30 attempts × 5 seconds)
-  should cover the 120s `start_period`, but if the container is slow to start
-  (e.g., after a rebuild), you may need to increase the attempts.
+- **Health check timeout:** 150 seconds (30 × 5s) should cover the 120s
+  `start_period`. Increase attempts if the container is slow to start.
 
-- **ntfy URL missing:** The `|| true` at the end of the curl prevents the
-  notification step from failing the workflow if ntfy is unreachable.
-
-- **Rebuild takes too long:** `docker compose build` downloads packages. On a
-  slow connection this could take minutes. The self-hosted runner has no
-  timeout by default, so this is safe but slow.
+- **ntfy URL missing:** The `|| true` prevents the notification step from
+  failing the workflow if ntfy is unreachable.
 
 #### Dependencies
 
-**F-21 (Batch 3) must be done first.** All `cd` paths reference `~/orion-deploy`.
+**Batch 3 must be done first** — deploy.yml structure changes.
 
 #### Estimated Time
 
-30-45 minutes (deploy.yml rewrite + adding GitHub secret + testing).
+20-30 minutes (deploy.yml edits + adding GitHub secret + testing).
 
 ---
 
@@ -1243,45 +1250,58 @@ Stale branches cleaned up.
 
 ---
 
-### Session 2 — Separate Deploy Directory (~60 min)
+### Session 2 — Image-Based Deploy (~90 min)
 
-**What:** Batch 3 (F-21)
+**What:** Batch 3 (F-21 + F-08 + F-09)
 
-1. **Terminal:** Clone `~/orion-deploy`
-2. **Terminal:** Copy `.env`
-3. **AI + you:** Edit `docker-compose.yml` (change bind mounts)
-4. **AI + you:** Edit `deploy.yml` (change `cd` targets)
-5. **Terminal:** Update `~/.bashrc` aliases
-6. **Terminal:** Migrate container (`docker compose down` → `up -d`)
+This is a two-PR session to avoid a chicken-and-egg problem: the deploy
+workflow can't pull an image that doesn't exist yet.
+
+**PR 1 — Add build workflow:**
+
+1. **AI + you:** Create `.github/workflows/build.yml` (build + push to GHCR)
+2. **Verify:** `make check` passes
+3. **Commit + push + PR + merge**
+4. **Wait:** Watch the build workflow run — confirm image appears on GHCR
+
+**PR 2 — Switch to image-based deploy:**
+
+1. **AI + you:** Edit `docker-compose.yml` — add `image:`, remove `build:` block,
+   remove source code bind mount
+2. **AI + you:** Rewrite `deploy.yml` — `docker pull` + `docker compose up -d`,
+   trigger on `workflow_run` instead of `push`
+3. **AI + you:** Update OPERATIONS.md and CONTRIBUTING.md
+4. **Verify:** `make check` passes
+5. **Commit + push + PR + merge**
+6. **Observe:** Deploy workflow triggers → pulls image → restarts container
 7. **Verify:** `curl http://localhost:8087/health` returns 200
-8. **AI + you:** Update OPERATIONS.md and CONTRIBUTING.md
-9. **Verify:** `make check` passes
-10. **Commit + push + PR**
+8. **Terminal:** Update `~/.bashrc` aliases
 
-**Ends with:** Deploy pipeline targets `~/orion-deploy`. Dev workspace is
-independent. Container running from new location.
+**Ends with:** Container running from GHCR image. No `git pull` in deploys.
+No source code bind mount. Dev workspace completely decoupled from production.
+F-08 (rebuild detection) and F-09 (SHA verification) are solved for free.
 
-**Risk window:** ~2-3 minutes of container downtime during migration (step 6).
-Do this when you're not actively using HAL.
+**Risk window:** ~2-3 minutes of container downtime when the new compose config
+is applied (step 10). Do this when you're not actively using HAL.
 
 ---
 
-### Session 3 — CD Hardening (~45 min)
+### Session 3 — CD Hardening (~30 min)
 
-**What:** Batch 4 (F-06, F-07, F-08, F-09)
+**What:** Batch 4 (F-06, F-07)
 
 **Prerequisite:** Session 2 merged to `main`.
 
 1. **You (GitHub UI):** Add `NTFY_URL` as a repository secret
-2. **AI + you:** Rewrite `deploy.yml` with all four improvements
+2. **AI + you:** Add health check + ntfy notification steps to `deploy.yml`
 3. **Verify:** `make check` passes
-4. **Commit + push + PR**
+4. **Commit + push + PR + merge**
 5. **After merge:** Observe the deploy — it should health-check and pass
 6. **Test failure notification:** Temporarily break something, push, verify
    ntfy alert arrives (then revert)
 
-**Ends with:** Deploy pipeline verifies commits, detects rebuild needs, health
-checks the container, and notifies on failure.
+**Ends with:** Deploy pipeline health-checks the container and notifies on
+failure.
 
 ---
 
@@ -1329,11 +1349,11 @@ non-major bumps. VS Code settings shared.
 | Session | Time | Priority |
 |---------|------|----------|
 | Session 1 — GitHub + Git Config | ~40 min | P1 |
-| Session 2 — Deploy Directory | ~60 min | P0 |
-| Session 3 — CD Hardening | ~45 min | P1 |
+| Session 2 — Image-Based Deploy | ~90 min | P0 |
+| Session 3 — CD Hardening | ~30 min | P1 |
 | Session 4 — Documentation | ~30 min | P1 |
 | Session 5 — Dependencies & Polish | ~45 min | P2-P3 |
-| **Total** | **~3.5 hours** | |
+| **Total** | **~4 hours** | |
 
 Sessions 1 and 2 are the highest priority. Session 2 unblocks Session 3.
 Sessions 4 and 5 can be done in any order after Session 2.
@@ -1358,6 +1378,9 @@ Terms used in this document that may be unfamiliar:
 
 - **fetch.prune:** Git setting that auto-removes local references to branches
   that have been deleted on the remote (GitHub).
+
+- **GHCR (GitHub Container Registry):** GitHub's built-in Docker image registry.
+  Free for public repos. Images live at `ghcr.io/<owner>/<repo>:<tag>`.
 
 - **Lock file:** A file listing exact package versions + hashes. Ensures
   everyone installs identical packages. Like a recipe with exact measurements
