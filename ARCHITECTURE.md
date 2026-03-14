@@ -241,7 +241,7 @@ All observability is optional and no-op if disabled or unreachable.
 - OpenTelemetry spans wrap each REPL turn, intent classify call, LLM call, and tool call
 - OTLP HTTP export to `OTLP_ENDPOINT` (default `http://localhost:4318`)
 - No-op if `opentelemetry` packages not installed or endpoint unreachable
-- Grafana Tempo receiver not yet deployed (planned)
+- OpenTelemetry traces exported to Grafana Tempo via OTLP HTTP (port 4318). See [OPERATIONS.md](OPERATIONS.md) for deploy and verification steps.
 
 **Metrics** (`hal/prometheus.py`):
 

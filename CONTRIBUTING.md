@@ -78,7 +78,7 @@ HAL_INSTANCE=laptop
 **Run before every push. No exceptions.**
 
 ```bash
-make test           # offline tests only (no Ollama needed) — 1176 tests
+make test           # offline tests only (no Ollama needed)
 make test-full      # full suite including intent classifier (requires Ollama)
 ```
 
@@ -92,11 +92,11 @@ OLLAMA_HOST=http://192.168.5.10:11434 .venv/bin/pytest tests/ -v
 .venv/bin/pytest tests/ --ignore=tests/test_intent.py -v
 ```
 
-1211 tests total:
+Two test sets:
 
-- **35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
+- **~35 intent classifier tests** — use live Ollama embeddings; require `OLLAMA_HOST` to be
   reachable. Run these on the server if you can't reach Ollama from the laptop.
-- **1176 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
+- **~1200 offline tests** — Judge, MemoryStore, agent loop, PlannerAgent/CriticAgent,
   trust_metrics, Telegram bot, parsers, harvest, prometheus trend, postmortem, evaluators.
   Run anywhere with no external services.
 
@@ -212,7 +212,7 @@ fix stuff                             ← which stuff?
 
 **One logical change per commit.** A commit is ready when:
 
-- `make test` passes (all 1176 offline tests)
+- `make test` passes (all offline tests)
 - `make lint` passes
 - `make lint-md` passes
 - `make format` produces no diffs
@@ -250,8 +250,9 @@ git push origin feat/your-branch
 ```
 
 For rapid solo iteration, you can still push feature branches freely. Direct push to
-`main` is blocked by ruleset. The repository admin bypass actor allows emergency
-direct pushes when genuinely needed.
+`main` is blocked by ruleset with no bypass actors. In a genuine emergency,
+temporarily disable the ruleset in GitHub Settings > Rules, push directly,
+then re-enable the ruleset immediately.
 
 Feel free to use long-lived feature branches. Squash to a clean commit before merging
 when the history is noisy.
