@@ -37,6 +37,7 @@ check: lint lint-md format-check typecheck test doc-drift
 
 install-hooks:
 	.venv/bin/pre-commit install --install-hooks --overwrite
+	.venv/bin/pre-commit install --hook-type commit-msg
 
 dev-setup: ## Fresh clone → full enforcement in one command
 	python3 -m venv .venv

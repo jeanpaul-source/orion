@@ -6,45 +6,28 @@ the home network.
 
 ---
 
-## ⛔ REQUIRED FORMAT — Before Every Code Change
+## Before Every Code Change
 
-**This applies to every single change, no exceptions. Violations are drift.**
+**Principles — these apply regardless of which AI tool or IDE is in use.**
 
-For each proposed change I must output exactly this block and then **STOP and wait**:
+1. **Identify root cause, not symptom.** Before changing anything, state what is
+   actually wrong and why. If the explanation sounds thin, it probably is.
 
-```markdown
-### Item N — <short title>
+2. **One logical change per commit.** Each commit should do one thing. This makes
+   diffs easy to review and safe to revert. "Logical" means one finding, one fix,
+   one feature — not one line.
 
-**Root cause (not symptom):** <what is actually wrong and why>
+3. **State confidence honestly.** Say whether you *know* this is correct or are
+   *guessing*. Confident-sounding guesses are the most dangerous failure mode.
 
-**What I propose:** <exact files and lines I will touch, and what I will do>
+4. **Make changes easy to review.** In VS Code the user reviews actual file diffs.
+   Keep changes small, focused, and well-commented so the diff tells the story.
 
-**Why this is correct long-term:** <not just "it fixes the symptom">
+5. **Verify after each change.** Run `make check` (or the relevant subset) after
+   every commit. Don't stack unverified changes.
 
-**Confidence:** I KNOW this is right / I am GUESSING because <reason>
-```
-
-I do **not** write or change any code until the operator replies with approval.
-If I have a genuine question before proceeding — approach choice, ambiguity, preference
-— I use `AskUserQuestion` **before** or **alongside** the proposal block. Asking a
-question is a valid form of waiting; it does not violate the stop-and-wait rule.
-After the operator approves, I make **exactly one change**, verify it, commit it,
-then present the **next** item in the same format and stop again.
-
-**"One change" is not open to interpretation:** one finding number = one commit. Each
-item gets its own proposal block, its own approval, its own `pytest` run, its own commit.
-
-The only exception: a change that is **mechanical and zero-risk** (e.g. a 2-line
-whitespace or import fix) may be grouped with the preceding item **only if I explicitly
-state** "I am grouping this with the above as a single commit because it is trivially
-mechanical" **and the operator confirms it**. Grouping without that explicit exchange is
-a violation.
-
-If I skip this format, the operator should say **"format"** and I will stop, restate
-the plan correctly, and wait.
-
-If I batch items without permission, the operator should say **"split"** and I will
-re-propose them separately.
+If the user says **"split"**, break the current work into smaller commits.
+If the user says **"why"**, explain the root cause before continuing.
 
 ---
 
@@ -65,34 +48,32 @@ existing "Current State" section in place.
 
 ---
 
-## How I (Claude) Work With the Operator
+## How the AI Assistant Works With the Developer
 
-**The reason this section exists:** I drift on long projects. Each individual fix can seem
-logical in isolation, but over many sessions and context resets I lose the thread of what
-we're actually building and start optimising for "make the immediate problem go away" instead
-of "build something genuinely reliable." The operator cannot see this drift from the outside —
-each thing I do looks plausible, the code runs, the symptom disappears. The only way to
-surface drift is to force me to explain my reasoning in full before every action, because when
-I'm drifting the explanation will sound wrong or thin. That is the catch mechanism.
+**Why this section exists:** AI assistants drift on long projects. Each individual fix
+looks plausible in isolation, but over many sessions the thread of what we're building
+gets lost. The mitigation is transparency — the AI must explain its reasoning so the
+developer can catch when the reasoning is wrong or shallow.
 
 **Rules — no exceptions:**
 
-1. **Explain before acting.** Before writing or changing any code I must state:
-   - What I think the problem actually is (root cause, not symptom)
-   - What I propose to do and why this approach is correct long-term
-   - Whether I *know* this is right or whether I am *guessing*
-   Then wait for the operator to agree before proceeding.
+1. **Explain before acting.** Before writing or changing code, state:
+   - What the problem actually is (root cause, not symptom)
+   - What you propose to do and why it's correct long-term
+   - Whether you *know* this is right or are *guessing*
+   In VS Code, this explanation goes in your chat message. The developer then
+   reviews the actual file diffs you produce.
 
-2. **One change at a time.** Make one change, verify it works, then move to the next.
-   Multiple simultaneous changes make it impossible to know what worked or broke.
+2. **One change at a time.** Make one logical change, verify it works, then move
+   to the next. Multiple simultaneous changes make it impossible to know what
+   worked or broke.
 
-3. **No bandaids.** If I find myself adding rules, caps, flags, or prompt instructions to
-   work around a misbehaving component, I must stop and ask: is the component itself wrong?
-   Patching symptoms is how drift accumulates silently.
+3. **No bandaids.** If you find yourself adding rules, caps, flags, or prompt
+   instructions to work around a misbehaving component — stop and ask: is the
+   component itself wrong? Patching symptoms is how drift accumulates silently.
 
-4. **Say "I'm guessing" out loud.** If I don't fully understand why something is broken,
-   I say so explicitly before proposing a fix. Confident-sounding guesses are the most
-   dangerous thing I do.
+4. **Say "I'm guessing" out loud.** If you don't fully understand why something
+   is broken, say so explicitly before proposing a fix.
 
 ---
 
