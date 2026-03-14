@@ -2,7 +2,7 @@
 
 > Created: 2026-03-13
 > Branch: `docs/automation-guardrails-plan`
-> Status: Sessions 1-4 complete. Session 5 next (`chore/dependency-consistency`).
+> Status: All 5 sessions complete. Final PR: #38 (`chore/dependency-consistency`).
 
 This document contains the complete validated audit of Orion's automation gaps,
 missing guardrails, and documentation inaccuracies — plus GitHub issue bodies,

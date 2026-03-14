@@ -50,6 +50,11 @@ SQLite sessions at `~/.orion/memory.db` with poison-turn filter and
 
 ## Recent changes
 
+- 2026-03-14: Session 5 — dependency consistency & polish (PR #38)
+  - CI + Makefile use pip-sync with lock files (F-10, F-19)
+  - Dependabot auto-merge workflow for patch/minor updates (F-11)
+  - Shared .vscode/settings.json tracked in git (F-20)
+  - Lock file constraint added (-c) to prevent cross-file version conflicts
 - 2026-03-14: Image-based deploys via GHCR (PRs #33, #34) — build workflow + deploy switch
 - 2026-03-13: AI context restructure — slimmed instruction files, created memory/SUMMARY.md
 - 2026-03-11: Instruction audit completed (notes/2026-03-11-instruction-audit.md)
@@ -70,6 +75,7 @@ SQLite sessions at `~/.orion/memory.db` with poison-turn filter and
 
 ## What's next
 
+- Automation guardrails plan complete (all 5 sessions merged)
 - Fix P0 audit findings (sandbox security, SSRF TOCTOU)
 - Fix P1 audit findings (silent error swallowing, trust Evolution edge cases)
 - Path C architectural backlog (template system prompt, externalize Judge patterns)
