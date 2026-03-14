@@ -1,4 +1,4 @@
-.PHONY: lint lint-md format format-check test test-full coverage typecheck audit check install-hooks dev-setup doc-drift ratchet
+.PHONY: lint lint-md format format-check test test-full coverage typecheck audit check install-hooks dev-setup doc-drift ratchet lock
 
 lint:
 	.venv/bin/ruff check hal/ tests/ harvest/ eval/
@@ -39,9 +39,14 @@ install-hooks:
 	.venv/bin/pre-commit install --install-hooks --overwrite
 	.venv/bin/pre-commit install --hook-type commit-msg
 
+lock: ## Recompile lock files from requirements.txt
+	.venv/bin/pip-compile requirements.txt --generate-hashes --allow-unsafe -o requirements.lock
+	.venv/bin/pip-compile requirements-dev.txt --generate-hashes --allow-unsafe -o requirements-dev.lock
+
 dev-setup: ## Fresh clone → full enforcement in one command
 	python3 -m venv .venv
-	.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+	.venv/bin/pip install --upgrade pip pip-tools
+	.venv/bin/pip-sync requirements.lock requirements-dev.lock
 	npm install
 	.venv/bin/pre-commit install --install-hooks --overwrite
 	.venv/bin/pre-commit install --hook-type commit-msg

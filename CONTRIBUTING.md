@@ -48,6 +48,13 @@ cp .env.example .env
 To update dependencies after editing `requirements.txt` or `requirements-dev.txt`:
 
 ```bash
+make lock                # recompile lock files with hashes
+pip-sync requirements.lock requirements-dev.lock
+```
+
+Or manually:
+
+```bash
 .venv/bin/pip-compile requirements.txt --generate-hashes --allow-unsafe -o requirements.lock
 .venv/bin/pip-compile requirements-dev.txt --generate-hashes --allow-unsafe -o requirements-dev.lock
 pip-sync requirements.lock requirements-dev.lock
