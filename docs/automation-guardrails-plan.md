@@ -2,7 +2,7 @@
 
 > Created: 2026-03-13
 > Branch: `docs/automation-guardrails-plan`
-> Status: Sessions 1-2 complete. Session 3 next (`fix/cd-hardening`).
+> Status: Sessions 1-4 complete. Session 5 next (`chore/dependency-consistency`).
 
 This document contains the complete validated audit of Orion's automation gaps,
 missing guardrails, and documentation inaccuracies — plus GitHub issue bodies,
@@ -1248,43 +1248,26 @@ OPERATIONS.md and CONTRIBUTING.md updated.
 
 ---
 
-### Session 3 — CD Hardening (~30 min)
+### Session 3 — CD Hardening (~30 min) ✅
 
-**What:** Batch 4 (F-06, F-07)
+**Completed:** 2026-03-14. PR #35 merged.
 
-**Prerequisite:** Session 2 merged to `main`.
-
-1. **You (GitHub UI):** Add `NTFY_URL` as a repository secret
-2. **AI + you:** Add health check + ntfy notification steps to `deploy.yml`
-3. **Verify:** `make check` passes
-4. **Commit + push + PR + merge**
-5. **After merge:** Observe the deploy — it should health-check and pass
-6. **Test failure notification:** Temporarily break something, push, verify
-   ntfy alert arrives (then revert)
-
-**Ends with:** Deploy pipeline health-checks the container and notifies on
-failure.
+F-06, F-07 resolved. Deploy pipeline now health-checks the container
+(50 × 5s polling loop, 250s timeout) and sends ntfy push notification on
+failure. `NTFY_URL` repository secret added. OPERATIONS.md updated with
+new deploy behavior.
 
 ---
 
-### Session 4 — Documentation Fixes (~30 min)
+### Session 4 — Documentation Fixes (~30 min) ✅
 
-**What:** Batch 5 (F-13, F-14, F-15, F-16, F-17)
+**Completed:** 2026-03-14. PR #36 merged.
 
-**Note:** F-22 (CLAUDE.md update) was moved to Session 1 so all sessions
-benefit from the corrected workflow instructions.
-
-1. **AI + you:** Fix CONTRIBUTING.md bypass claim (F-13)
-2. **AI + you:** Fix README.md Web UI status (F-14)
-3. **AI + you:** Fix README.md SESSION_FINDINGS link (F-15)
-4. **AI + you:** Fix ARCHITECTURE.md Tempo status (F-16)
-5. **AI + you:** Replace hardcoded test counts (F-17)
-6. **Verify:** `make doc-drift` passes
-7. **Verify:** `make check` passes
-8. **Commit + push + PR**
-
-**Ends with:** All documentation matches reality. No broken links. No stale
-status claims. Test counts won't drift.
+F-13, F-14, F-15, F-16, F-17 resolved. CONTRIBUTING.md bypass claim
+corrected. README.md Web UI status fixed and SESSION_FINDINGS link
+repaired. ARCHITECTURE.md Tempo status updated. Hardcoded test counts
+replaced with approximate language (~1200, ~35) across README.md and
+CONTRIBUTING.md.
 
 ---
 
@@ -1310,15 +1293,14 @@ non-major bumps. VS Code settings shared.
 
 | Session | Time | Priority |
 |---------|------|----------|
-| Session 1 — GitHub + Git Config | ~40 min | P1 |
-| Session 2 — Image-Based Deploy | ~90 min | P0 |
-| Session 3 — CD Hardening | ~30 min | P1 |
-| Session 4 — Documentation | ~30 min | P1 |
+| Session 1 — GitHub + Git Config | ~40 min | ✅ Done |
+| Session 2 — Image-Based Deploy | ~90 min | ✅ Done |
+| Session 3 — CD Hardening | ~30 min | ✅ Done |
+| Session 4 — Documentation | ~30 min | ✅ Done |
 | Session 5 — Dependencies & Polish | ~45 min | P2-P3 |
 | **Total** | **~4 hours** | |
 
-Sessions 1 and 2 are the highest priority. Session 2 unblocks Session 3.
-Sessions 4 and 5 can be done in any order after Session 2.
+Sessions 1-4 complete. Session 5 is the final remaining batch.
 
 ---
 
