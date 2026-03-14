@@ -1,9 +1,7 @@
 # ~/orion/docker-compose.yml
 services:
   hal:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/jeanpaul-source/orion:latest
     container_name: orion
     restart: unless-stopped
 
@@ -24,9 +22,6 @@ services:
     volumes:
       # HAL's state — the ONLY read-write mount
       - /home/jp/.orion:/home/hal/.orion:rw
-
-      # Codebase — read-only (LLM cannot modify its own code)
-      - /home/jp/orion:/app:ro
 
       # Config (secrets) — read-only single file
       - /home/jp/orion/.env:/app/.env:ro

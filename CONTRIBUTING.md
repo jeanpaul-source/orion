@@ -274,34 +274,35 @@ something and need HAL to know about it now.
 
 ## Deploy
 
+Deploys are image-based. CI builds a Docker image on every merge to `main` and pushes
+it to GHCR (`ghcr.io/jeanpaul-source/orion`). The deploy workflow then pulls the new
+image and recreates the container on the server. Source code lives inside the image —
+there is no source code bind mount.
+
 ```bash
-# On the server (via VS Code Remote SSH or direct SSH) — push to GitHub
-git push origin <feature-branch>
-
-# After PR merge — CD pipeline auto-deploys via self-hosted runner
+# Automatic: the CD pipeline runs on every merge to main.
 # Manual fallback:
-cd ~/orion && git pull    # alias: orion-update
+docker pull ghcr.io/jeanpaul-source/orion:latest
+cd ~/orion && docker compose up -d
 
-# Restart the container to load the new code — required after any Python file change
-docker compose restart    # skip this for docs-only or config-only changes
+# Rollback to a specific commit:
+docker pull ghcr.io/jeanpaul-source/orion:<git-sha>
+docker tag ghcr.io/jeanpaul-source/orion:<git-sha> ghcr.io/jeanpaul-source/orion:latest
+cd ~/orion && docker compose up -d
 ```
 
 **Dev environment:** Code is written and pushed from the-lab (192.168.5.10) via VS Code
 Remote SSH. The server holds a fine-grained GitHub PAT scoped to `jeanpaul-source/orion`,
 permission `contents: write` only — no access to any other repo or account setting.
 
-**Tradeoff accepted:** The dev environment and the HAL runtime share a host. A host-level
-compromise would be a full compromise of both. This is deliberate for a personal homelab
-where the server is LAN-only and not internet-exposed. Branch protection on `main` still
-requires CI to pass before any merge.
+**Dev/deploy separation:** The dev workspace (`~/orion`) is no longer the deploy target.
+The running container uses the image from GHCR, not a bind-mounted source tree. Local
+edits do not affect the running container until they are pushed, merged, built, and
+deployed.
 
 **Credential path hardened:** `~/.config/git/credentials`, `~/.git-credentials`, and
 `~/.netrc` are in the Judge's `_SENSITIVE_PATHS` — any HAL tool call targeting them
 escalates by +1 tier (same treatment as `~/.ssh`).
-
-**When to restart:** `docker compose restart` is required after any change to Python files
-(`hal/*.py`, `harvest/*.py`, etc.) — the running container does not reload code automatically.
-It is **not** needed for documentation-only or `.env`-variable-only changes.
 
 ---
 
