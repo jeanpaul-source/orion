@@ -4,6 +4,13 @@ globs:
   - "!notes/**"
   - "!.venv/**"
   - "!node_modules/**"
+  # ChatGPT-generated planning docs — pending archive/delete (see
+  # docs/planning-pack/doc-restructure-prompts.md, Prompt 2).
+  # Remove these ignores once Prompt 2 lands.
+  - "!docs/planning-pack/ORION-*.md"
+  - "!docs/planning-pack/orion-*.md"
+  - "!docs/2026-03-15-structural-audit-prompt.md"
+  - "!docs/ideal-system-plan.md"
 
 # Single source of truth for markdownlint rules.
 # .markdownlint.jsonc was deleted — all rules live here.
