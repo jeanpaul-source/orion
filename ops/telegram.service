@@ -1,3 +1,9 @@
+# ROLLBACK ONLY — not the primary deployment path.
+# The Telegram bot runs inside the Docker container alongside the HTTP
+# server, managed by supervisord.
+# This unit file is retained for emergency rollback to host-venv mode.
+# See OPERATIONS.md for the current deployment procedure.
+
 [Unit]
 Description=Orion Telegram bot
 After=network-online.target
