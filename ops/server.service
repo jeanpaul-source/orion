@@ -1,3 +1,9 @@
+# ROLLBACK ONLY — not the primary deployment path.
+# Orion runs inside Docker via docker-compose.yml (supervisord manages
+# the HTTP server and Telegram bot inside the container).
+# This unit file is retained for emergency rollback to host-venv mode.
+# See OPERATIONS.md for the current deployment procedure.
+
 [Unit]
 Description=Orion HAL HTTP server
 After=network-online.target vllm.service
