@@ -23,7 +23,7 @@ Query → IntentClassifier (embedding similarity, threshold 0.65) →
 
 Chat: VLLMClient → vLLM (Qwen2.5-32B-Instruct-AWQ, port 8000).
 Embeddings: OllamaClient → Ollama (nomic-embed-text, port 11434, CPU-only).
-Judge gates every action (tier 0–3). KB: pgvector (~17,250 chunks), harvested nightly.
+Judge gates every action (tier 0–3). KB: pgvector (thousands of chunks), harvested nightly.
 Interfaces: REPL, HTTP `/chat`, Web UI, Telegram bot.
 
 ## Tools

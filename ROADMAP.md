@@ -9,7 +9,7 @@ What's built, what's next, and where this is going.
 Development history from Feb 22 – Mar 7, 2026. Full details in git history.
 
 **Foundation:** Terminal REPL with session memory (SQLite), embedding-based intent
-classifier, pgvector knowledge base (~19,900 chunks), agentic tool loop with Judge
+classifier, pgvector knowledge base (thousands of chunks), agentic tool loop with Judge
 gating (tier 0–3), SSH executor with multi-host support via `ExecutorRegistry`.
 
 **LLM & inference:** vLLM serving Qwen2.5-32B-Instruct-AWQ (chat); Ollama CPU-only

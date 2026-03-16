@@ -22,7 +22,7 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 - A terminal REPL (and HTTP server) that talks to a locally-hosted 32B LLM — no cloud, no data exfiltration
 - An intent router that classifies every query before the LLM sees it — casual chat, health checks, KB lookups, and agentic tool loops are separate code paths
 - A policy gate (the Judge) that gates every shell command, file write, and service action by tier — with a full audit trail
-- A vector knowledge base of ~19,900 chunks across your lab configs, service docs, and domain reference material — harvested nightly
+- A vector knowledge base of thousands of chunks across your lab configs, service docs, and domain reference material — harvested nightly
 - A security observer that surfaces Falco events, Osquery host state, ntopng traffic, and Nmap scan results through the same agentic loop
 
 ## What it isn't
@@ -50,7 +50,7 @@ boundary (namespace/cgroup isolation, read-only codebase mount).
 | Terminal REPL (via `docker exec`) | Working |
 | Intent routing (4 categories) | Working |
 | Agentic tool loop + Judge | Working |
-| pgvector KB (~17,250 chunks, 18 categories) | Working, harvested nightly |
+| pgvector KB (thousands of chunks harvested nightly across 18 categories) | Working |
 | Session memory (SQLite, 30-day pruning) | Working |
 | Security tools (Falco, Osquery, ntopng, Nmap) | Working |
 | Observability (structured logs, OTel, Pushgateway, Grafana) | Working |
