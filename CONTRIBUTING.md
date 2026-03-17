@@ -153,6 +153,11 @@ Commit readiness checklist (`make check` runs all of these):
 - `make test` passes (all offline tests)
 - `make doc-drift` passes
 
+> **CI runs two additional checks** beyond `make check`: `pip-audit` (dependency
+> vulnerability scan) and `commitlint` (Conventional Commits validation). Both can
+> fail your PR even when `make check` passes locally. Run `make audit` to check
+> deps locally; commitlint is enforced by the pre-commit hook on `git commit`.
+
 ---
 
 ## Evaluation
@@ -244,8 +249,9 @@ commit view. It's standard practice for AI-assisted work and makes authorship ho
 
 ### Branch policy
 
-**`main` is always deployable.** The server runs `git pull` on `main`. A broken commit
-on `main` means the server pulls broken code.
+**`main` is always deployable.** CI builds a Docker image from every merge to `main`
+and auto-deploys it to the server. A broken commit on `main` means a broken image gets
+deployed.
 
 **PRs required to merge to `main`.** The `main-protection` ruleset requires CI to pass
 before merge. Push to a feature branch, create a PR, let CI run, then merge:
@@ -286,6 +292,24 @@ Deploys are image-based. CI builds a Docker image on every merge to `main` and p
 it to GHCR (`ghcr.io/jeanpaul-source/orion`). The deploy workflow then pulls the new
 image and recreates the container on the server. Source code lives inside the image —
 there is no source code bind mount.
+
+### CI pipeline
+
+The CI workflow (`.github/workflows/test.yml`) runs on **every push to every branch**
+and on PRs to `main`. It runs: `pip-audit` → `ruff check` → `ruff format --check` →
+`mypy` → `markdownlint` → `commitlint` → `pytest` (with coverage threshold) →
+`doc-drift`. All steps must pass before a PR can merge.
+
+### CD pipeline
+
+Two chained workflows handle deployment:
+
+1. **Build** (`.github/workflows/build.yml`) — triggers on push to `main`. Builds the
+   Docker image and pushes it to GHCR with `latest` + commit SHA tags.
+2. **Deploy** (`.github/workflows/deploy.yml`) — triggers via `workflow_run` when the
+   build succeeds. Runs on the **self-hosted runner** on the-lab: pulls the new image,
+   runs `docker compose up -d`, waits for the healthcheck (up to 250s), and sends an
+   ntfy alert on failure.
 
 ```bash
 # Automatic: the CD pipeline runs on every merge to main.
