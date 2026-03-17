@@ -32,10 +32,17 @@ Supporting components:
                      tools accept an optional target_host parameter; default is "lab"
 
 HTTP layer (hal/server.py):
-  FastAPI server — /chat (POST) + /health (GET); ServerJudge auto-denies tier 1+
-  Auth: bearer token (HAL_WEB_TOKEN) required on /chat; /health and static files are open
+  FastAPI server; ServerJudge auto-denies tier 1+
+  Endpoints:
+    GET  /              — serve web UI (hal/static/index.html)
+    GET  /health        — liveness probe (no auth)
+    GET  /health/detail — per-component checks + live Prometheus metrics
+    GET  /kb/categories — KB category list with chunk counts
+    GET  /kb/search     — semantic search over the knowledge base
+    POST /kb/remember   — store a fact in the KB (category='memory')
+    POST /chat          — send a message, get a response + session_id + intent
+  Auth: bearer token (HAL_WEB_TOKEN) required on all endpoints except /health and static files
   Used by: Web UI, Telegram bot, external integrations
-  Serves static web UI at GET / (hal/static/ — vanilla JS, marked.js, highlight.js)
 
 Web UI (hal/static/):
   Lightweight browser chat interface — served by FastAPI at /
@@ -57,7 +64,7 @@ Telegram interface (hal/telegram.py):
 User types query
   → MemoryStore loads last N turns into context (TURN_WINDOW=40)
   → IntentClassifier embeds query via Ollama (nomic-embed-text)
-      → cosine_similarity vs. example sentences per category (13–41 per category; fact: 13, health: 23, conversational: 30, agentic: 41)
+      → cosine_similarity vs. example sentences per category (13–48 per category; fact: 13, health: 23, conversational: 30, agentic: 48)
       → best score ≥ 0.65 → route to that handler
       → best score < 0.65 → default to agentic (safe fallback)
 
@@ -133,16 +140,33 @@ timestamp, tier, action, and outcome.
 | 2 | config change | Explains full plan, requires explicit approval |
 | 3 | destructive | Requires typing a confirmation phrase |
 
-**Tier assignment (first match wins):**
+**Tier assignment for `run_command` (shell commands):**
 
-1. Fixed action types: `search_kb` → 0, `write_file` → 2, etc.
-2. Dangerous shell patterns → 3: `rm -rf`, `drop table`, `mkfs`, `dd if=`, fork bombs
-3. Config-level patterns → 2: `docker run`, `systemctl enable/disable`, `chmod 777`, `ufw`
+Before any rule matching, two pre-checks run:
+
+- **Evasion detection** — unconditional deny (tier 3) for shell evasion patterns:
+  `$()`, backtick substitution, `eval`, `exec`, `base64 -d | sh`, pipe to shell,
+  process substitution `<()` / `>()`, hex/octal escapes in `$''`
+- **Compound command splitting** — commands joined by `;`, `&&`, `||`, or `|`
+  are split and each sub-command classified independently; the **highest** tier
+  across all sub-commands wins
+
+Then, per sub-command (first match wins):
+
+1. Dangerous shell patterns → 3: `rm -rf`, `drop table`, `mkfs`, `dd if=`, fork bombs, `reboot`, `shutdown`, etc.
+2. Git write-operation blocking → 3: `git push`, `git commit`, `git merge`, etc.
+   (read-only git subcommands like `status`, `log`, `diff` are tier 0)
+3. Config-level patterns → 2: `docker run`, `systemctl enable/disable`, `chmod 777`, `chown`, `ufw`, inline script interpreters
 4. Restart/stop/start patterns → 1: `docker restart`, `systemctl restart`, etc.
 5. Safe command whitelist → 0: `ps`, `cat`, `df`, `ls`, `grep`, `journalctl`, `ping`, etc.
 6. Safe compound prefixes → 0: `systemctl status`, `docker ps/logs/inspect`, etc.
-7. Sensitive paths escalate tier by 1: `.env`, `~/.ssh`, `/run/homelab-secrets`, `/etc/shadow`
-8. Default → 1 (unknown command requires approval)
+7. Sensitive paths escalate tier by 1: including `.env`, `~/.ssh`, `/run/homelab-secrets`,
+   `/etc/shadow`, `/etc/sudoers`, `/root`, `/proc/kcore`, and others (full list in `judge.py`)
+8. Default → 2 (unknown command requires approval)
+
+**Non-command action types** use a fixed tier map: `search_kb` → 0, `read_file` → 0
+(sensitive paths → 1), `write_file` → 2 (repo paths → 3, sensitive paths → 3),
+`run_code` → 2, `scan_lan` → 1, `fetch_url` → 1, etc.
 
 **Why is the sensitive path check a tier bump instead of a tier set?**
 
@@ -168,8 +192,9 @@ Adding 1 to the current tier preserves the relative risk ordering.
   host name to an `SSHExecutor`; default is `"lab"` (the primary server)
 - Sandboxed code execution — `run_code` runs Python in a disposable Docker container
   (`orion-sandbox:latest`) with `--network none --read-only --memory 256m --cpus 1
-  --pids-limit 64`; code is mounted read-only; Judge tier 2 (requires approval in REPL,
-  auto-denied via HTTP/Telegram `ServerJudge`); conditional on `SANDBOX_ENABLED`
+  --pids-limit 64 --tmpfs /tmp:size=64m`; code is mounted read-only; Judge tier 2
+  (requires approval in REPL, auto-denied via HTTP/Telegram `ServerJudge`);
+  enabled by default (`SANDBOX_ENABLED=true`)
 
 **Why not run the LLM in streaming mode for tool calls?**
 
@@ -232,8 +257,10 @@ All observability is optional and no-op if disabled or unreachable.
 
 **Structured logging** (`hal/logging_utils.py`):
 
-- JSON format when `HAL_LOG_JSON=1` (default); plain text when `0`
-- `session_id` and `trace_id` propagated via Python `contextvars`
+- JSON format when `HAL_LOG_JSON=1` (default in server/daemon mode); REPL mode uses
+  Rich console output via `RichHandler` regardless of this setting
+- `session_id` and `turn_id` propagated via Python `contextvars`;
+  `trace_id` comes from OpenTelemetry spans (when available), not contextvars
 - `HAL_LOG_LEVEL` controls verbosity (default `INFO`)
 
 **Tracing** (`hal/tracing.py`):
@@ -260,6 +287,7 @@ Metric names: `hal_requests_total{intent, outcome}`, `hal_request_latency_second
 
 ```text
 harvest/collect.py — collectors:
+  collect_ground_truth()         → knowledge/*.md — highest-priority hand-written lab docs
   collect_docker_containers()    → 1 doc per running container
   collect_system_state()         → disk, memory, listening ports, services, Ollama models
   collect_hardware()             → CPU, GPU, RAM, storage (static)
@@ -269,7 +297,9 @@ harvest/collect.py — collectors:
 
 harvest/ingest.py — pipeline:
   clear_lab_docs()               → DELETE lab-infrastructure + lab-state categories
-  clear_static_docs()            → DELETE all rows under /data/orion/... path
+  clear_ground_truth()           → DELETE ground-truth category
+  For static docs: incremental — content-hash comparison per file;
+    only changed files are re-embedded; orphan rows cleaned automatically
   _chunk(text, 800 chars, 100 overlap)
   OllamaClient.embed(chunk)      → 768-dim vector via nomic-embed-text
   upsert to pgvector             → ON CONFLICT for idempotence
@@ -280,7 +310,7 @@ Dry run:   python -m harvest --dry-run
 ```
 
 Table: `documents` — columns: `content`, `embedding`, `category`, `file_name`,
-`file_path`, `metadata`, `chunk_index`.
+`file_path`, `file_type`, `metadata`, `chunk_index`, `doc_tier`.
 
 ---
 
@@ -292,7 +322,7 @@ underlying tool is absent):
 | Tool | Source | Tier | What it returns |
 |---|---|---|---|
 | `get_security_events` | Falco — `/var/log/falco/events.json` | 0 | Recent eBPF behavioral events, noise-filtered |
-| `get_host_connections` | Osquery — `sudo osqueryi` | 0 | Active network connections from host perspective |
+| `get_host_connections` | Osquery — `sudo osqueryi` | 0 | Listening ports, established connections, and ARP cache |
 | `get_traffic_summary` | ntopng — Community REST API at `:3000` | 0 | Top talkers, protocol breakdown |
 | `scan_lan` | Nmap — XML output (`-oX -`) | 1 | LAN host inventory (requires approval) |
 
