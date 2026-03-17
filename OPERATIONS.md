@@ -1,3 +1,5 @@
+<!-- last-audited: 2026-03-16 -->
+
 # Operations
 
 Deploy, configure, and run Orion/HAL on the homelab server.
@@ -72,20 +74,22 @@ python -m harvest     # initial KB population
 
 ## `.env` reference
 
-All variables have defaults in `config.py`. Server `.env` uses `localhost`. Laptop `.env`
-uses the server IP and `USE_SSH_TUNNEL=true`.
+Variables marked **Required** have no default — HAL crashes at startup if they
+are missing from `.env`. All others have sensible defaults in `config.py`.
+Server `.env` uses `localhost`. Laptop `.env` uses the server IP and
+`USE_SSH_TUNNEL=true`.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `VLLM_URL` | `http://localhost:8000` | vLLM OpenAI-compatible API — `localhost` on server, tunneled on laptop |
 | `CHAT_MODEL` | `Qwen/Qwen2.5-32B-Instruct-AWQ` | Must exactly match the model loaded in vLLM |
-| `OLLAMA_HOST` | `http://192.168.5.10:11434` | Embeddings only — do not point at vLLM |
+| `OLLAMA_HOST` | **Required** | Embeddings only — do not point at vLLM. Example: `http://192.168.5.10:11434` |
 | `EMBED_MODEL` | `nomic-embed-text:latest` | Must be pulled in Ollama (`ollama pull nomic-embed-text`) |
-| `PGVECTOR_DSN` | `postgresql://kb_user@192.168.5.10:5432/knowledge_base` | **Fill in the password** |
-| `PROMETHEUS_URL` | `http://192.168.5.10:9091` | Port **9091** — 9090 is Cockpit |
+| `PGVECTOR_DSN` | **Required** | pgvector connection string — **fill in the password**. Example: `postgresql://kb_user:PASS@192.168.5.10:5432/knowledge_base` |
+| `PROMETHEUS_URL` | **Required** | Port **9091** — 9090 is Cockpit. Example: `http://192.168.5.10:9091` |
 | `NTOPNG_URL` | `http://localhost:3000` | ntopng REST API — no auth (login disabled, local only) |
-| `LAB_HOST` | `192.168.5.10` | SSH target for remote commands |
-| `LAB_USER` | `jp` | SSH user on the server |
+| `LAB_HOST` | **Required** | SSH target for remote commands. Example: `192.168.5.10` |
+| `LAB_USER` | **Required** | SSH user on the server. Example: `jp` |
 | `EXTRA_HOSTS` | *(empty)* | Additional SSH hosts — comma-separated `name:user@ip` entries (e.g. `laptop:jp@192.168.5.20`). Each host must have SSH key-based access from the HAL server. |
 | `USE_SSH_TUNNEL` | `false` | Set `true` when running from a laptop |
 | `NTFY_URL` | *(empty)* | Push alerts via ntfy.sh topic URL — leave empty to disable |
@@ -100,6 +104,15 @@ uses the server IP and `USE_SSH_TUNNEL=true`.
 | `SANDBOX_ENABLED` | `true` | Enable `run_code` tool — sandboxed Python execution in a Docker container |
 | `SANDBOX_TIMEOUT` | `30` | Max seconds for sandbox code execution (container killed after this) |
 | `SANDBOX_IMAGE` | `orion-sandbox:latest` | Docker image for sandbox — build with `docker build -f Dockerfile.sandbox -t orion-sandbox .` |
+| `TAVILY_API_KEY` | *(empty)* | Tavily web search API key — empty disables `web_search` tool |
+
+**Additional groups** (commented in `.env.example` with defaults in `config.py` — uncomment to override):
+
+- **Harvest topology** — `INFRA_BASE`, `STATIC_DOCS_ROOT`, `HARVEST_SYSTEMD_UNITS`
+- **Prompt identity** — `LAB_HOSTNAME`, `LAB_HARDWARE_SUMMARY`
+- **Judge extensions** — `JUDGE_EXTRA_SENSITIVE_PATHS`
+- **LLM sampling** — `LLM_TEMPERATURE`, `LLM_TOP_P`, `LLM_MIN_P`, `LLM_REPETITION_PENALTY`
+- **Watchdog thresholds** — `WATCHDOG_DISK_RATE_PCT_PER_HOUR`, `WATCHDOG_MEM_RATE_PCT_PER_HOUR`, `WATCHDOG_SWAP_RATE_PCT_PER_HOUR`, `WATCHDOG_GPU_VRAM_RATE_PCT_PER_HOUR`
 
 ---
 
@@ -146,7 +159,8 @@ systemctl --user enable --now <unit>.timer
 
 ### vLLM (`ops/vllm.service`)
 
-The chat LLM. Serves Qwen2.5-32B-Instruct-AWQ on port 8000 via vLLM.
+The chat LLM. Serves the model specified by `CHAT_MODEL` (see `config.py`) on
+port 8000 via vLLM.
 
 ```bash
 systemctl --user status vllm.service
@@ -182,6 +196,16 @@ journalctl --user -u watchdog -f
 
 State file: `~/.orion/watchdog_state.json` — tracks per-metric cooldowns.
 
+### GPU metrics (`ops/gpu-metrics.service` + `ops/gpu-metrics.timer`)
+
+Exports GPU temperature and VRAM usage for the Prometheus node-exporter
+textfile collector. Fires every 15 seconds via timer.
+
+```bash
+systemctl --user status gpu-metrics.timer
+journalctl --user -u gpu-metrics -f
+```
+
 ### Harvest (`ops/harvest.service` + `ops/harvest.timer`)
 
 Re-indexes the lab into pgvector. Fires at 3:00am daily (`Persistent=true` — catches up
@@ -205,7 +229,9 @@ The harvest pipeline populates a three-layer knowledge base via the `doc_tier` c
 | `live-state` | Docker, systemd, disk, memory, ports, hardware, configs | Cleared and re-ingested every run |
 | `memory` | `/remember` facts | Never touched by harvest |
 
-Ground-truth docs get a +0.10 score boost in KB search results.
+Ground-truth docs get a score boost in KB search results (see
+`_GROUND_TRUTH_BOOST` in `hal/knowledge.py`; live-state docs get a smaller
+boost via `_LIVE_STATE_BOOST`).
 
 ### Syncing the reference library (laptop to server)
 
@@ -346,29 +372,22 @@ Then restart HAL: `docker compose restart` (in `~/orion/`).
    - Search tab → Service Name: `hal` → Run query
    - Traces should appear after any HAL interaction (REPL, HTTP `/chat`, Telegram)
 
-4. **Expected span names** (nested hierarchy):
-
-   | Span | Source | Description |
-   | --- | --- | --- |
-   | `hal.turn` | `hal/main.py` | One full REPL turn |
-   | `hal.run_agent` | `hal/agent.py` | Entire agent loop (up to 8 iterations) |
-   | `hal.intent.classify` | `hal/intent.py` | Embedding-based intent classification |
-   | `hal.tool_call` | `hal/agent.py` | Individual tool execution within the loop |
-   | `hal.llm.chat_with_tools` | `hal/llm.py` | LLM call with tool definitions |
-   | `hal.llm.chat` | `hal/llm.py` | Plain LLM call (no tools) |
+4. **Expected spans:** HAL instruments each turn, the agent loop, intent
+   classification, individual tool calls, and LLM calls. Spans are prefixed
+   `hal.` — look in `hal/main.py`, `hal/agent.py`, `hal/intent.py`, and
+   `hal/llm.py` for the authoritative list.
 
 ### Retention
 
-Tempo is configured with 7-day retention (`ops/tempo.yaml`). Older traces are
-automatically compacted away.
+Tempo retention is configured via `block_retention` in `ops/tempo.yaml`.
+Older traces are automatically compacted away.
 
 ---
 
 ## Known traps
 
 **Prometheus port:** 9091 is Prometheus. 9090 is Cockpit. They are different services.
-The `PROMETHEUS_URL` default in `config.py` is `http://192.168.5.10:9091`. The `.env`
-override must also be `9091`. Do not "fix" it to 9090.
+`PROMETHEUS_URL` in `.env` must use port 9091. Do not "fix" it to 9090.
 
 **SQLite init race:** If HAL crashes between opening `~/.orion/memory.db` and completing
 schema init, the file is left as an empty schema-0 database. Next start fails with
@@ -403,8 +422,8 @@ compresses cold pages into RAM itself. `vm.swappiness=10` ensures the kernel str
 prefers RAM; with 62 Gi total and typically only 6–8 Gi in active RSS, actual disk swap
 pressure never occurs. If `swapon -s` shows zram0 near capacity (~8 Gi used), the real
 culprit is the vLLM engine process (3–4 Gi RSS) combined with large buff/cache; reducing
-`--gpu-memory-utilization` in `ops/vllm.service` from 0.95 is the correct lever. Do not
-disable zram — removing it would not free RAM.
+`--gpu-memory-utilization` in `ops/vllm.service` (currently 0.90) is the correct
+lever. Do not disable zram — removing it would not free RAM.
 
 **EXTRA_HOSTS SSH keys:** Each host in `EXTRA_HOSTS` must have passwordless SSH access
 from the HAL server (or container). Verify with `ssh -o BatchMode=yes user@host hostname`.
