@@ -9,10 +9,10 @@ This document describes Orion's components, data flow, and the design decisions 
 ```text
 You  (terminal REPL, HTTP server, Telegram bot)
  └─ hal/main.py  [session manager, Rich console, readline history]
-      └─ IntentClassifier  [embedding similarity, threshold 0.65, one embed call per query]
+      └─ IntentClassifier  [embedding similarity, one embed call per query]
             │
             ├── conversational                → _handle_conversational()  — single LLM call, no tools, no KB
-            └── health | fact | agentic       → run_agent()               — full tool loop, up to 8 LLM iterations
+            └── health | fact | agentic       → run_agent()               — full tool loop, up to MAX_ITERATIONS
                                         │  (KB + Prometheus pre-seeded before iteration 0)
                                         │
                      ┌──────────────────┼──────────────────────┐
@@ -62,11 +62,11 @@ Telegram interface (hal/telegram.py):
 
 ```text
 User types query
-  → MemoryStore loads last N turns into context (TURN_WINDOW=40)
+  → MemoryStore loads last N turns into context (see TURN_WINDOW in hal/memory.py)
   → IntentClassifier embeds query via Ollama (nomic-embed-text)
-      → cosine_similarity vs. example sentences per category (13–48 per category; fact: 13, health: 23, conversational: 30, agentic: 48)
-      → best score ≥ 0.65 → route to that handler
-      → best score < 0.65 → default to agentic (safe fallback)
+      → cosine_similarity vs. example sentences per category (see EXAMPLES in hal/intent.py)
+      → best score ≥ THRESHOLD → route to that handler
+      → best score < THRESHOLD → default to agentic (safe fallback)
 
   conversational path:
       → VLLMClient.chat(system_prompt + history + query)
@@ -74,18 +74,18 @@ User types query
       → turn saved to MemoryStore
 
   run_agent path (all non-conversational intents):
-      → KnowledgeBase.search(query, threshold=0.75) → inject matching chunks as context
+      → KnowledgeBase.search(query) → inject high-confidence chunks as context
       → PrometheusClient queries live metrics snapshot → inject as context
         (both pre-seeds happen before iteration 0; simple queries resolve from context
          without issuing any tool calls)
-      → loop up to MAX_ITERATIONS=8:
+      → loop up to MAX_ITERATIONS:
             VLLMClient.chat_with_tools(history + tools_schema)
             if tool_calls:
                 for each call:
                     Judge.approve(tool, args) → tier 0: auto / tier 1+: prompt
                     if approved:
                         result = _dispatch(tool_call, executor, judge, kb, prom)
-                        cap result at 8000 chars
+                        cap result at _MAX_TOOL_OUTPUT chars
                         append tool result to history
             else:
                 break (final text response found)
@@ -144,9 +144,9 @@ timestamp, tier, action, and outcome.
 
 Before any rule matching, two pre-checks run:
 
-- **Evasion detection** — unconditional deny (tier 3) for shell evasion patterns:
-  `$()`, backtick substitution, `eval`, `exec`, `base64 -d | sh`, pipe to shell,
-  process substitution `<()` / `>()`, hex/octal escapes in `$''`
+- **Evasion detection** — unconditional deny (tier 3) for shell evasion patterns
+  (command substitution, eval/exec, base64-decode pipes, process substitution,
+  hex/octal escapes — full list in `_EVASION_PATTERNS` in `judge.py`)
 - **Compound command splitting** — commands joined by `;`, `&&`, `||`, or `|`
   are split and each sub-command classified independently; the **highest** tier
   across all sub-commands wins
@@ -160,8 +160,8 @@ Then, per sub-command (first match wins):
 4. Restart/stop/start patterns → 1: `docker restart`, `systemctl restart`, etc.
 5. Safe command whitelist → 0: `ps`, `cat`, `df`, `ls`, `grep`, `journalctl`, `ping`, etc.
 6. Safe compound prefixes → 0: `systemctl status`, `docker ps/logs/inspect`, etc.
-7. Sensitive paths escalate tier by 1: including `.env`, `~/.ssh`, `/run/homelab-secrets`,
-   `/etc/shadow`, `/etc/sudoers`, `/root`, `/proc/kcore`, and others (full list in `judge.py`)
+7. Sensitive paths escalate tier by 1: credentials, secrets, shadow files, `/root`,
+   and other security-critical locations (full list in `_SENSITIVE_PATHS` in `judge.py`)
 8. Default → 2 (unknown command requires approval)
 
 **Non-command action types** use a fixed tier map: `search_kb` → 0, `read_file` → 0
@@ -180,12 +180,12 @@ Adding 1 to the current tier preserves the relative risk ordering.
 
 **Loop constraints:**
 
-- `MAX_ITERATIONS=8` — prevents infinite loops when the model keeps calling tools
-- `MAX_TOOL_CALLS=5` — caps unique tool dispatches per turn; the loop stops when either limit is reached
-- `8000 char` output cap per tool result — prevents context explosion from verbose tools
+- `MAX_ITERATIONS` — prevents infinite loops when the model keeps calling tools
+- `MAX_TOOL_CALLS` — caps unique tool dispatches per turn; the loop stops when either limit is reached
+- `_MAX_TOOL_OUTPUT` cap per tool result — prevents context explosion from verbose tools
 - Dedup guard — if the model calls the same `(tool, args)` twice in one turn, the second
-  call is skipped and a synthetic message is injected ("you already have this data")
-- Empty tools list on final iteration — forces a text response if 7 iterations elapsed
+  call is skipped and a synthetic "already called" message is injected
+- Empty tools list on final iteration — forces a text response if the loop nears its limit
   without one
 - Multi-host routing — `run_command`, `read_file`, `list_dir`, `write_file` accept an
   optional `target_host` parameter; `ExecutorRegistry.get(target_host)` resolves the
@@ -202,12 +202,13 @@ Tool calls require parsing the full structured response. Streaming the model out
 also parsing tool call JSON from it is complex and fragile. Batch responses are simpler and
 correct. The UX trade-off is acceptable for a terminal REPL.
 
-**KB seeding threshold (0.75):**
+**KB seeding threshold:**
 
-All queries entering `run_agent()` use a 0.75 cosine-similarity threshold for KB pre-seeding.
-Only strong matches are injected as context before iteration 0. A lower threshold pulled in
-marginally-relevant docs and added noise to the first iteration; 0.75 keeps the pre-seed
-high-signal. If no chunk clears the threshold, the loop starts without KB context and the
+All queries entering `run_agent()` use a cosine-similarity threshold for KB pre-seeding
+(see the filter in `run_agent()` in `hal/agent.py`). Only strong matches are injected as
+context before iteration 0. A lower threshold pulled in marginally-relevant docs and added
+noise to the first iteration; the current value keeps the pre-seed high-signal. If no chunk
+clears the threshold, the loop starts without KB context and the
 model can issue a `search_kb` tool call if it determines one is needed.
 
 ---
@@ -220,8 +221,8 @@ during inference on the RTX 3090 Ti.
 
 | Client | Backend | Role | Model |
 |---|---|---|---|
-| `VLLMClient` | vLLM at `VLLM_URL` (port 8000) | All LLM inference — chat, reasoning, tool calls | `Qwen/Qwen2.5-32B-Instruct-AWQ` |
-| `OllamaClient` | Ollama at `OLLAMA_HOST` (port 11434) | Embeddings **only** — intent classification + KB search | `nomic-embed-text:latest` |
+| `VLLMClient` | vLLM at `VLLM_URL` (port 8000) | All LLM inference — chat, reasoning, tool calls | See `vllm_model` in `hal/config.py` |
+| `OllamaClient` | Ollama at `OLLAMA_HOST` (port 11434) | Embeddings **only** — intent classification + KB search | See `embed_model` in `hal/config.py` |
 
 `OLLAMA_NUM_GPU=0` is set in Ollama's systemd override. Do not remove it. Ollama is a
 bare-metal systemd service — never manage it with Docker commands.
@@ -238,8 +239,8 @@ over longer documents — session turns don't need cosine similarity.
 
 **30-day pruning + 40-turn window:**
 
-`prune_old_turns(days=30)` runs at every startup and deletes turns older than 30 days.
-`TURN_WINDOW=40` caps how many turns are loaded into the context window per session.
+`prune_old_turns()` runs at REPL startup and deletes old turns (see default in `hal/memory.py`).
+`TURN_WINDOW` caps how many turns are loaded into the context window per session.
 Together, these prevent unbounded context growth and ensure old failures don't bias new
 sessions.
 
@@ -300,8 +301,8 @@ harvest/ingest.py — pipeline:
   clear_ground_truth()           → DELETE ground-truth category
   For static docs: incremental — content-hash comparison per file;
     only changed files are re-embedded; orphan rows cleaned automatically
-  _chunk(text, 800 chars, 100 overlap)
-  OllamaClient.embed(chunk)      → 768-dim vector via nomic-embed-text
+  _chunk(text, CHUNK_SIZE, CHUNK_OVERLAP)         — see constants in harvest/ingest.py
+  OllamaClient.embed(chunk)      → vector via configured embed model
   upsert to pgvector             → ON CONFLICT for idempotence
 
 Scheduled: harvest.timer fires at 3:00am daily (Persistent=true)
