@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": ".github/hooks/guard-generated-files.sh",
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": ".github/hooks/lint-on-save.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 ---
-applyTo: "hal/static/**,**/*.html,**/*.css,**/*.js"
+applyTo: "hal/static/**"
 ---
 
 # Web UI — Orion
