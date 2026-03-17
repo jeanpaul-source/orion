@@ -1,10 +1,10 @@
 # Project Summary
 
-> Last updated: 2026-03-15 by AI (1E audit re-verified)
+> Last updated: 2026-03-17 by AI (Pass 4 — SUMMARY audit against code)
 
 ## Status
 
-Active branch: `main` (1176 tests passing). All layers operational.
+Default branch: `main`. All tests passing (`make test` for current count). All layers operational.
 
 HAL runs in Docker container (`orion`) on the-lab (192.168.5.10),
 using a pre-built image from `ghcr.io/jeanpaul-source/orion:latest`.
@@ -21,16 +21,18 @@ Query → IntentClassifier (embedding similarity, threshold 0.65) →
 - `conversational` → single LLM call, no tools, no KB
 - everything else → `run_agent()` — 8-iteration tool loop, KB + Prometheus pre-seeded
 
-Chat: VLLMClient → vLLM (Qwen2.5-32B-Instruct-AWQ, port 8000).
-Embeddings: OllamaClient → Ollama (nomic-embed-text, port 11434, CPU-only).
+Chat: VLLMClient → vLLM (model set by `CHAT_MODEL` in `hal/config.py`, default Qwen2.5-32B-Instruct-AWQ).
+Embeddings: OllamaClient → Ollama (model set by `EMBED_MODEL`, default nomic-embed-text, CPU-only).
 Judge gates every action (tier 0–3). KB: pgvector (thousands of chunks), harvested nightly.
 Interfaces: REPL, HTTP `/chat`, Web UI, Telegram bot.
 
 ## Tools
 
-8 core: `search_kb`, `get_metrics`, `get_trend`, `run_command`, `read_file`,
-`list_dir`, `write_file`, `run_code`.
-Optional: `web_search` (requires `TAVILY_API_KEY`).
+See `TOOL_REGISTRY` in `hal/tools.py` for the canonical list.
+Always-on tools cover KB search, Prometheus metrics/trends, file I/O,
+command execution, URL fetching, security events, LAN scanning, and
+health/recovery actions.
+Optional: `web_search` (requires `TAVILY_API_KEY`), `run_code` (requires `sandbox_enabled`).
 Multi-host: `run_command`, `read_file`, `list_dir`, `write_file` accept
 `target_host` — `ExecutorRegistry` resolves via `EXTRA_HOSTS` env var.
 `run_code` runs Python in sandboxed Docker container (no network, read-only,
@@ -50,8 +52,8 @@ SQLite sessions at `~/.orion/memory.db` with poison-turn filter and
 
 ## Phase 1 Structured Audit — VERIFIED
 
-Planning pack at `docs/planning-pack/` (5 files).
-Living findings file: `docs/planning-pack/audit-findings.md` (72 findings, all verified).
+Planning pack at `docs/planning-pack/`.
+Living findings file: `docs/planning-pack/audit-findings.md` (see file for current counts).
 
 **Workflow note:** Original delegated-chat workflow abandoned after 1E caught
 confabulating. All findings verified by coordinator chat reading source files
@@ -61,33 +63,27 @@ directly with tool-call evidence. No UNVERIFIED findings remain.
 
 | Sub | Scope | Status |
 | --- | --- | --- |
-| 1A | Safety & Security | 12 findings — VERIFIED |
-| 1B | Control-plane & Routing | 11 findings — VERIFIED |
-| 1C | Knowledge & Retrieval | 12 findings — VERIFIED |
-| 1D | Runtime & Deployment | 20 findings — VERIFIED (6 new from code read) |
-| 1E | Observability & Trust | 15 findings — VERIFIED (10 new from full 8-file audit) |
-| 1F | Docs & Prompt Drift | 2 findings — VERIFIED (1 new from direct audit) |
+| 1A | Safety & Security | VERIFIED |
+| 1B | Control-plane & Routing | VERIFIED |
+| 1C | Knowledge & Retrieval | VERIFIED |
+| 1D | Runtime & Deployment | VERIFIED |
+| 1E | Observability & Trust | VERIFIED |
+| 1F | Docs & Prompt Drift | VERIFIED |
 
 ### Findings summary
 
-72 active findings: 7 HIGH, 26 MED, 39 LOW.
+See `docs/planning-pack/audit-findings.md` for current counts, severity
+breakdown, and full details with line citations.
 Dropped: F-21, F-32, F-39, F-49 (confabulated), F-70, F-78. F-74 merged into F-47.
-Resolved: F-71 (watchdog interval corrected in SUMMARY.md).
-
-HIGH (7):
-
-- F-14: Missing `--cap-drop ALL` in sandbox Docker flags
-- F-15: Missing `--user` runtime flag in sandbox
-- F-56: Non-atomic clear-then-insert in harvest (data loss window)
-- F-65: Partial harvest clears all lab-state rows
-- F-85: `HAL_WEB_TOKEN` defaults to "" — auth silently disabled on LAN
-- F-102: Watchdog metric alerts mark cooldown even when ntfy fails — silent alert loss
-- F-103: Watchdog simple alerts have same silent-loss bug as F-102
-
-Full details with line citations: `docs/planning-pack/audit-findings.md`.
 
 ## Recent changes
 
+- 2026-03-17: Pass 4 — SUMMARY.md audited against code. Fixed stale tool count,
+  findings count, test count. Replaced brittle hardcoded values with pointers
+  to source-of-truth files. Model names now reference config vars.
+- 2026-03-17: Docs audit pass 1–3 (PRs #46–#52): docs-auditor agent created,
+  ARCHITECTURE.md aligned with code and made drift-resistant, instruction files
+  modernized, OPERATIONS.md audited, README.md drift fixed.
 - 2026-03-15: 1E audit re-verified — 10 new findings (F-102–F-111), 3 existing
   findings line-corrected. Two HIGH findings: watchdog silently loses alerts when
   ntfy is unreachable (F-102/F-103). Total now 72 findings (7 HIGH, 26 MED, 39 LOW).
@@ -110,7 +106,7 @@ Full details with line citations: `docs/planning-pack/audit-findings.md`.
 
 ## Known issues
 
-- Phase 1 findings (59 open) — see `docs/planning-pack/audit-findings.md`
+- Phase 1 findings — see `docs/planning-pack/audit-findings.md` for open count and severity
 - System prompt hardcodes "~19,900 doc chunks" (F-89) and hardware specs (ROADMAP.md Path C item 1)
 - Judge patterns are Python literals, not externalized (ROADMAP.md Path C item 2)
 
