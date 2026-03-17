@@ -37,8 +37,9 @@ to diagnosing problems to autonomous remediation within a trust envelope you def
 
 ## Current state (Mar 2026)
 
-~1200 offline tests (35+ intent classifier tests additionally require Ollama). Eval baselines:
-`hal_identity=100%`, `no_raw_json=100%`, `intent_accuracy=100%`, `web_tool_accuracy=100%`.
+~1200 offline tests (35+ intent classifier tests additionally require Ollama). Eval baselines
+(see `eval/results/eval_out.json` for current values):
+`hal_identity=100%`, `no_raw_json=96.9%`, `intent_accuracy=100%`, `web_tool_accuracy=96.9%`.
 
 HAL runs inside a Docker container on the-lab with three defense layers: Judge
 (software gate) → hal-svc SSH service account (OS permissions) → container
@@ -97,6 +98,11 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 /search_memory   — full-text search over past sessions
 /sessions        — list recent sessions
 /audit           — show recent audit log entries
+/postmortem <d>  — generate a postmortem from description
+/kb              — knowledge base stats
+/resume <id>     — resume a previous session
+/new             — start a new session
+/clear           — clear the screen
 /help            — all commands
 ```
 
@@ -120,7 +126,7 @@ For full setup, prerequisites, and `.env` reference: see [OPERATIONS.md](OPERATI
 | File | Role |
 |---|---|
 | `hal/main.py` | REPL entry point, session setup, slash commands |
-| `hal/agent.py` | Four route handlers + agentic tool loop |
+| `hal/agent.py` | Intent dispatcher + agentic tool loop |
 | `hal/intent.py` | Embedding classifier — tune `EXAMPLES` here |
 | `hal/judge.py` | Policy gate — every action goes through this |
 | `hal/llm.py` | `VLLMClient` (chat) + `OllamaClient` (embeddings only) |
