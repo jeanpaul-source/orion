@@ -166,7 +166,12 @@ def check_prometheus(
 def check_containers(
     config: cfg.Config, timeout: int = _DEFAULT_TIMEOUT
 ) -> ComponentHealth:
-    """Check Docker containers against the critical set from watchdog."""
+    """Check Docker containers against the critical set from watchdog.
+
+    NOTE: Not in HEALTH_CHECKS — only useful on the host where the docker
+    CLI is available.  Inside the container, individual HTTP checks cover
+    all critical containers.  Kept here for potential future host-side use.
+    """
     start = time.monotonic()
     try:
         result = subprocess.run(
@@ -297,7 +302,12 @@ HEALTH_CHECKS: list[tuple[str, CheckFn]] = [
     ("Ollama", check_ollama),
     ("pgvector", check_pgvector),
     ("Prometheus", check_prometheus),
-    ("Containers", check_containers),
+    # check_containers intentionally excluded: HAL runs inside a Docker
+    # container where the docker CLI is unavailable and SHOULD NOT be
+    # available (mounting the socket is a security risk).  Every critical
+    # container (prometheus, grafana, pgvector-kb, ntopng, pushgateway) is
+    # already covered by a dedicated HTTP health check above.  The watchdog
+    # (hal/watchdog.py) handles direct docker-ps checks from the host.
     ("Pushgateway", check_pushgateway),
     ("Grafana", check_grafana),
     ("ntopng", check_ntopng),
