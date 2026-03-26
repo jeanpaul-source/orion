@@ -30,7 +30,9 @@ jobs:
           pip-sync requirements.lock requirements-dev.lock
 
       - name: Audit dependencies
-        run: pip-audit
+        # Temporarily ignore CVE-2026-4539 (pygments) until upstream release is available.
+        # Tracked for follow-up; do NOT leave permanently unaddressed.
+        run: pip-audit --ignore CVE-2026-4539
 
       - name: Ruff lint
         run: ruff check --output-format=github hal/ tests/ harvest/ eval/
