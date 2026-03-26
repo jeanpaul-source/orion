@@ -256,6 +256,28 @@ and pushes it to `ghcr.io/jeanpaul-source/orion`. The deploy workflow then
 pulls the new image and recreates the container. Source code lives inside the
 image — there is no source code bind mount.
 
+### CI/CD infrastructure
+
+Two GitHub Actions workflows handle build and deploy:
+
+1. **Build** (`.github/workflows/build.yml`) — pushes to `main` build a Docker
+   image and push it to GHCR with `latest` + commit SHA tags.
+2. **Deploy** (`.github/workflows/deploy.yml`) — runs on the **self-hosted
+   runner** on the-lab (not GitHub's cloud). Pulls the new image, recreates
+   the container, waits for the healthcheck, and alerts on failure.
+
+The self-hosted runner is a GitHub Actions runner process installed on the-lab.
+It polls GitHub for jobs and executes them locally, which is how the deploy
+workflow can run `docker compose up -d` on the server. See
+[GitHub's self-hosted runner docs](https://docs.github.com/en/actions/hosting-your-own-runners)
+for installation and configuration.
+
+**GitHub Actions secrets** (configured in GitHub repo settings, separate from `.env`):
+
+| Secret | Purpose |
+| --- | --- |
+| `NTFY_URL` | Push notification URL for deploy failure alerts. This is a **different** secret from the `NTFY_URL` in `.env` (used by the watchdog). If rotating the URL, update both. |
+
 After restarting, the deploy workflow polls Docker's healthcheck for up to 250
 seconds. If the container never becomes healthy, the workflow fails and sends a
 push notification via [ntfy](https://ntfy.sh) (configured by the `NTFY_URL`

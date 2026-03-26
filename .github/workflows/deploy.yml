@@ -8,6 +8,12 @@ on:
     types: [completed]
     branches: [main]
 
+permissions: {}  # deploy uses only shell commands on self-hosted runner
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false  # never abort a running deploy
+
 jobs:
   deploy:
     name: Deploy to the-lab
