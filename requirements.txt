@@ -1,6 +1,6 @@
 psycopg2-binary>=2.9
 pgvector>=0.3
-requests>=2.31
+requests>=2.33.0
 python-dotenv>=1.0
 rich>=13.0
 numpy>=1.26
@@ -21,4 +21,4 @@ python-magic>=0.4.27
 tavily-python>=0.5
 # Security pins — transitive deps with known CVEs
 lxml-html-clean>=0.4.4    # CVE-2026-28348, CVE-2026-28350 (via trafilatura)
-nltk>=3.9.3               # CVE-2025-14009 (via trafilatura)
+nltk>=3.9.4               # CVE-2025-14009 (via trafilatura)
