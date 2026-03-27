@@ -75,7 +75,7 @@ def setup_tracing(endpoint: str | None = None) -> None:
     except ImportError:
         logger.info("opentelemetry not installed -- tracing disabled")
     except Exception as exc:
-        logger.info("Tracing setup failed (%s) -- continuing without tracing", exc)
+        logger.warning("Tracing setup failed (%s) -- continuing without tracing", exc)
 
 
 def _probe_endpoint(url: str) -> bool:
