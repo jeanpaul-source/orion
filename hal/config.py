@@ -1,7 +1,10 @@
+import logging
 import os
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -72,9 +75,11 @@ class Config:
                 continue
             # Expected format: "name:user@host"
             if ":" not in entry or "@" not in entry:
+                log.warning("Malformed EXTRA_HOSTS entry skipped: %r", entry)
                 continue  # silently skip malformed entries
             name, userhost = entry.split(":", 1)
             if "@" not in userhost:
+                log.warning("Malformed EXTRA_HOSTS entry skipped (no @): %r", entry)
                 continue
             user, host = userhost.split("@", 1)
             hosts[name.strip()] = (host.strip(), user.strip())

@@ -245,7 +245,8 @@ def _check_falco(state: dict | None = None, **_kw: object) -> str | None:
             text=True,
             timeout=10,
         ).stdout
-    except Exception:
+    except Exception as exc:
+        _logger.warning("Component health check failed: %s", exc)
         return None
 
     last_seen = (state or {}).get("falco_last_seen", "")
@@ -403,7 +404,8 @@ def _check_component_health(config: object | None = None, **_kw: object) -> str 
         count = len(unhealthy)
         header = f"{count} component{'s' if count != 1 else ''} unhealthy"
         return f"{header}:\n" + "\n".join(lines)
-    except Exception:
+    except Exception as exc:
+        _logger.warning("Component health check failed: %s", exc)
         return None
 
 
