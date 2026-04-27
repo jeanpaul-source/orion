@@ -1,7 +1,7 @@
 psycopg2-binary>=2.9
 pgvector>=0.3
 requests>=2.33.0
-python-dotenv>=1.0
+python-dotenv>=1.2.2
 rich>=13.0
 pygments>=2.19.3
 numpy>=1.26
